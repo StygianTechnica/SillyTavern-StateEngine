@@ -1,0 +1,216 @@
+<div id="state_engine_settings">
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b>State Engine</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content">
+
+            <div class="se-row">
+                <label class="checkbox_label">
+                    <input id="se_enabled" type="checkbox" />
+                    <span>Enable State Engine</span>
+                </label>
+            </div>
+
+            <div class="se-row">
+                <label class="checkbox_label">
+                    <input id="se_show_tracker_panel" type="checkbox" />
+                    <span>Show floating tracker panel (draggable, live display of tracked variables)</span>
+                </label>
+            </div>
+
+            <div class="se-row se-grid2">
+                <div>
+                    <label for="se_context_count">Chat history sent to the AI for prompted updates (messages)</label>
+                    <input id="se_context_count" type="number" min="1" max="50" class="text_pole" />
+                </div>
+                <div>
+                    <label for="se_response_length">Max response length for updates (tokens)</label>
+                    <input id="se_response_length" type="number" min="50" max="2000" class="text_pole" />
+                </div>
+            </div>
+
+            <div class="se-row">
+                <label for="se_connection_profile">Connection profile for prompted updates</label>
+                <select id="se_connection_profile" class="text_pole">
+                    <option value="">Use currently active connection</option>
+                </select>
+                <small>Runs prompted-variable background requests through a separate saved connection profile (e.g. a cheaper/faster model), independent of your main chat connection. Leave on "currently active" to just reuse whatever you're chatting with.</small>
+            </div>
+
+            <div class="se-row se-actions-row">
+                <button id="se_run_now" class="menu_button">
+                    <i class="fa-solid fa-rotate"></i>
+                    Run prompted updates now
+                </button>
+                <span id="se_status" class="se-status"></span>
+            </div>
+
+            <hr class="se-hr">
+
+            <div class="se-row se-header-row">
+                <b>Variables</b>
+                <button id="se_add_var" class="menu_button">
+                    <i class="fa-solid fa-plus"></i>
+                    Add variable
+                </button>
+            </div>
+
+            <div class="se-table-wrap">
+                <table id="se_var_table" class="se-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Category</th>
+                            <th>Type</th>
+                            <th>Scope</th>
+                            <th>Current value</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="se_var_tbody">
+                    </tbody>
+                </table>
+                <div id="se_var_empty" class="se-empty">No variables defined yet. Click "Add variable" to create one.</div>
+            </div>
+
+            <div id="se_editor" class="se-editor" style="display:none;">
+                <input type="hidden" id="se_edit_id" value="" />
+
+                <div class="se-row se-grid2">
+                    <div>
+                        <label for="se_f_name">Variable name (used in <code id="se_macro_example"></code>)</label>
+                        <input id="se_f_name" type="text" class="text_pole" placeholder="e.g. affection" />
+                    </div>
+                    <div>
+                        <label for="se_f_label">Display label</label>
+                        <input id="se_f_label" type="text" class="text_pole" placeholder="e.g. Affection" />
+                    </div>
+                </div>
+
+                <div class="se-row se-grid2">
+                    <div>
+                        <label for="se_f_category">Category</label>
+                        <select id="se_f_category" class="text_pole">
+                            <option value="manual">Manual</option>
+                            <option value="counter">Counter (auto increment/decrement)</option>
+                            <option value="prompted">Prompted (AI-derived)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="se_f_scope">Scope</label>
+                        <select id="se_f_scope" class="text_pole">
+                            <option value="chat">This chat</option>
+                            <option value="global">Global (all chats)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="se-row se-grid2">
+                    <div>
+                        <label for="se_f_type">Value type</label>
+                        <select id="se_f_type" class="text_pole">
+                            <option value="number">Number</option>
+                            <option value="string">Text</option>
+                            <option value="boolean">True / False</option>
+                            <option value="enum">Choice list</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="se_f_default">Default value</label>
+                        <input id="se_f_default" type="text" class="text_pole" />
+                    </div>
+                </div>
+
+                <div class="se-row se-grid2" id="se_f_enum_row" style="display:none;">
+                    <div class="se-span2">
+                        <label for="se_f_enum_values">Allowed values (comma separated)</label>
+                        <input id="se_f_enum_values" type="text" class="text_pole" placeholder="low, medium, high" />
+                    </div>
+                </div>
+
+                <div class="se-row se-grid2" id="se_f_minmax_row" style="display:none;">
+                    <div>
+                        <label for="se_f_min">Minimum (optional)</label>
+                        <input id="se_f_min" type="number" step="any" class="text_pole" />
+                    </div>
+                    <div>
+                        <label for="se_f_max">Maximum (optional)</label>
+                        <input id="se_f_max" type="number" step="any" class="text_pole" />
+                    </div>
+                </div>
+
+                <div class="se-row">
+                    <label for="se_f_description">Description / notes</label>
+                    <textarea id="se_f_description" class="text_pole" rows="2" placeholder="What this variable represents (shown to you in the editor, and used as a fallback prompt hint)"></textarea>
+                </div>
+
+                <div class="se-row se-cat-counter" style="display:none;">
+                    <div class="se-grid3">
+                        <div>
+                            <label for="se_f_counter_trigger">Update on</label>
+                            <select id="se_f_counter_trigger" class="text_pole">
+                                <option value="ai">Each AI message</option>
+                                <option value="user">Each user message</option>
+                                <option value="both">Every message</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="se_f_counter_direction">Direction</label>
+                            <select id="se_f_counter_direction" class="text_pole">
+                                <option value="increment">Increment</option>
+                                <option value="decrement">Decrement</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="se_f_counter_step">Step amount</label>
+                            <input id="se_f_counter_step" type="number" step="any" class="text_pole" value="1" />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="se-row se-cat-prompted" style="display:none;">
+                    <label>Update when (pick any number — like Quick Reply automation points)</label>
+                    <div class="se-checkbox-grid">
+                        <label class="checkbox_label"><input type="checkbox" class="se-f-prompted-trigger" value="startup" /><span>App / chat startup</span></label>
+                        <label class="checkbox_label"><input type="checkbox" class="se-f-prompted-trigger" value="new_chat" /><span>New chat created</span></label>
+                        <label class="checkbox_label"><input type="checkbox" class="se-f-prompted-trigger" value="chat_change" /><span>Any chat switch</span></label>
+                        <label class="checkbox_label"><input type="checkbox" class="se-f-prompted-trigger" value="user" /><span>After user message</span></label>
+                        <label class="checkbox_label"><input type="checkbox" class="se-f-prompted-trigger" value="pre_generation" /><span>Right before AI generates</span></label>
+                        <label class="checkbox_label"><input type="checkbox" class="se-f-prompted-trigger" value="ai" /><span>After AI message</span></label>
+                        <label class="checkbox_label"><input type="checkbox" class="se-f-prompted-trigger" value="group_draft" /><span>Group member drafted</span></label>
+                    </div>
+                    <small>"Right before AI generates" starts the background update early, but since it's a separate AI call it may not finish in time to affect that same reply — it'll usually be reflected starting with the next one. Leave everything unchecked to update only via the manual button / <code>/state-run</code>.</small>
+                    <label for="se_f_prompted_instructions">Instructions for the AI</label>
+                    <textarea id="se_f_prompted_instructions" class="text_pole" rows="3" placeholder="Describe how this value should change, e.g. 'Track how suspicious the character is of the user, 0-100. Increase on lies or evasiveness, decrease on honesty and kindness.'"></textarea>
+                </div>
+
+                <div class="se-row">
+                    <label class="checkbox_label">
+                        <input id="se_f_reset_on_new_chat" type="checkbox" />
+                        <span>Reset to default whenever a brand-new chat is created</span>
+                    </label>
+                </div>
+
+                <div class="se-row">
+                    <label class="checkbox_label">
+                        <input id="se_f_show_in_tracker" type="checkbox" />
+                        <span>Show on the tracker panel</span>
+                    </label>
+                    <small>Uncheck for internal/bookkeeping variables you don't want cluttering a "regular" tracker view — they'll still appear when "Debug" is toggled on in the tracker panel.</small>
+                </div>
+
+                <div class="se-row se-editor-actions">
+                    <button id="se_save_var" class="menu_button">Save variable</button>
+                    <button id="se_cancel_edit" class="menu_button">Cancel</button>
+                </div>
+            </div>
+
+            <div class="se-row se-hint">
+                <small>Reference any variable anywhere macros are supported (World Info entries, prompts, character cards) with <code id="se_macro_example2"></code>. Values are stored locally with the chat (or globally) and never added to the visible conversation.</small>
+            </div>
+
+        </div>
+    </div>
+</div>
