@@ -937,12 +937,28 @@ async function initPanel() {
 }
 
 // ---------------------------------------------------------------------------
+// Template registration
+// ---------------------------------------------------------------------------
+
+async function registerTemplates() {
+    const context = SillyTavern.getContext();
+    try {
+        if (context.registerExtensionTemplates) {
+            await context.registerExtensionTemplates(EXT_TEMPLATE_PATH, 'settings.html');
+        }
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'template registration skipped or failed', err);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
 jQuery(async () => {
     try {
         getSettings(); // ensure defaults exist / migrate
+        await registerTemplates();
         await initPanel();
         registerEvents();
         registerSlashCommand();
