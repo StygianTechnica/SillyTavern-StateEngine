@@ -607,11 +607,15 @@ function seedExamplePresets(settings, restoreMissing) {
         createdPresetIds.push(presetId);
     }
 
-    settings.defaultPresetForNewChats = createdPresetIds[0] || '';
+    if (!settings.defaultPresetForNewChats) {
+        settings.defaultPresetForNewChats = createdPresetIds[0] || '';
+    }
     if (createdPresetIds.length > 0 && !settings.trackerPresets?.length) {
         settings.trackerPresets = createdPresetIds.slice(0, 3);
     }
-    console.log(`${LOG_PREFIX} seeded ${createdPresetIds.length} example presets for first-run experience`);
+    if (createdPresetIds.length > 0) {
+        console.log(`${LOG_PREFIX} seeded ${createdPresetIds.length} starter preset(s)`);
+    }
 }
 
 // Fills in fields that may be missing from a definition created by an
@@ -2045,51 +2049,6 @@ function bindPanelEvents() {
     });
 
     // World Info Conditions UI event listeners
-    $('#se_wi_manage_conditions').on('click', openWorldInfoConditionManager);
-    $('#se_wi_entry_select').on('change', function () {
-        const entryKey = $(this).val();
-        const detailsSection = document.getElementById('se_wi_entry_details');
-        if (!detailsSection) return;
-        
-        if (!entryKey) {
-            detailsSection.style.display = 'none';
-            return;
-        }
-        
-        detailsSection.style.display = 'block';
-        
-        // Update entry name
-        const entries = getWorldInfoEntries();
-        const entry = entries.find(e => makeWIEntryKey(e.world || e.book || 'unknown', e.uid) === entryKey);
-        if (entry) {
-            document.getElementById('se_wi_entry_name').textContent = entry.comment || entry.name || `[${entry.uid}]`;
-        }
-        
-        // Render conditions
-        renderWIConditions(entryKey);
-        updateWIEntryStatus(entryKey);
-        closeWIConditionEditor();
-    });
-    
-    $('#se_wi_add_condition').on('click', function () {
-        const entryKey = document.getElementById('se_wi_entry_select').value;
-        if (entryKey) {
-            openWIConditionEditor(entryKey);
-        }
-    });
-    
-    $('#se_wi_save_condition').on('click', saveWIConditionFromUI);
-    $('#se_wi_cancel_condition').on('click', closeWIConditionEditor);
-    
-    $('#se_wi_cond_operator').on('change', function () {
-        // Hide value input for is_true/is_false operators
-        const isBoolean = this.value === 'is_true' || this.value === 'is_false';
-        const valueContainer = document.getElementById('se_wi_cond_value_container');
-        if (valueContainer) {
-            valueContainer.classList.toggle('hidden', isBoolean);
-        }
-    });
-
     renderPresetList();
     renderTrackerPresetList();
     renderVarTable();
