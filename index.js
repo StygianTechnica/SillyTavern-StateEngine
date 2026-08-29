@@ -1580,7 +1580,7 @@ function buildTrackerPanel() {
         '<div id="se_tracker_header">' +
         '<span id="se_tracker_title">State Tracker</span>' +
         '<span class="se-tracker-header-actions">' +
-        '<button id="se_tracker_debug_toggle" class="se-tracker-btn" title="Show hidden/debug variables">Debug</button>' +
+        '<button id="se_tracker_debug_toggle" class="se-tracker-btn" title="Show hidden/debug variables"><i class="fa-solid fa-bug"></i></button>' +
         '<button id="se_tracker_collapse" class="se-tracker-btn" title="Collapse">–</button>' +
         '<button id="se_tracker_close" class="se-tracker-btn" title="Hide panel">×</button>' +
         '</span>' +
