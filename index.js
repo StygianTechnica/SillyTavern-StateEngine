@@ -14,7 +14,7 @@
 // native chat/global variable store.
 
 const MODULE_NAME = 'state_engine';
-const EXT_TEMPLATE_PATH = 'StateEngine';
+const EXT_TEMPLATE_PATH = 'third-party/SillyTavern-StateEngine';
 const LOG_PREFIX = '[State Engine]';
 
 const DEFAULT_SETTINGS = Object.freeze({
