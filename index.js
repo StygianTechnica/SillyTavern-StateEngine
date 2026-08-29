@@ -32,11 +32,409 @@ const DEFAULT_SETTINGS = Object.freeze({
     presets: {},
     chatPresetBindings: {},
     defaultPresetForNewChats: '',
+    trackerPresets: [],
+    wiConditions: {}, // Maps "worldbook.uid" -> array of {variable, operator, value}
 });
 
 // All the moments a "prompted" variable can be told to re-evaluate at —
 // deliberately mirrors SillyTavern's Quick Reply automation trigger points.
 const PROMPTED_TRIGGER_KEYS = ['startup', 'new_chat', 'chat_change', 'user', 'pre_generation', 'ai', 'group_draft'];
+
+// World Info conditional display operators
+const CONDITION_OPERATORS = {
+    'equals': (varValue, condValue) => {
+        const v = String(varValue).toLowerCase().trim();
+        const c = String(condValue).toLowerCase().trim();
+        return v === c;
+    },
+    'not_equals': (varValue, condValue) => {
+        const v = String(varValue).toLowerCase().trim();
+        const c = String(condValue).toLowerCase().trim();
+        return v !== c;
+    },
+    'greater_than': (varValue, condValue) => {
+        const v = Number(varValue);
+        const c = Number(condValue);
+        return !isNaN(v) && !isNaN(c) && v > c;
+    },
+    'less_than': (varValue, condValue) => {
+        const v = Number(varValue);
+        const c = Number(condValue);
+        return !isNaN(v) && !isNaN(c) && v < c;
+    },
+    'greater_or_equal': (varValue, condValue) => {
+        const v = Number(varValue);
+        const c = Number(condValue);
+        return !isNaN(v) && !isNaN(c) && v >= c;
+    },
+    'less_or_equal': (varValue, condValue) => {
+        const v = Number(varValue);
+        const c = Number(condValue);
+        return !isNaN(v) && !isNaN(c) && v <= c;
+    },
+    'contains': (varValue, condValue) => {
+        return String(varValue).toLowerCase().includes(String(condValue).toLowerCase());
+    },
+    'not_contains': (varValue, condValue) => {
+        return !String(varValue).toLowerCase().includes(String(condValue).toLowerCase());
+    },
+    'regex': (varValue, condValue) => {
+        try {
+            return new RegExp(condValue, 'i').test(String(varValue));
+        } catch (e) {
+            console.error(`${LOG_PREFIX} Invalid regex in condition:`, condValue, e);
+            return true; // Fail open on regex error
+        }
+    },
+    'in_list': (varValue, condValue) => {
+        const list = String(condValue).split(',').map(v => v.trim().toLowerCase());
+        return list.includes(String(varValue).toLowerCase());
+    },
+    'is_true': (varValue) => varValue == true || String(varValue).toLowerCase() === 'true' || varValue == 1,
+    'is_false': (varValue) => varValue == false || String(varValue).toLowerCase() === 'false' || varValue == 0,
+};
+
+// ---------------------------------------------------------------------------
+// World Info Conditional Display
+// ---------------------------------------------------------------------------
+
+function makeWIEntryKey(world, uid) {
+    return `${world}.${uid}`;
+}
+
+function getWIConditions(entryKey) {
+    const settings = getSettings();
+    return settings.wiConditions[entryKey] || [];
+}
+
+function setWICondition(entryKey, condition) {
+    const settings = getSettings();
+    if (!settings.wiConditions[entryKey]) {
+        settings.wiConditions[entryKey] = [];
+    }
+    settings.wiConditions[entryKey].push(condition);
+    saveSettings(settings);
+    console.log(`${LOG_PREFIX} Added condition to ${entryKey}:`, condition);
+}
+
+function updateWICondition(entryKey, index, condition) {
+    const settings = getSettings();
+    if (settings.wiConditions[entryKey] && settings.wiConditions[entryKey][index]) {
+        settings.wiConditions[entryKey][index] = condition;
+        saveSettings(settings);
+        console.log(`${LOG_PREFIX} Updated condition ${index} for ${entryKey}:`, condition);
+    }
+}
+
+function deleteWICondition(entryKey, index) {
+    const settings = getSettings();
+    if (settings.wiConditions[entryKey]) {
+        settings.wiConditions[entryKey].splice(index, 1);
+        if (settings.wiConditions[entryKey].length === 0) {
+            delete settings.wiConditions[entryKey];
+        }
+        saveSettings(settings);
+        console.log(`${LOG_PREFIX} Deleted condition ${index} for ${entryKey}`);
+    }
+}
+
+function clearWIConditionsForEntry(entryKey) {
+    const settings = getSettings();
+    if (settings.wiConditions[entryKey]) {
+        delete settings.wiConditions[entryKey];
+        saveSettings(settings);
+        console.log(`${LOG_PREFIX} Cleared all conditions for ${entryKey}`);
+    }
+}
+
+function evaluateCondition(varName, operator, condValue) {
+    try {
+        const varValue = getVarValue(varName);
+        const operatorFunc = CONDITION_OPERATORS[operator];
+        
+        if (!operatorFunc) {
+            console.warn(`${LOG_PREFIX} Unknown operator: ${operator}`);
+            return true; // Fail open
+        }
+        
+        return operatorFunc(varValue, condValue);
+    } catch (e) {
+        console.error(`${LOG_PREFIX} Error evaluating condition for ${varName}:`, e);
+        return true; // Fail open
+    }
+}
+
+function shouldDisplayWIEntry(entryKey) {
+    const conditions = getWIConditions(entryKey);
+    if (conditions.length === 0) return true; // No conditions = always show
+    
+    // All conditions must evaluate to true (AND logic)
+    return conditions.every(cond => {
+        const result = evaluateCondition(cond.variable, cond.operator, cond.value);
+        if (!result) {
+            console.debug(`${LOG_PREFIX} ${entryKey} filtered out: ${cond.variable} ${cond.operator} ${cond.value}`);
+        }
+        return result;
+    });
+}
+
+function filterWorldInfoEntries(entries) {
+    if (!Array.isArray(entries)) return entries;
+    return entries.filter(entry => {
+        const entryKey = makeWIEntryKey(entry.world, entry.uid);
+        return shouldDisplayWIEntry(entryKey);
+    });
+}
+
+function getAvailableVariablesForConditions() {
+    // Get all variables from all active presets in current chat
+    const context = SillyTavern.getContext();
+    const currentChatId = context.chat.id || 'unknown';
+    const settings = getSettings();
+    
+    const variables = [];
+    const activePresetIds = settings.chatPresetBindings[currentChatId] || [];
+    const seenNames = new Set();
+    
+    for (const presetId of activePresetIds) {
+        const preset = settings.presets[presetId];
+        if (!preset || !preset.variables) continue;
+        
+        for (const [varName, def] of Object.entries(preset.variables)) {
+            if (seenNames.has(varName)) continue;
+            seenNames.add(varName);
+            
+            variables.push({
+                name: varName,
+                type: def.type || 'manual',
+                category: def.category || 'manual',
+                presetId: presetId,
+                presetName: preset.name || presetId,
+            });
+        }
+    }
+    
+    return variables;
+}
+
+function applyWorldInfoConditionalFiltering() {
+    // Hook into world info activation to filter entries based on variable conditions
+    // This runs when world info is being prepared for the LLM context
+    
+    try {
+        const context = SillyTavern.getContext();
+        
+        // getWorldInfoPrompt is exported on the context API
+        if (!context.getWorldInfoPrompt) {
+            console.debug(`${LOG_PREFIX} getWorldInfoPrompt not available, skipping conditional filtering`);
+            return;
+        }
+        
+        // Call getWorldInfoPrompt to get the current world info state
+        const wiPrompt = context.getWorldInfoPrompt();
+        if (!wiPrompt || !wiPrompt.outletEntries) {
+            console.debug(`${LOG_PREFIX} No world info outlets to filter`);
+            return;
+        }
+        
+        // Before filtering, get the original count for logging
+        const originalCount = wiPrompt.outletEntries.length;
+        
+        // Filter entries based on our conditions
+        const filteredEntries = [];
+        const filteredOutEntries = [];
+        
+        for (const entry of wiPrompt.outletEntries) {
+            const entryKey = makeWIEntryKey(entry.world || entry.book || 'unknown', entry.uid);
+            if (shouldDisplayWIEntry(entryKey)) {
+                filteredEntries.push(entry);
+            } else {
+                filteredOutEntries.push(entry);
+            }
+        }
+        
+        // Log filtering results for debugging
+        if (filteredOutEntries.length > 0) {
+            console.log(`${LOG_PREFIX} Filtered out ${filteredOutEntries.length}/${originalCount} world info entries based on conditions`);
+            for (const entry of filteredOutEntries) {
+                const entryKey = makeWIEntryKey(entry.world || entry.book || 'unknown', entry.uid);
+                const conditions = getWIConditions(entryKey);
+                console.log(`  - "${entry.comment || entry.name || 'unnamed'}" (${entryKey}): ${conditions.map(c => `${c.variable}${c.operator}${c.value}`).join(', ')}`);
+            }
+        }
+        
+        // Replace the outlet entries with the filtered version
+        wiPrompt.outletEntries = filteredEntries;
+        
+    } catch (e) {
+        console.error(`${LOG_PREFIX} Error applying world info conditional filtering:`, e);
+        // Fail open - don't break world info if filtering fails
+    }
+}
+
+function getWorldInfoEntries() {
+    // Get all available world info entries from the current context
+    const context = SillyTavern.getContext();
+    
+    try {
+        if (!context.getWorldInfoPrompt) return [];
+        
+        const wiPrompt = context.getWorldInfoPrompt();
+        if (!wiPrompt || !wiPrompt.outletEntries) return [];
+        
+        return wiPrompt.outletEntries || [];
+    } catch (e) {
+        console.error(`${LOG_PREFIX} Error getting world info entries:`, e);
+        return [];
+    }
+}
+
+function populateWIEntrySelect() {
+    // Populate the world info entry dropdown
+    const select = document.getElementById('se_wi_entry_select');
+    if (!select) return;
+    
+    const entries = getWorldInfoEntries();
+    
+    if (entries.length === 0) {
+        select.innerHTML = '<option value="">No world info entries loaded</option>';
+        const detailsSection = document.getElementById('se_wi_entry_details');
+        const noEntriesMsg = document.getElementById('se_wi_no_entries');
+        if (detailsSection) detailsSection.style.display = 'none';
+        if (noEntriesMsg) noEntriesMsg.style.display = 'block';
+        return;
+    }
+    
+    const options = ['<option value="">-- Select an entry --</option>'];
+    for (const entry of entries) {
+        const entryKey = makeWIEntryKey(entry.world || entry.book || 'unknown', entry.uid);
+        const entryName = entry.comment || entry.name || `[${entry.uid}]`;
+        options.push(`<option value="${entryKey}">${entryName}</option>`);
+    }
+    
+    select.innerHTML = options.join('');
+    const noEntriesMsg = document.getElementById('se_wi_no_entries');
+    if (noEntriesMsg) noEntriesMsg.style.display = 'none';
+}
+
+function renderWIConditions(entryKey) {
+    // Render the list of conditions for a world info entry
+    const list = document.getElementById('se_wi_conditions_list');
+    if (!list) return;
+    
+    const conditions = getWIConditions(entryKey);
+    
+    if (conditions.length === 0) {
+        list.innerHTML = '<div style="opacity:0.7; padding:4px;">No conditions. Entry will always display.</div>';
+        return;
+    }
+    
+    const html = conditions.map((cond, index) => `
+        <div class="se-condition-item">
+            <div class="se-condition-text">${cond.variable} ${cond.operator} ${cond.value}</div>
+            <div class="se-condition-actions">
+                <button class="se-condition-btn" onclick="deleteWIConditionFromUI('${entryKey}', ${index})" title="Delete"><i class="fa-solid fa-trash"></i></button>
+            </div>
+        </div>
+    `).join('');
+    
+    list.innerHTML = html;
+}
+
+function openWIConditionEditor(entryKey) {
+    // Open the condition editor for adding a new condition
+    const editor = document.getElementById('se_wi_condition_editor');
+    if (!editor) return;
+    
+    // Populate variable dropdown
+    const varSelect = document.getElementById('se_wi_cond_variable');
+    if (varSelect) {
+        const variables = getAvailableVariablesForConditions();
+        varSelect.innerHTML = '<option value="">-- Select variable --</option>' + 
+            variables.map(v => `<option value="${v.name}">${v.presetName} / ${v.name}</option>`).join('');
+    }
+    
+    // Reset form
+    const valueInput = document.getElementById('se_wi_cond_value');
+    if (valueInput) valueInput.value = '';
+    
+    // Show editor
+    editor.style.display = 'block';
+    
+    // Store the entry key for saving
+    editor._editingEntryKey = entryKey;
+}
+
+function closeWIConditionEditor() {
+    const editor = document.getElementById('se_wi_condition_editor');
+    if (editor) {
+        editor.style.display = 'none';
+        editor._editingEntryKey = null;
+    }
+}
+
+function saveWIConditionFromUI() {
+    // Save a condition from the UI
+    const editor = document.getElementById('se_wi_condition_editor');
+    if (!editor || !editor._editingEntryKey) return;
+    
+    const entryKey = editor._editingEntryKey;
+    const varName = document.getElementById('se_wi_cond_variable').value;
+    const operator = document.getElementById('se_wi_cond_operator').value;
+    const value = document.getElementById('se_wi_cond_value').value;
+    
+    if (!varName || !operator) {
+        alert('Please select a variable and operator');
+        return;
+    }
+    
+    if ((operator !== 'is_true' && operator !== 'is_false') && !value) {
+        alert('Please enter a value');
+        return;
+    }
+    
+    const condition = {
+        variable: varName,
+        operator: operator,
+        value: operator.startsWith('is_') ? '' : value
+    };
+    
+    setWICondition(entryKey, condition);
+    
+    // Refresh UI
+    renderWIConditions(entryKey);
+    closeWIConditionEditor();
+    updateWIEntryStatus(entryKey);
+}
+
+function deleteWIConditionFromUI(entryKey, index) {
+    deleteWICondition(entryKey, index);
+    renderWIConditions(entryKey);
+    updateWIEntryStatus(entryKey);
+}
+
+function updateWIEntryStatus(entryKey) {
+    // Update the status badge showing if entry is currently active
+    const statusDiv = document.getElementById('se_wi_entry_status');
+    if (!statusDiv) return;
+    
+    const isActive = shouldDisplayWIEntry(entryKey);
+    statusDiv.className = 'se-wi-status ' + (isActive ? 'active' : 'inactive');
+    statusDiv.innerHTML = isActive ? '✓ Currently displayed' : '✗ Filtered out';
+}
+
+function openWorldInfoConditionManager() {
+    // Toggle world info condition manager panel
+    const editorSection = document.getElementById('se_wi_editor_section');
+    if (!editorSection) return;
+    
+    if (editorSection.style.display === 'none') {
+        editorSection.style.display = 'block';
+        populateWIEntrySelect();
+    } else {
+        editorSection.style.display = 'none';
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Settings helpers
@@ -63,6 +461,7 @@ function getSettings() {
     if (!settings.presets || typeof settings.presets !== 'object') settings.presets = {};
     if (!settings.chatPresetBindings || typeof settings.chatPresetBindings !== 'object') settings.chatPresetBindings = {};
     if (!settings.defaultPresetForNewChats) settings.defaultPresetForNewChats = '';
+    if (!settings.wiConditions || typeof settings.wiConditions !== 'object') settings.wiConditions = {};
     
     // Normalize all presets and their variables
     for (const preset of Object.values(settings.presets)) {
@@ -83,6 +482,8 @@ function migrateToPresets(settings) {
             id: defaultPresetId,
             name: 'Default',
             variables: settings.variables,
+            triggers: ['ai'],  // Default trigger for prompted variables
+            showInTracker: false,  // Default tracker visibility
         };
         settings.presets = { [defaultPresetId]: defaultPreset };
         settings.defaultPresetForNewChats = defaultPresetId;
@@ -90,6 +491,112 @@ function migrateToPresets(settings) {
         delete settings.variables; // Remove old flat structure
         console.log(LOG_PREFIX, 'migrated old variables to default preset');
     }
+    
+    // Normalize existing presets
+    for (const preset of Object.values(settings.presets || {})) {
+        if (!Array.isArray(preset.triggers)) preset.triggers = ['ai'];
+        if (preset.showInTracker === undefined) preset.showInTracker = false;
+    }
+
+    seedExamplePresets(settings);
+}
+
+function seedExamplePresets(settings) {
+    if (Object.keys(settings.presets || {}).length > 0) return;
+
+    const makeVar = (overrides) => normalizeDefinition({
+        id: genId(),
+        name: '',
+        label: '',
+        description: '',
+        category: 'manual',
+        scope: 'chat',
+        type: 'string',
+        defaultValue: '',
+        enumValues: [],
+        min: null,
+        max: null,
+        resetOnNewChat: false,
+        showInTracker: true,
+        counter: { trigger: 'ai', direction: 'increment', step: 1 },
+        cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
+        prompted: { triggers: ['ai'], instructions: '' },
+        ...overrides,
+    });
+
+    const presets = [
+        {
+            name: 'Story Progression',
+            triggers: ['ai'],
+            vars: [
+                makeVar({ name: 'chapter', label: 'Chapter', category: 'counter', type: 'number', defaultValue: 1, min: 1, counter: { trigger: 'prompted', direction: 'increment', step: 1 }, description: 'Main narrative chapter progression.' }),
+                makeVar({ name: 'arc_phase', label: 'Arc Phase', category: 'cycling', type: 'enum', enumValues: ['setup', 'rising_action', 'climax', 'aftermath'], defaultValue: 'setup', cycling: { trigger: 'prompted', values: ['setup', 'rising_action', 'climax', 'aftermath'], promptedInstructions: 'Advance when the current arc phase has clearly resolved in roleplay context.' }, description: 'Current high-level story arc phase.' }),
+                makeVar({ name: 'quest_active', label: 'Quest Active', category: 'manual', type: 'boolean', defaultValue: false, description: 'Whether a main quest is currently active.' }),
+                makeVar({ name: 'quest_name', label: 'Quest Name', category: 'manual', type: 'string', defaultValue: '', description: 'Current quest title.' }),
+            ],
+        },
+        {
+            name: 'Location and Time',
+            triggers: ['user', 'ai'],
+            vars: [
+                makeVar({ name: 'current_location', label: 'Current Location', category: 'manual', type: 'enum', enumValues: ['tavern', 'market', 'arena', 'road', 'wilderness'], defaultValue: 'tavern', description: 'Current scene location.' }),
+                makeVar({ name: 'time_of_day', label: 'Time of Day', category: 'cycling', type: 'enum', enumValues: ['dawn', 'morning', 'noon', 'evening', 'night'], defaultValue: 'morning', cycling: { trigger: 'prompted', values: ['dawn', 'morning', 'noon', 'evening', 'night'], promptedInstructions: 'Advance when scene pacing or narration implies time has progressed.' }, description: 'Narrative time period.' }),
+                makeVar({ name: 'weather', label: 'Weather', category: 'prompted', type: 'string', defaultValue: 'clear', prompted: { triggers: ['ai'], instructions: 'Infer weather from current narrative context. Keep concise (1-3 words).' }, description: 'Current weather condition.' }),
+                makeVar({ name: 'is_indoor', label: 'Indoor Scene', category: 'manual', type: 'boolean', defaultValue: true, description: 'Whether current scene is indoors.' }),
+            ],
+        },
+        {
+            name: 'Relationships',
+            triggers: ['ai'],
+            vars: [
+                makeVar({ name: 'npc_trust', label: 'NPC Trust', category: 'prompted', type: 'number', defaultValue: 25, min: 0, max: 100, prompted: { triggers: ['ai'], instructions: 'Estimate trust from recent interactions on a 0-100 scale.' }, description: 'General trust level with a focal NPC.' }),
+                makeVar({ name: 'npc_affection', label: 'NPC Affection', category: 'prompted', type: 'number', defaultValue: 20, min: 0, max: 100, prompted: { triggers: ['ai'], instructions: 'Estimate affection from recent interactions on a 0-100 scale.' }, description: 'General affection level with a focal NPC.' }),
+                makeVar({ name: 'relationship_status', label: 'Relationship Status', category: 'cycling', type: 'enum', enumValues: ['strangers', 'acquaintances', 'friends', 'allies', 'intimate'], defaultValue: 'strangers', cycling: { trigger: 'prompted', values: ['strangers', 'acquaintances', 'friends', 'allies', 'intimate'], promptedInstructions: 'Advance only when interactions clearly justify relationship progression.' }, description: 'Current relationship state.' }),
+                makeVar({ name: 'betrayal_flag', label: 'Betrayal Flag', category: 'manual', type: 'boolean', defaultValue: false, description: 'Set true if betrayal has occurred.' }),
+            ],
+        },
+        {
+            name: 'Combat and Encounter',
+            triggers: ['user', 'ai'],
+            vars: [
+                makeVar({ name: 'combat_active', label: 'Combat Active', category: 'manual', type: 'boolean', defaultValue: false, description: 'Whether combat is currently active.' }),
+                makeVar({ name: 'rounds_elapsed', label: 'Rounds Elapsed', category: 'counter', type: 'number', defaultValue: 0, min: 0, counter: { trigger: 'prompted', direction: 'increment', step: 1 }, description: 'Combat rounds elapsed.' }),
+                makeVar({ name: 'threat_level', label: 'Threat Level', category: 'manual', type: 'enum', enumValues: ['low', 'medium', 'high', 'critical'], defaultValue: 'low', description: 'Current encounter danger level.' }),
+                makeVar({ name: 'encounter_tags', label: 'Encounter Tags', category: 'manual', type: 'array', defaultValue: '[]', description: 'Array of current encounter tags, e.g. [\"ambush\",\"boss\"].' }),
+            ],
+        },
+        {
+            name: 'Mixed Showcase',
+            triggers: ['ai'],
+            vars: [
+                makeVar({ name: 'mood', label: 'Mood', category: 'prompted', type: 'string', defaultValue: 'neutral', prompted: { triggers: ['ai'], instructions: 'Infer room mood in one word: calm, tense, hopeful, ominous, etc.' }, description: 'Prompted text example.' }),
+                makeVar({ name: 'danger_score', label: 'Danger Score', category: 'prompted', type: 'number', defaultValue: 10, min: 0, max: 100, prompted: { triggers: ['ai'], instructions: 'Estimate danger from recent context from 0-100.' }, description: 'Prompted number with min/max.' }),
+                makeVar({ name: 'story_flags', label: 'Story Flags', category: 'manual', type: 'array', defaultValue: '[]', description: 'Manual array, e.g. [\"blood_moon\",\"debt_paid\"].' }),
+                makeVar({ name: 'event_stage', label: 'Event Stage', category: 'cycling', type: 'enum', enumValues: ['seed', 'signal', 'portent', 'manifest'], defaultValue: 'seed', cycling: { trigger: 'prompted', values: ['seed', 'signal', 'portent', 'manifest'], promptedInstructions: 'Advance when narrative omens intensify enough to justify next stage.' }, description: 'Cycling enum showcase.' }),
+                makeVar({ name: 'heartbeat', label: 'Heartbeat Counter', category: 'counter', type: 'number', defaultValue: 0, counter: { trigger: 'both', direction: 'increment', step: 1 }, description: 'Simple per-message counter.' }),
+                makeVar({ name: 'omens_unlocked', label: 'Omens Unlocked', category: 'manual', type: 'boolean', defaultValue: false, description: 'Manual boolean toggle showcase.' }),
+            ],
+        },
+    ];
+
+    const createdPresetIds = [];
+    for (const seed of presets) {
+        const presetId = genId();
+        const variables = {};
+        for (const def of seed.vars) variables[def.id] = def;
+        settings.presets[presetId] = {
+            id: presetId,
+            name: seed.name,
+            variables,
+            triggers: seed.triggers,
+            showInTracker: true,
+        };
+        createdPresetIds.push(presetId);
+    }
+
+    settings.defaultPresetForNewChats = createdPresetIds[0] || '';
+    settings.trackerPresets = createdPresetIds.slice(0, 3);
+    console.log(`${LOG_PREFIX} seeded ${createdPresetIds.length} example presets for first-run experience`);
 }
 
 // Fills in fields that may be missing from a definition created by an
@@ -133,6 +640,8 @@ function createPreset(name) {
         id: presetId,
         name: name || 'New Preset',
         variables: {},
+        triggers: ['ai'],  // Preset-level: when to update prompted variables in this preset
+        showInTracker: false,  // Whether this preset's variables appear in the floating tracker
     };
     const settings = getSettings();
     settings.presets[presetId] = preset;
@@ -197,6 +706,36 @@ function removePresetFromChat(chatId, presetId) {
     }
 }
 
+function getTrackerPresets() {
+    const settings = getSettings();
+    if (!settings.trackerPresets || !Array.isArray(settings.trackerPresets)) {
+        settings.trackerPresets = [];
+    }
+    return settings.trackerPresets;
+}
+
+function setTrackerPresets(presetIds) {
+    getSettings().trackerPresets = presetIds;
+    persistSettings();
+}
+
+function addPresetToTracker(presetId) {
+    const trackerPresets = getTrackerPresets();
+    if (!trackerPresets.includes(presetId)) {
+        trackerPresets.push(presetId);
+        setTrackerPresets(trackerPresets);
+    }
+}
+
+function removePresetFromTracker(presetId) {
+    const trackerPresets = getTrackerPresets();
+    const idx = trackerPresets.indexOf(presetId);
+    if (idx !== -1) {
+        trackerPresets.splice(idx, 1);
+        setTrackerPresets(trackerPresets);
+    }
+}
+
 function getAllVariablesFromPresets(presetIds) {
     const settings = getSettings();
     const allVars = {};
@@ -228,9 +767,9 @@ function blankDefinition() {
         id: genId(),
         name: '',
         label: '',
-        category: 'manual', // manual | counter | prompted
+        category: 'manual', // manual | counter | cycling | prompted
         scope: 'chat', // chat | global
-        type: 'number', // number | string | boolean | enum
+        type: 'number', // number | string | boolean | enum | array
         enumValues: [],
         default: '0',
         min: '',
@@ -238,7 +777,8 @@ function blankDefinition() {
         description: '',
         resetOnNewChat: false,
         showInTracker: true,
-        counter: { trigger: 'ai', direction: 'increment', step: 1 },
+        counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
+        cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
         prompted: { triggers: ['ai'], instructions: '' },
     };
 }
@@ -253,6 +793,13 @@ function getDefaultValue(def) {
             return String(def.default).trim().toLowerCase() === 'true';
         case 'enum':
             return def.enumValues.includes(def.default) ? def.default : (def.enumValues[0] ?? '');
+        case 'array':
+            if (Array.isArray(def.default)) return [...def.default];
+            if (typeof def.default === 'string' && def.default.trim()) {
+                try { return JSON.parse(def.default); }
+                catch { return []; }
+            }
+            return [];
         default:
             return def.default ?? '';
     }
@@ -267,6 +814,115 @@ function clampNumber(def, n) {
         result = Math.min(result, Number(def.max));
     }
     return result;
+}
+
+// Validate a value against type constraints; return {valid: boolean, value: coerced, error?: string}
+function validateValueStrict(def, raw) {
+    if (raw === undefined || raw === null) {
+        return { valid: true, value: getDefaultValue(def) };
+    }
+
+    const errors = [];
+    let coerced = raw;
+
+    try {
+        switch (def.type) {
+            case 'number': {
+                if (typeof raw === 'number') {
+                    coerced = raw;
+                } else if (typeof raw === 'string' && raw.trim() !== '') {
+                    coerced = Number(raw.trim());
+                    if (Number.isNaN(coerced)) {
+                        errors.push(`Cannot convert "${raw}" to number`);
+                        coerced = getDefaultValue(def);
+                        break;
+                    }
+                } else {
+                    errors.push(`Expected number, got ${typeof raw}`);
+                    coerced = getDefaultValue(def);
+                    break;
+                }
+                
+                if (!Number.isFinite(coerced)) {
+                    errors.push(`Not a valid number (got ${raw})`);
+                    coerced = getDefaultValue(def);
+                } else {
+                    coerced = clampNumber(def, coerced);
+                }
+                break;
+            }
+
+            case 'boolean': {
+                if (typeof raw === 'boolean') {
+                    coerced = raw;
+                } else if (typeof raw === 'number') {
+                    coerced = raw !== 0;
+                } else if (typeof raw === 'string') {
+                    const s = raw.trim().toLowerCase();
+                    if (['true', 'yes', '1', 'on'].includes(s)) {
+                        coerced = true;
+                    } else if (['false', 'no', '0', 'off'].includes(s)) {
+                        coerced = false;
+                    } else {
+                        errors.push(`"${raw}" is not a valid boolean`);
+                        coerced = getDefaultValue(def);
+                    }
+                } else {
+                    errors.push(`Expected boolean, got ${typeof raw}`);
+                    coerced = getDefaultValue(def);
+                }
+                break;
+            }
+
+            case 'enum': {
+                const s = String(raw);
+                if (!def.enumValues.includes(s)) {
+                    errors.push(`"${s}" not in allowed values: [${def.enumValues.join(', ')}]`);
+                    coerced = getDefaultValue(def);
+                } else {
+                    coerced = s;
+                }
+                break;
+            }
+
+            case 'array': {
+                if (Array.isArray(raw)) {
+                    coerced = raw;
+                } else if (typeof raw === 'string') {
+                    try {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            coerced = parsed;
+                        } else {
+                            errors.push(`Parsed JSON is not an array`);
+                            coerced = getDefaultValue(def);
+                        }
+                    } catch (e) {
+                        errors.push(`Invalid JSON for array: ${e.message}`);
+                        coerced = getDefaultValue(def);
+                    }
+                } else {
+                    errors.push(`Expected array, got ${typeof raw}`);
+                    coerced = getDefaultValue(def);
+                }
+                break;
+            }
+
+            default: {
+                // String type: accept anything, stringify it
+                coerced = String(raw);
+            }
+        }
+    } catch (err) {
+        errors.push(`Validation error: ${err.message}`);
+        coerced = getDefaultValue(def);
+    }
+
+    return {
+        valid: errors.length === 0,
+        value: coerced,
+        error: errors.length > 0 ? errors.join('; ') : undefined,
+    };
 }
 
 function coerceValue(def, raw) {
@@ -285,6 +941,14 @@ function coerceValue(def, raw) {
         case 'enum': {
             const s = String(raw);
             return def.enumValues.includes(s) ? s : getDefaultValue(def);
+        }
+        case 'array': {
+            if (Array.isArray(raw)) return raw;
+            if (typeof raw === 'string') {
+                try { return JSON.parse(raw); }
+                catch { return getDefaultValue(def); }
+            }
+            return getDefaultValue(def);
         }
         default:
             return String(raw);
@@ -309,13 +973,18 @@ function getVarValue(context, def) {
 
 function setVarValue(context, def, rawValue) {
     const store = varStore(context, def);
-    const coerced = coerceValue(def, rawValue);
+    const validation = validateValueStrict(def, rawValue);
+    
+    if (!validation.valid && validation.error) {
+        console.warn(LOG_PREFIX, `Type validation for "${def.name}": ${validation.error}`);
+    }
+    
     try {
-        store.set(def.name, coerced);
+        store.set(def.name, validation.value);
     } catch (err) {
         console.error(LOG_PREFIX, `could not write variable "${def.name}"`, err);
     }
-    return coerced;
+    return validation.value;
 }
 
 // ---------------------------------------------------------------------------
@@ -375,22 +1044,168 @@ function runCounters(triggerType) {
 
     let changed = false;
     for (const def of Object.values(variables)) {
-        if (def.category !== 'counter' || !def.name) continue;
-        const trigger = def.counter?.trigger || 'ai';
-        if (trigger !== 'both' && trigger !== triggerType) continue;
+        if (!def.name) continue;
 
-        const current = Number(getVarValue(context, def)) || 0;
-        const step = Number(def.counter?.step ?? 1) || 0;
-        const direction = def.counter?.direction === 'decrement' ? -1 : 1;
-        const next = clampNumber(def, current + direction * step);
-        setVarValue(context, def, next);
-        changed = true;
+        // Handle counter variables
+        if (def.category === 'counter') {
+            const trigger = def.counter?.trigger || 'ai';
+            if (trigger === 'prompted') continue; // Skip AI-triggered, handled separately
+            if (trigger !== 'both' && trigger !== triggerType) continue;
+
+            const current = Number(getVarValue(context, def)) || 0;
+            const step = Number(def.counter?.step ?? 1) || 0;
+            const direction = def.counter?.direction === 'decrement' ? -1 : 1;
+            const next = clampNumber(def, current + direction * step);
+            setVarValue(context, def, next);
+            changed = true;
+        }
+
+        // Handle cycling variables
+        if (def.category === 'cycling') {
+            const trigger = def.cycling?.trigger || 'ai';
+            if (trigger === 'prompted') continue; // Skip AI-triggered, handled separately
+            if (trigger !== 'both' && trigger !== triggerType) continue;
+
+            const values = def.cycling?.values || [];
+            if (values.length === 0) continue;
+
+            const current = getVarValue(context, def);
+            const currentIndex = values.indexOf(String(current));
+            const nextIndex = (currentIndex + 1) % values.length;
+            const next = values[nextIndex];
+            setVarValue(context, def, next);
+            changed = true;
+        }
     }
     if (changed) refreshPanelIfOpen();
 }
 
-// ---------------------------------------------------------------------------
-// Prompted (AI-derived) updates
+async function runPromptedIncrements(triggerType) {
+    const context = SillyTavern.getContext();
+    const settings = getSettings();
+    if (!settings.enabled) return;
+
+    const chatId = context.chatId;
+    const activePresetIds = getPresetsForChat(chatId);
+    const variables = getAllVariablesFromPresets(activePresetIds);
+
+    // Collect counter and cycling variables with "prompted" trigger
+    const incrementCandidates = [];
+    for (const def of Object.values(variables)) {
+        if (!def.name) continue;
+        
+        if (def.category === 'counter' && def.counter?.trigger === 'prompted') {
+            incrementCandidates.push({
+                type: 'counter',
+                def,
+                currentValue: getVarValue(context, def),
+            });
+        }
+        if (def.category === 'cycling' && def.cycling?.trigger === 'prompted') {
+            incrementCandidates.push({
+                type: 'cycling',
+                def,
+                currentValue: getVarValue(context, def),
+            });
+        }
+    }
+
+    if (incrementCandidates.length === 0) return;
+    if (!Array.isArray(context.chat)) return;
+
+    setStatus('Checking for state increments…');
+
+    try {
+        const count = Math.max(1, Number(settings.contextMessageCount) || 10);
+        const recent = context.chat.slice(-count);
+        const transcript = recent
+            .map((m) => {
+                const speaker = m.is_user ? (context.name1 || 'User') : (m.name || context.name2 || 'Character');
+                return `${speaker}: ${stripHtml(m.mes)}`;
+            })
+            .filter((line) => line.trim().length > 0)
+            .join('\n');
+
+        const varLines = incrementCandidates
+            .map((cand) => {
+                const { def, currentValue, type } = cand;
+                if (type === 'counter') {
+                    const instructions = (def.counter?.promptedInstructions || def.description || '').trim();
+                    return `- "${def.name}" (counter, step ${def.counter?.step ?? 1}, current: ${currentValue}): ${instructions}`;
+                } else {
+                    const values = def.cycling?.values || [];
+                    const instructions = (def.cycling?.promptedInstructions || def.description || '').trim();
+                    return `- "${def.name}" (cycling through: ${values.join(' → ')}, current: ${currentValue}): ${instructions}`;
+                }
+            })
+            .join('\n');
+
+        const systemPrompt = [
+            'You are a silent background state-tracking process for a roleplay chat application.',
+            'You are not a character in the roleplay and must not narrate, comment, or add anything besides the requested output.',
+            'You will be given a recent conversation excerpt and a list of state counters/flags that may need to increment/cycle based on story conditions.',
+            'Decide if each variable should increment/cycle based on the conversation and the per-variable conditions.',
+            '',
+            'Output rules:',
+            '- Reply with ONLY a single raw JSON object. No markdown code fences, no explanation, no extra text.',
+            '- The object maps variable names to increment instruction: true if should increment, false if should not.',
+            '- Example: {"rounds": true, "tournament_phase": false} means increment "rounds" but leave "tournament_phase" unchanged.',
+            '',
+            'Variables that may increment:',
+            varLines,
+        ].join('\n');
+
+        const messages = [
+            { role: 'system', content: systemPrompt },
+            { role: 'system', content: transcript ? `Recent conversation:\n${transcript}` : 'No conversation yet.' },
+            { role: 'user', content: 'Output the JSON object now. JSON only, no other text.' },
+        ];
+
+        const raw = await callBackgroundLLM(context, settings, messages, Number(settings.responseLength) || 300);
+
+        const parsed = extractJsonObject(raw);
+        if (!parsed) {
+            console.warn(LOG_PREFIX, 'could not parse increment JSON:', raw);
+            setStatus('Increment check failed — response was not valid JSON. See console.', true);
+            return;
+        }
+
+        let changedCount = 0;
+        for (const cand of incrementCandidates) {
+            const { def, type } = cand;
+            const shouldIncrement = parsed[def.name] === true;
+            if (!shouldIncrement) continue;
+
+            if (type === 'counter') {
+                const current = Number(getVarValue(context, def)) || 0;
+                const step = Number(def.counter?.step ?? 1) || 0;
+                const direction = def.counter?.direction === 'decrement' ? -1 : 1;
+                const next = clampNumber(def, current + direction * step);
+                setVarValue(context, def, next);
+                changedCount++;
+            } else if (type === 'cycling') {
+                const values = def.cycling?.values || [];
+                const current = getVarValue(context, def);
+                const currentIndex = values.indexOf(String(current));
+                const nextIndex = (currentIndex + 1) % values.length;
+                const next = values[nextIndex];
+                setVarValue(context, def, next);
+                changedCount++;
+            }
+        }
+
+        if (changedCount > 0) {
+            setStatus(`State incremented (${changedCount} variable${changedCount === 1 ? '' : 's'}).`);
+        } else {
+            setStatus('No state increments needed.');
+        }
+    } catch (err) {
+        console.error(LOG_PREFIX, 'prompted increment check failed', err);
+        setStatus('Increment check failed — see browser console for details.', true);
+    } finally {
+        refreshPanelIfOpen();
+    }
+}
 // ---------------------------------------------------------------------------
 
 function stripHtml(str) {
@@ -467,13 +1282,21 @@ async function runPromptedUpdates(triggerType) {
 
     const chatId = context.chatId;
     const activePresetIds = getPresetsForChat(chatId);
-    const variables = getAllVariablesFromPresets(activePresetIds);
-
-    const defs = Object.values(variables).filter((def) => {
-        if (def.category !== 'prompted' || !def.name) return false;
-        if (triggerType === 'manual-all') return true;
-        return Array.isArray(def.prompted?.triggers) && def.prompted.triggers.includes(triggerType);
-    });
+    
+    // Filter presets that have this trigger enabled
+    let presetsToUpdate = [];
+    if (triggerType === 'manual-all') {
+        presetsToUpdate = activePresetIds;
+    } else {
+        presetsToUpdate = activePresetIds.filter(presetId => {
+            const preset = settings.presets[presetId];
+            return preset && Array.isArray(preset.triggers) && preset.triggers.includes(triggerType);
+        });
+    }
+    
+    // Collect all prompted variables from presets that should update
+    const variables = getAllVariablesFromPresets(presetsToUpdate);
+    const defs = Object.values(variables).filter((def) => def.category === 'prompted' && def.name);
 
     if (defs.length === 0) return;
     if (!Array.isArray(context.chat)) return;
@@ -582,11 +1405,13 @@ function registerEvents() {
     eventSource.on(eventTypes.USER_MESSAGE_RENDERED, () => {
         runCounters('user');
         runPromptedUpdates('user');
+        runPromptedIncrements('user');
     });
 
     eventSource.on(eventTypes.CHARACTER_MESSAGE_RENDERED, () => {
         runCounters('ai');
         runPromptedUpdates('ai');
+        runPromptedIncrements('ai');
     });
 
     eventSource.on(eventTypes.GENERATION_AFTER_COMMANDS, () => {
@@ -596,6 +1421,13 @@ function registerEvents() {
     if (eventTypes.GROUP_MEMBER_DRAFTED) {
         eventSource.on(eventTypes.GROUP_MEMBER_DRAFTED, () => {
             runPromptedUpdates('group_draft');
+        });
+    }
+
+    // Hook into world info to apply conditional filtering
+    if (eventTypes.WORLD_INFO_ACTIVATED) {
+        eventSource.on(eventTypes.WORLD_INFO_ACTIVATED, () => {
+            applyWorldInfoConditionalFiltering();
         });
     }
 
@@ -676,9 +1508,10 @@ function renderTrackerPanel() {
     const context = SillyTavern.getContext();
     const settings = getSettings();
     const showHidden = !!settings.trackerShowHidden;
-    const chatId = context.chatId;
-    const activePresetIds = getPresetsForChat(chatId);
-    const variables = getAllVariablesFromPresets(activePresetIds);
+    
+    // Get presets that are marked to show in tracker (not based on active presets, but on tracker selection)
+    const trackerPresetIds = getTrackerPresets();
+    const variables = getAllVariablesFromPresets(trackerPresetIds);
 
     const defs = Object.values(variables)
         .filter((def) => def.name && (def.showInTracker !== false || showHidden))
@@ -747,7 +1580,7 @@ function buildTrackerPanel() {
         '<div id="se_tracker_header">' +
         '<span id="se_tracker_title">State Tracker</span>' +
         '<span class="se-tracker-header-actions">' +
-        '<button id="se_tracker_debug_toggle" class="se-tracker-btn" title="Show hidden/debug variables">Debug</button>' +
+        '<button id="se_tracker_debug_toggle" class="se-tracker-btn" title="Show hidden/debug variables"><i class="fa-solid fa-bug"></i></button>' +
         '<button id="se_tracker_collapse" class="se-tracker-btn" title="Collapse">–</button>' +
         '<button id="se_tracker_close" class="se-tracker-btn" title="Hide panel">×</button>' +
         '</span>' +
@@ -813,6 +1646,7 @@ function setStatus(text, isError = false) {
 
 function categoryLabel(cat) {
     if (cat === 'counter') return 'Counter';
+    if (cat === 'cycling') return 'Cycling';
     if (cat === 'prompted') return 'Prompted';
     return 'Manual';
 }
@@ -821,11 +1655,16 @@ function typeLabel(type) {
     if (type === 'number') return 'Number';
     if (type === 'boolean') return 'True/False';
     if (type === 'enum') return 'Choice';
+    if (type === 'array') return 'Array';
     return 'Text';
 }
 
 function formatValueForDisplay(value) {
     if (typeof value === 'boolean') return value ? 'true' : 'false';
+    if (Array.isArray(value)) {
+        if (value.length === 0) return '[]';
+        return `[${value.map(v => typeof v === 'string' ? `"${v}"` : String(v)).join(', ')}]`;
+    }
     if (value === '' || value === undefined || value === null) return '—';
     return String(value);
 }
@@ -915,10 +1754,19 @@ function renderVarTable() {
 function toggleEditorSections() {
     const type = $('#se_f_type').val();
     const category = $('#se_f_category').val();
+    const counterTrigger = $('#se_f_counter_trigger').val();
+    const cyclingTrigger = $('#se_f_cycling_trigger').val();
+    
     $('#se_f_enum_row').toggle(type === 'enum');
     $('#se_f_minmax_row').toggle(type === 'number');
+    $('#se_f_array_row').toggle(type === 'array');
     $('.se-cat-counter').toggle(category === 'counter');
+    $('.se-cat-cycling').toggle(category === 'cycling');
     $('.se-cat-prompted').toggle(category === 'prompted');
+    
+    // Show prompted instruction sections for AI-triggered increments
+    $('#se_f_counter_prompted_section').toggle(category === 'counter' && counterTrigger === 'prompted');
+    $('#se_f_cycling_prompted_section').toggle(category === 'cycling' && cyclingTrigger === 'prompted');
 }
 
 function openEditor(def) {
@@ -938,9 +1786,19 @@ function openEditor(def) {
     $('#se_f_description').val(d.description);
     $('#se_f_reset_on_new_chat').prop('checked', !!d.resetOnNewChat);
     $('#se_f_show_in_tracker').prop('checked', d.showInTracker !== false);
+    
+    // Counter fields
     $('#se_f_counter_trigger').val(d.counter?.trigger || 'ai');
     $('#se_f_counter_direction').val(d.counter?.direction || 'increment');
     $('#se_f_counter_step').val(d.counter?.step ?? 1);
+    $('#se_f_counter_prompted_instructions').val(d.counter?.promptedInstructions || '');
+    
+    // Cycling fields
+    $('#se_f_cycling_values').val((d.cycling?.values || []).join('\n'));
+    $('#se_f_cycling_trigger').val(d.cycling?.trigger || 'ai');
+    $('#se_f_cycling_prompted_instructions').val(d.cycling?.promptedInstructions || '');
+    
+    // Prompted fields
     const activeTriggers = Array.isArray(d.prompted?.triggers) ? d.prompted.triggers : [];
     $('.se-f-prompted-trigger').each(function () {
         $(this).prop('checked', activeTriggers.includes($(this).val()));
@@ -964,6 +1822,11 @@ function readEditorForm() {
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
 
+    const cyclingValues = String($('#se_f_cycling_values').val() || '')
+        .split('\n')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+
     return {
         id: $('#se_edit_id').val(),
         name: String($('#se_f_name').val() || '').trim(),
@@ -982,6 +1845,12 @@ function readEditorForm() {
             trigger: $('#se_f_counter_trigger').val(),
             direction: $('#se_f_counter_direction').val(),
             step: Number($('#se_f_counter_step').val()) || 1,
+            promptedInstructions: String($('#se_f_counter_prompted_instructions').val() || ''),
+        },
+        cycling: {
+            trigger: $('#se_f_cycling_trigger').val(),
+            values: cyclingValues,
+            promptedInstructions: String($('#se_f_cycling_prompted_instructions').val() || ''),
         },
         prompted: {
             triggers: $('.se-f-prompted-trigger:checked').map(function () { return $(this).val(); }).get(),
@@ -1022,6 +1891,10 @@ function saveVariableFromEditor() {
     }
     if (def.type === 'enum' && def.enumValues.length === 0) {
         setStatus('Add at least one allowed value for a choice-list variable.', true);
+        return;
+    }
+    if (def.category === 'cycling' && def.cycling.values.length === 0) {
+        setStatus('Add at least one value for a cycling variable.', true);
         return;
     }
 
@@ -1122,8 +1995,13 @@ function bindPanelEvents() {
     $('#se_cancel_edit').on('click', closeEditor);
     $('#se_save_var').on('click', saveVariableFromEditor);
 
+    $('#se_cancel_preset_edit').on('click', () => $('#se_preset_editor').hide());
+    $('#se_save_preset').on('click', savePresetSettings);
+
     $('#se_f_type').on('change', toggleEditorSections);
     $('#se_f_category').on('change', toggleEditorSections);
+    $('#se_f_counter_trigger').on('change', toggleEditorSections);
+    $('#se_f_cycling_trigger').on('change', toggleEditorSections);
 
     $('#se_var_tbody').on('click', '.se-edit-btn', function () {
        const id = $(this).closest('tr').attr('data-id');
@@ -1139,7 +2017,55 @@ function bindPanelEvents() {
        deleteVariable(id);
     });
 
+    // World Info Conditions UI event listeners
+    $('#se_wi_manage_conditions').on('click', openWorldInfoConditionManager);
+    $('#se_wi_entry_select').on('change', function () {
+        const entryKey = $(this).val();
+        const detailsSection = document.getElementById('se_wi_entry_details');
+        if (!detailsSection) return;
+        
+        if (!entryKey) {
+            detailsSection.style.display = 'none';
+            return;
+        }
+        
+        detailsSection.style.display = 'block';
+        
+        // Update entry name
+        const entries = getWorldInfoEntries();
+        const entry = entries.find(e => makeWIEntryKey(e.world || e.book || 'unknown', e.uid) === entryKey);
+        if (entry) {
+            document.getElementById('se_wi_entry_name').textContent = entry.comment || entry.name || `[${entry.uid}]`;
+        }
+        
+        // Render conditions
+        renderWIConditions(entryKey);
+        updateWIEntryStatus(entryKey);
+        closeWIConditionEditor();
+    });
+    
+    $('#se_wi_add_condition').on('click', function () {
+        const entryKey = document.getElementById('se_wi_entry_select').value;
+        if (entryKey) {
+            openWIConditionEditor(entryKey);
+        }
+    });
+    
+    $('#se_wi_save_condition').on('click', saveWIConditionFromUI);
+    $('#se_wi_cancel_condition').on('click', closeWIConditionEditor);
+    
+    $('#se_wi_cond_operator').on('change', function () {
+        // Hide value input for is_true/is_false operators
+        const isBoolean = this.value === 'is_true' || this.value === 'is_false';
+        const valueContainer = document.getElementById('se_wi_cond_value_container');
+        if (valueContainer) {
+            valueContainer.classList.toggle('hidden', isBoolean);
+        }
+    });
+
     renderPresetList();
+    renderTrackerPresetList();
+    renderVarTable();
 }
 
 function renderPresetList() {
@@ -1150,7 +2076,7 @@ function renderPresetList() {
     $list.empty();
 
     if (Object.keys(settings.presets).length === 0) {
-       $list.html('<div class="se-empty">No presets yet. Click "New Preset" to create one.</div>');
+       $list.html('<div class="se-empty">No presets yet. Click the + button to create one.</div>');
        return;
     }
 
@@ -1159,9 +2085,18 @@ function renderPresetList() {
        const $name = $('<span></span>').addClass('se-preset-name').text(preset.name);
        const $actions = $('<div></div>').addClass('se-preset-actions');
 
+       // Edit/Settings button
+       const $settingsBtn = $('<button></button>')
+           .addClass('se-preset-btn')
+           .html('<i class="fa-solid fa-cog"></i>')
+           .attr('title', 'Edit triggers for this preset')
+           .on('click', () => editPresetSettings(presetId));
+
+       // Rename button
        const $renameBtn = $('<button></button>')
-           .addClass('menu_button se-preset-btn')
-           .text('Rename')
+           .addClass('se-preset-btn')
+           .html('<i class="fa-solid fa-pencil"></i>')
+           .attr('title', 'Rename preset')
            .on('click', () => {
                const newName = prompt('New name:', preset.name);
                if (newName && newName.trim()) {
@@ -1172,9 +2107,11 @@ function renderPresetList() {
                }
            });
 
+       // Delete button
        const $deleteBtn = $('<button></button>')
-           .addClass('menu_button se-preset-btn')
-           .text('Delete')
+           .addClass('se-preset-btn')
+           .html('<i class="fa-solid fa-trash"></i>')
+           .attr('title', 'Delete preset (variables stay)')
            .on('click', () => {
                if (window.confirm(`Delete preset "${preset.name}"? Variables in this preset won't be deleted.`)) {
                    deletePreset(presetId);
@@ -1185,10 +2122,88 @@ function renderPresetList() {
                }
            });
 
-       $actions.append($renameBtn, $deleteBtn);
+       $actions.append($settingsBtn, $renameBtn, $deleteBtn);
        $item.append($name, $actions);
        $list.append($item);
     }
+}
+
+function renderTrackerPresetList() {
+    const settings = getSettings();
+    const $list = $('#se_tracker_preset_list');
+    if (!$list.length) return;
+
+    $list.empty();
+
+    const trackerPresets = getTrackerPresets();
+
+    if (Object.keys(settings.presets).length === 0) {
+       $list.html('<div class="se-empty">Create a preset first.</div>');
+       return;
+    }
+
+    for (const [presetId, preset] of Object.entries(settings.presets)) {
+       const isChecked = trackerPresets.includes(presetId);
+       const $item = $('<label></label>').addClass('se-tracker-preset-item checkbox_label');
+       const $checkbox = $('<input></input>')
+           .attr('type', 'checkbox')
+           .prop('checked', isChecked)
+           .on('change', function () {
+               if ($(this).is(':checked')) {
+                   addPresetToTracker(presetId);
+               } else {
+                   removePresetFromTracker(presetId);
+               }
+               renderTrackerPanel();
+               setStatus(`Tracker display updated.`);
+           });
+       const $label = $('<span></span>').text(preset.name);
+       $item.append($checkbox, $label);
+       $list.append($item);
+    }
+}
+
+function editPresetSettings(presetId) {
+    const settings = getSettings();
+    const preset = settings.presets[presetId];
+    if (!preset) return;
+
+    const $editor = $('#se_preset_editor');
+    const $title = $('#se_preset_edit_title');
+    $title.text(`Edit "${preset.name}" - Update Triggers`);
+    $('#se_preset_edit_id').val(presetId);
+
+    // Clear checkboxes
+    $('.se-preset-trigger').prop('checked', false);
+
+    // Set which triggers are active
+    if (preset.triggers && Array.isArray(preset.triggers)) {
+        preset.triggers.forEach(trigger => {
+            $(`.se-preset-trigger[value="${trigger}"]`).prop('checked', true);
+        });
+    }
+
+    $editor.show();
+    $('html, body').scrollTop($editor.offset().top - 100);
+}
+
+function savePresetSettings() {
+    const presetId = $('#se_preset_edit_id').val();
+    const settings = getSettings();
+    const preset = settings.presets[presetId];
+    if (!preset) return;
+
+    const triggers = [];
+    $('.se-preset-trigger:checked').each(function () {
+        triggers.push($(this).val());
+    });
+
+    preset.triggers = triggers;
+    persistSettings();
+    
+    $('#se_preset_editor').hide();
+    setStatus(`Triggers updated for "${preset.name}".`);
+    renderVarTable(); // Refresh in case prompt variables are shown
 }
 
 async function initPanel() {

@@ -51,21 +51,25 @@
 
             <div class="se-row se-header-row">
                 <b>Presets</b>
-                <button id="se_new_preset" class="menu_button">
+                <button id="se_new_preset" class="menu_button" title="Create a new preset">
                     <i class="fa-solid fa-plus"></i>
-                    New Preset
                 </button>
             </div>
 
             <div id="se_preset_list" class="se-preset-list"></div>
+            
+            <div class="se-row">
+                <label><b>Tracker display</b></label>
+                <small>Select which presets appear in the floating tracker panel (independent of which are active for editing):</small>
+                <div id="se_tracker_preset_list" class="se-tracker-preset-list"></div>
+            </div>
 
             <hr class="se-hr">
 
             <div class="se-row se-header-row">
                 <b>Variables</b>
-                <button id="se_add_var" class="menu_button">
+                <button id="se_add_var" class="menu_button" title="Add a new variable">
                     <i class="fa-solid fa-plus"></i>
-                    Add variable
                 </button>
             </div>
 
@@ -109,6 +113,7 @@
                         <select id="se_f_category" class="text_pole">
                             <option value="manual">Manual</option>
                             <option value="counter">Counter (auto increment/decrement)</option>
+                            <option value="cycling">Cycling (cycle through list)</option>
                             <option value="prompted">Prompted (AI-derived)</option>
                         </select>
                     </div>
@@ -129,6 +134,7 @@
                             <option value="string">Text</option>
                             <option value="boolean">True / False</option>
                             <option value="enum">Choice list</option>
+                            <option value="array">Array / List</option>
                         </select>
                     </div>
                     <div>
@@ -155,6 +161,10 @@
                     </div>
                 </div>
 
+                <div class="se-row" id="se_f_array_row" style="display:none;">
+                    <small>For array type, enter a JSON array like <code>["item1", "item2"]</code> or <code>[1, 2, 3]</code></small>
+                </div>
+
                 <div class="se-row">
                     <label for="se_f_description">Description / notes</label>
                     <textarea id="se_f_description" class="text_pole" rows="2" placeholder="What this variable represents (shown to you in the editor, and used as a fallback prompt hint)"></textarea>
@@ -168,6 +178,7 @@
                                 <option value="ai">Each AI message</option>
                                 <option value="user">Each user message</option>
                                 <option value="both">Every message</option>
+                                <option value="prompted">Ask AI when to increment</option>
                             </select>
                         </div>
                         <div>
@@ -182,21 +193,36 @@
                             <input id="se_f_counter_step" type="number" step="any" class="text_pole" value="1" />
                         </div>
                     </div>
+                    <div id="se_f_counter_prompted_section" style="display:none; margin-top:8px; padding:8px; background:rgba(128,128,128,0.05); border-radius:3px;">
+                        <label for="se_f_counter_prompted_instructions">When to increment (AI will decide)</label>
+                        <small>Tell the AI what conditions should trigger this counter to increment. Example: "Increment when a tournament round ends based on the roleplay context."</small>
+                        <textarea id="se_f_counter_prompted_instructions" class="text_pole" rows="2" placeholder="Describe the conditions for incrementing, e.g., 'Increment when a new round of combat or competition is clearly ending'"></textarea>
+                    </div>
+                </div>
+
+                <div class="se-row se-cat-cycling" style="display:none;">
+                    <label for="se_f_cycling_values">Cycle through values (one per line)</label>
+                    <small>Enter the list of values in order. Variable will cycle through them. For prompted cycling, AI will decide when to advance to the next value.</small>
+                    <textarea id="se_f_cycling_values" class="text_pole" rows="3" placeholder="1st quarter&#10;2nd quarter&#10;3rd quarter&#10;4th quarter"></textarea>
+                    <div style="margin-top:8px;">
+                        <label for="se_f_cycling_trigger">Update on</label>
+                        <select id="se_f_cycling_trigger" class="text_pole">
+                            <option value="ai">Each AI message</option>
+                            <option value="user">Each user message</option>
+                            <option value="both">Every message</option>
+                            <option value="prompted">Ask AI when to advance</option>
+                        </select>
+                    </div>
+                    <div id="se_f_cycling_prompted_section" style="display:none; margin-top:8px; padding:8px; background:rgba(128,128,128,0.05); border-radius:3px;">
+                        <label for="se_f_cycling_prompted_instructions">When to advance (AI will decide)</label>
+                        <small>Tell the AI what conditions should trigger this variable to cycle to its next value.</small>
+                        <textarea id="se_f_cycling_prompted_instructions" class="text_pole" rows="2" placeholder="Describe when to advance, e.g., 'Move to next quarter when the current quarter's events are complete'"></textarea>
+                    </div>
                 </div>
 
                 <div class="se-row se-cat-prompted" style="display:none;">
-                    <label>Update when (pick any number — like Quick Reply automation points)</label>
-                    <div class="se-checkbox-grid">
-                        <label class="checkbox_label"><input type="checkbox" class="se-f-prompted-trigger" value="startup" /><span>App / chat startup</span></label>
-                        <label class="checkbox_label"><input type="checkbox" class="se-f-prompted-trigger" value="new_chat" /><span>New chat created</span></label>
-                        <label class="checkbox_label"><input type="checkbox" class="se-f-prompted-trigger" value="chat_change" /><span>Any chat switch</span></label>
-                        <label class="checkbox_label"><input type="checkbox" class="se-f-prompted-trigger" value="user" /><span>After user message</span></label>
-                        <label class="checkbox_label"><input type="checkbox" class="se-f-prompted-trigger" value="pre_generation" /><span>Right before AI generates</span></label>
-                        <label class="checkbox_label"><input type="checkbox" class="se-f-prompted-trigger" value="ai" /><span>After AI message</span></label>
-                        <label class="checkbox_label"><input type="checkbox" class="se-f-prompted-trigger" value="group_draft" /><span>Group member drafted</span></label>
-                    </div>
-                    <small>"Right before AI generates" starts the background update early, but since it's a separate AI call it may not finish in time to affect that same reply — it'll usually be reflected starting with the next one. Leave everything unchecked to update only via the manual button / <code>/state-run</code>.</small>
                     <label for="se_f_prompted_instructions">Instructions for the AI</label>
+                    <small>This variable will be updated based on the triggers configured in the preset settings. All prompted variables in a preset update together in one LLM call for efficiency.</small>
                     <textarea id="se_f_prompted_instructions" class="text_pole" rows="3" placeholder="Describe how this value should change, e.g. 'Track how suspicious the character is of the user, 0-100. Increase on lies or evasiveness, decrease on honesty and kindness.'"></textarea>
                 </div>
 
@@ -221,10 +247,115 @@
                 </div>
             </div>
 
-            <div class="se-row se-hint">
-                <small>Reference any variable anywhere macros are supported (World Info entries, prompts, character cards) with <code id="se_macro_example2"></code>. Values are stored locally with the chat (or globally) and never added to the visible conversation.</small>
+            <!-- Preset editor (shown when editing preset settings) -->
+            <div id="se_preset_editor" class="se-editor" style="display:none;">
+                <input type="hidden" id="se_preset_edit_id" value="" />
+                
+                <div class="se-row">
+                    <label><b id="se_preset_edit_title">Edit Preset</b></label>
+                </div>
+
+                <div class="se-row">
+                    <label>Update when (this affects ALL variables in this preset)</label>
+                    <div class="se-checkbox-grid">
+                        <label class="checkbox_label"><input type="checkbox" class="se-preset-trigger" value="startup" /><span>App / chat startup</span></label>
+                        <label class="checkbox_label"><input type="checkbox" class="se-preset-trigger" value="new_chat" /><span>New chat created</span></label>
+                        <label class="checkbox_label"><input type="checkbox" class="se-preset-trigger" value="chat_change" /><span>Any chat switch</span></label>
+                        <label class="checkbox_label"><input type="checkbox" class="se-preset-trigger" value="user" /><span>After user message</span></label>
+                        <label class="checkbox_label"><input type="checkbox" class="se-preset-trigger" value="pre_generation" /><span>Right before AI generates</span></label>
+                        <label class="checkbox_label"><input type="checkbox" class="se-preset-trigger" value="ai" /><span>After AI message</span></label>
+                        <label class="checkbox_label"><input type="checkbox" class="se-preset-trigger" value="group_draft" /><span>Group member drafted</span></label>
+                    </div>
+                    <small>Leave all unchecked to only update via the manual button or <code>/state-run</code>. All variables in this preset will update together on the selected events.</small>
+                </div>
+
+                <div class="se-row se-editor-actions">
+                    <button id="se_save_preset" class="menu_button">Save preset settings</button>
+                    <button id="se_cancel_preset_edit" class="menu_button">Cancel</button>
+                </div>
             </div>
 
-        </div>
-    </div>
-</div>
+            <hr class="se-hr">
+
+            <div class="se-row se-header-row">
+                <b>World Info Conditions</b>
+                <small style="font-weight:normal;">Control which lorebook entries appear based on state variables</small>
+            </div>
+
+            <div id="se_wi_editor_section" style="display:none;">
+                <div class="se-row">
+                    <label for="se_wi_entry_select">Select world info entry to configure</label>
+                    <select id="se_wi_entry_select" class="text_pole">
+                        <option value="">Loading entries...</option>
+                    </select>
+                </div>
+
+                <div id="se_wi_entry_details" style="display:none;">
+                    <div class="se-row">
+                        <label><b id="se_wi_entry_name">Entry Name</b></label>
+                        <div id="se_wi_entry_status" class="se-wi-status"></div>
+                    </div>
+
+                    <div class="se-row">
+                        <label><b>Conditions</b> (all must be true for entry to display)</label>
+                        <small>Leave empty to always display this entry.</small>
+                        <div id="se_wi_conditions_list" class="se-conditions-list"></div>
+                    </div>
+
+                    <div class="se-row se-wi-add-condition">
+                        <button id="se_wi_add_condition" class="menu_button" title="Add condition">
+                            <i class="fa-solid fa-plus"></i> Add condition
+                        </button>
+                    </div>
+
+                    <div id="se_wi_condition_editor" style="display:none; padding:8px; background:rgba(128,128,128,0.05); border-radius:3px;">
+                        <div class="se-row se-grid3">
+                            <div>
+                                <label for="se_wi_cond_variable">Variable</label>
+                                <select id="se_wi_cond_variable" class="text_pole">
+                                    <option value="">-- Select variable --</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="se_wi_cond_operator">Operator</label>
+                                <select id="se_wi_cond_operator" class="text_pole">
+                                    <option value="equals">equals</option>
+                                    <option value="not_equals">not equals</option>
+                                    <option value="greater_than">greater than</option>
+                                    <option value="less_than">less than</option>
+                                    <option value="greater_or_equal">≥ greater or equal</option>
+                                    <option value="less_or_equal">≤ less or equal</option>
+                                    <option value="contains">contains</option>
+                                    <option value="not_contains">not contains</option>
+                                    <option value="in_list">in list</option>
+                                    <option value="regex">regex pattern</option>
+                                    <option value="is_true">is true</option>
+                                    <option value="is_false">is false</option>
+                                </select>
+                            </div>
+                            <div id="se_wi_cond_value_container">
+                                <label for="se_wi_cond_value">Value</label>
+                                <input id="se_wi_cond_value" type="text" class="text_pole" placeholder="comma-separated for 'in list'" />
+                            </div>
+                        </div>
+                        <div class="se-row se-editor-actions">
+                            <button id="se_wi_save_condition" class="menu_button">Add condition</button>
+                            <button id="se_wi_cancel_condition" class="menu_button">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="se_wi_no_entries" class="se-empty" style="display:none;">
+                    No world info entries loaded yet. Create a world book and add entries to configure conditions.
+                </div>
+            </div>
+
+            <div id="se_wi_button_section" class="se-row">
+                <button id="se_wi_manage_conditions" class="menu_button">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    Manage World Info Conditions
+                </button>
+                <small>Configure which lorebook entries display based on your state variables</small>
+            </div>
+
+            <hr class="se-hr">
