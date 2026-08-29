@@ -269,9 +269,9 @@ function blankDefinition() {
         id: genId(),
         name: '',
         label: '',
-        category: 'manual', // manual | counter | prompted
+        category: 'manual', // manual | counter | cycling | prompted
         scope: 'chat', // chat | global
-        type: 'number', // number | string | boolean | enum
+        type: 'number', // number | string | boolean | enum | array
         enumValues: [],
         default: '0',
         min: '',
@@ -279,7 +279,8 @@ function blankDefinition() {
         description: '',
         resetOnNewChat: false,
         showInTracker: true,
-        counter: { trigger: 'ai', direction: 'increment', step: 1 },
+        counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
+        cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
         prompted: { triggers: ['ai'], instructions: '' },
     };
 }
@@ -545,22 +546,168 @@ function runCounters(triggerType) {
 
     let changed = false;
     for (const def of Object.values(variables)) {
-        if (def.category !== 'counter' || !def.name) continue;
-        const trigger = def.counter?.trigger || 'ai';
-        if (trigger !== 'both' && trigger !== triggerType) continue;
+        if (!def.name) continue;
 
-        const current = Number(getVarValue(context, def)) || 0;
-        const step = Number(def.counter?.step ?? 1) || 0;
-        const direction = def.counter?.direction === 'decrement' ? -1 : 1;
-        const next = clampNumber(def, current + direction * step);
-        setVarValue(context, def, next);
-        changed = true;
+        // Handle counter variables
+        if (def.category === 'counter') {
+            const trigger = def.counter?.trigger || 'ai';
+            if (trigger === 'prompted') continue; // Skip AI-triggered, handled separately
+            if (trigger !== 'both' && trigger !== triggerType) continue;
+
+            const current = Number(getVarValue(context, def)) || 0;
+            const step = Number(def.counter?.step ?? 1) || 0;
+            const direction = def.counter?.direction === 'decrement' ? -1 : 1;
+            const next = clampNumber(def, current + direction * step);
+            setVarValue(context, def, next);
+            changed = true;
+        }
+
+        // Handle cycling variables
+        if (def.category === 'cycling') {
+            const trigger = def.cycling?.trigger || 'ai';
+            if (trigger === 'prompted') continue; // Skip AI-triggered, handled separately
+            if (trigger !== 'both' && trigger !== triggerType) continue;
+
+            const values = def.cycling?.values || [];
+            if (values.length === 0) continue;
+
+            const current = getVarValue(context, def);
+            const currentIndex = values.indexOf(String(current));
+            const nextIndex = (currentIndex + 1) % values.length;
+            const next = values[nextIndex];
+            setVarValue(context, def, next);
+            changed = true;
+        }
     }
     if (changed) refreshPanelIfOpen();
 }
 
-// ---------------------------------------------------------------------------
-// Prompted (AI-derived) updates
+async function runPromptedIncrements(triggerType) {
+    const context = SillyTavern.getContext();
+    const settings = getSettings();
+    if (!settings.enabled) return;
+
+    const chatId = context.chatId;
+    const activePresetIds = getPresetsForChat(chatId);
+    const variables = getAllVariablesFromPresets(activePresetIds);
+
+    // Collect counter and cycling variables with "prompted" trigger
+    const incrementCandidates = [];
+    for (const def of Object.values(variables)) {
+        if (!def.name) continue;
+        
+        if (def.category === 'counter' && def.counter?.trigger === 'prompted') {
+            incrementCandidates.push({
+                type: 'counter',
+                def,
+                currentValue: getVarValue(context, def),
+            });
+        }
+        if (def.category === 'cycling' && def.cycling?.trigger === 'prompted') {
+            incrementCandidates.push({
+                type: 'cycling',
+                def,
+                currentValue: getVarValue(context, def),
+            });
+        }
+    }
+
+    if (incrementCandidates.length === 0) return;
+    if (!Array.isArray(context.chat)) return;
+
+    setStatus('Checking for state increments…');
+
+    try {
+        const count = Math.max(1, Number(settings.contextMessageCount) || 10);
+        const recent = context.chat.slice(-count);
+        const transcript = recent
+            .map((m) => {
+                const speaker = m.is_user ? (context.name1 || 'User') : (m.name || context.name2 || 'Character');
+                return `${speaker}: ${stripHtml(m.mes)}`;
+            })
+            .filter((line) => line.trim().length > 0)
+            .join('\n');
+
+        const varLines = incrementCandidates
+            .map((cand) => {
+                const { def, currentValue, type } = cand;
+                if (type === 'counter') {
+                    const instructions = (def.counter?.promptedInstructions || def.description || '').trim();
+                    return `- "${def.name}" (counter, step ${def.counter?.step ?? 1}, current: ${currentValue}): ${instructions}`;
+                } else {
+                    const values = def.cycling?.values || [];
+                    const instructions = (def.cycling?.promptedInstructions || def.description || '').trim();
+                    return `- "${def.name}" (cycling through: ${values.join(' → ')}, current: ${currentValue}): ${instructions}`;
+                }
+            })
+            .join('\n');
+
+        const systemPrompt = [
+            'You are a silent background state-tracking process for a roleplay chat application.',
+            'You are not a character in the roleplay and must not narrate, comment, or add anything besides the requested output.',
+            'You will be given a recent conversation excerpt and a list of state counters/flags that may need to increment/cycle based on story conditions.',
+            'Decide if each variable should increment/cycle based on the conversation and the per-variable conditions.',
+            '',
+            'Output rules:',
+            '- Reply with ONLY a single raw JSON object. No markdown code fences, no explanation, no extra text.',
+            '- The object maps variable names to increment instruction: true if should increment, false if should not.',
+            '- Example: {"rounds": true, "tournament_phase": false} means increment "rounds" but leave "tournament_phase" unchanged.',
+            '',
+            'Variables that may increment:',
+            varLines,
+        ].join('\n');
+
+        const messages = [
+            { role: 'system', content: systemPrompt },
+            { role: 'system', content: transcript ? `Recent conversation:\n${transcript}` : 'No conversation yet.' },
+            { role: 'user', content: 'Output the JSON object now. JSON only, no other text.' },
+        ];
+
+        const raw = await callBackgroundLLM(context, settings, messages, Number(settings.responseLength) || 300);
+
+        const parsed = extractJsonObject(raw);
+        if (!parsed) {
+            console.warn(LOG_PREFIX, 'could not parse increment JSON:', raw);
+            setStatus('Increment check failed — response was not valid JSON. See console.', true);
+            return;
+        }
+
+        let changedCount = 0;
+        for (const cand of incrementCandidates) {
+            const { def, type } = cand;
+            const shouldIncrement = parsed[def.name] === true;
+            if (!shouldIncrement) continue;
+
+            if (type === 'counter') {
+                const current = Number(getVarValue(context, def)) || 0;
+                const step = Number(def.counter?.step ?? 1) || 0;
+                const direction = def.counter?.direction === 'decrement' ? -1 : 1;
+                const next = clampNumber(def, current + direction * step);
+                setVarValue(context, def, next);
+                changedCount++;
+            } else if (type === 'cycling') {
+                const values = def.cycling?.values || [];
+                const current = getVarValue(context, def);
+                const currentIndex = values.indexOf(String(current));
+                const nextIndex = (currentIndex + 1) % values.length;
+                const next = values[nextIndex];
+                setVarValue(context, def, next);
+                changedCount++;
+            }
+        }
+
+        if (changedCount > 0) {
+            setStatus(`State incremented (${changedCount} variable${changedCount === 1 ? '' : 's'}).`);
+        } else {
+            setStatus('No state increments needed.');
+        }
+    } catch (err) {
+        console.error(LOG_PREFIX, 'prompted increment check failed', err);
+        setStatus('Increment check failed — see browser console for details.', true);
+    } finally {
+        refreshPanelIfOpen();
+    }
+}
 // ---------------------------------------------------------------------------
 
 function stripHtml(str) {
@@ -760,11 +907,13 @@ function registerEvents() {
     eventSource.on(eventTypes.USER_MESSAGE_RENDERED, () => {
         runCounters('user');
         runPromptedUpdates('user');
+        runPromptedIncrements('user');
     });
 
     eventSource.on(eventTypes.CHARACTER_MESSAGE_RENDERED, () => {
         runCounters('ai');
         runPromptedUpdates('ai');
+        runPromptedIncrements('ai');
     });
 
     eventSource.on(eventTypes.GENERATION_AFTER_COMMANDS, () => {
@@ -992,6 +1141,7 @@ function setStatus(text, isError = false) {
 
 function categoryLabel(cat) {
     if (cat === 'counter') return 'Counter';
+    if (cat === 'cycling') return 'Cycling';
     if (cat === 'prompted') return 'Prompted';
     return 'Manual';
 }
@@ -1099,11 +1249,19 @@ function renderVarTable() {
 function toggleEditorSections() {
     const type = $('#se_f_type').val();
     const category = $('#se_f_category').val();
+    const counterTrigger = $('#se_f_counter_trigger').val();
+    const cyclingTrigger = $('#se_f_cycling_trigger').val();
+    
     $('#se_f_enum_row').toggle(type === 'enum');
     $('#se_f_minmax_row').toggle(type === 'number');
     $('#se_f_array_row').toggle(type === 'array');
     $('.se-cat-counter').toggle(category === 'counter');
+    $('.se-cat-cycling').toggle(category === 'cycling');
     $('.se-cat-prompted').toggle(category === 'prompted');
+    
+    // Show prompted instruction sections for AI-triggered increments
+    $('#se_f_counter_prompted_section').toggle(category === 'counter' && counterTrigger === 'prompted');
+    $('#se_f_cycling_prompted_section').toggle(category === 'cycling' && cyclingTrigger === 'prompted');
 }
 
 function openEditor(def) {
@@ -1123,9 +1281,19 @@ function openEditor(def) {
     $('#se_f_description').val(d.description);
     $('#se_f_reset_on_new_chat').prop('checked', !!d.resetOnNewChat);
     $('#se_f_show_in_tracker').prop('checked', d.showInTracker !== false);
+    
+    // Counter fields
     $('#se_f_counter_trigger').val(d.counter?.trigger || 'ai');
     $('#se_f_counter_direction').val(d.counter?.direction || 'increment');
     $('#se_f_counter_step').val(d.counter?.step ?? 1);
+    $('#se_f_counter_prompted_instructions').val(d.counter?.promptedInstructions || '');
+    
+    // Cycling fields
+    $('#se_f_cycling_values').val((d.cycling?.values || []).join('\n'));
+    $('#se_f_cycling_trigger').val(d.cycling?.trigger || 'ai');
+    $('#se_f_cycling_prompted_instructions').val(d.cycling?.promptedInstructions || '');
+    
+    // Prompted fields
     const activeTriggers = Array.isArray(d.prompted?.triggers) ? d.prompted.triggers : [];
     $('.se-f-prompted-trigger').each(function () {
         $(this).prop('checked', activeTriggers.includes($(this).val()));
@@ -1149,6 +1317,11 @@ function readEditorForm() {
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
 
+    const cyclingValues = String($('#se_f_cycling_values').val() || '')
+        .split('\n')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+
     return {
         id: $('#se_edit_id').val(),
         name: String($('#se_f_name').val() || '').trim(),
@@ -1167,6 +1340,12 @@ function readEditorForm() {
             trigger: $('#se_f_counter_trigger').val(),
             direction: $('#se_f_counter_direction').val(),
             step: Number($('#se_f_counter_step').val()) || 1,
+            promptedInstructions: String($('#se_f_counter_prompted_instructions').val() || ''),
+        },
+        cycling: {
+            trigger: $('#se_f_cycling_trigger').val(),
+            values: cyclingValues,
+            promptedInstructions: String($('#se_f_cycling_prompted_instructions').val() || ''),
         },
         prompted: {
             triggers: $('.se-f-prompted-trigger:checked').map(function () { return $(this).val(); }).get(),
@@ -1207,6 +1386,10 @@ function saveVariableFromEditor() {
     }
     if (def.type === 'enum' && def.enumValues.length === 0) {
         setStatus('Add at least one allowed value for a choice-list variable.', true);
+        return;
+    }
+    if (def.category === 'cycling' && def.cycling.values.length === 0) {
+        setStatus('Add at least one value for a cycling variable.', true);
         return;
     }
 
@@ -1312,6 +1495,8 @@ function bindPanelEvents() {
 
     $('#se_f_type').on('change', toggleEditorSections);
     $('#se_f_category').on('change', toggleEditorSections);
+    $('#se_f_counter_trigger').on('change', toggleEditorSections);
+    $('#se_f_cycling_trigger').on('change', toggleEditorSections);
 
     $('#se_var_tbody').on('click', '.se-edit-btn', function () {
        const id = $(this).closest('tr').attr('data-id');

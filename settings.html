@@ -113,6 +113,7 @@
                         <select id="se_f_category" class="text_pole">
                             <option value="manual">Manual</option>
                             <option value="counter">Counter (auto increment/decrement)</option>
+                            <option value="cycling">Cycling (cycle through list)</option>
                             <option value="prompted">Prompted (AI-derived)</option>
                         </select>
                     </div>
@@ -177,6 +178,7 @@
                                 <option value="ai">Each AI message</option>
                                 <option value="user">Each user message</option>
                                 <option value="both">Every message</option>
+                                <option value="prompted">Ask AI when to increment</option>
                             </select>
                         </div>
                         <div>
@@ -190,6 +192,31 @@
                             <label for="se_f_counter_step">Step amount</label>
                             <input id="se_f_counter_step" type="number" step="any" class="text_pole" value="1" />
                         </div>
+                    </div>
+                    <div id="se_f_counter_prompted_section" style="display:none; margin-top:8px; padding:8px; background:rgba(128,128,128,0.05); border-radius:3px;">
+                        <label for="se_f_counter_prompted_instructions">When to increment (AI will decide)</label>
+                        <small>Tell the AI what conditions should trigger this counter to increment. Example: "Increment when a tournament round ends based on the roleplay context."</small>
+                        <textarea id="se_f_counter_prompted_instructions" class="text_pole" rows="2" placeholder="Describe the conditions for incrementing, e.g., 'Increment when a new round of combat or competition is clearly ending'"></textarea>
+                    </div>
+                </div>
+
+                <div class="se-row se-cat-cycling" style="display:none;">
+                    <label for="se_f_cycling_values">Cycle through values (one per line)</label>
+                    <small>Enter the list of values in order. Variable will cycle through them. For prompted cycling, AI will decide when to advance to the next value.</small>
+                    <textarea id="se_f_cycling_values" class="text_pole" rows="3" placeholder="1st quarter&#10;2nd quarter&#10;3rd quarter&#10;4th quarter"></textarea>
+                    <div style="margin-top:8px;">
+                        <label for="se_f_cycling_trigger">Update on</label>
+                        <select id="se_f_cycling_trigger" class="text_pole">
+                            <option value="ai">Each AI message</option>
+                            <option value="user">Each user message</option>
+                            <option value="both">Every message</option>
+                            <option value="prompted">Ask AI when to advance</option>
+                        </select>
+                    </div>
+                    <div id="se_f_cycling_prompted_section" style="display:none; margin-top:8px; padding:8px; background:rgba(128,128,128,0.05); border-radius:3px;">
+                        <label for="se_f_cycling_prompted_instructions">When to advance (AI will decide)</label>
+                        <small>Tell the AI what conditions should trigger this variable to cycle to its next value.</small>
+                        <textarea id="se_f_cycling_prompted_instructions" class="text_pole" rows="2" placeholder="Describe when to advance, e.g., 'Move to next quarter when the current quarter's events are complete'"></textarea>
                     </div>
                 </div>
 
