@@ -83,12 +83,20 @@ function migrateToPresets(settings) {
             id: defaultPresetId,
             name: 'Default',
             variables: settings.variables,
+            triggers: ['ai'],  // Default trigger for prompted variables
+            showInTracker: false,  // Default tracker visibility
         };
         settings.presets = { [defaultPresetId]: defaultPreset };
         settings.defaultPresetForNewChats = defaultPresetId;
         settings.chatPresetBindings = {}; // Will be populated on chat switch
         delete settings.variables; // Remove old flat structure
         console.log(LOG_PREFIX, 'migrated old variables to default preset');
+    }
+    
+    // Normalize existing presets
+    for (const preset of Object.values(settings.presets || {})) {
+        if (!Array.isArray(preset.triggers)) preset.triggers = ['ai'];
+        if (preset.showInTracker === undefined) preset.showInTracker = false;
     }
 }
 
@@ -133,6 +141,8 @@ function createPreset(name) {
         id: presetId,
         name: name || 'New Preset',
         variables: {},
+        triggers: ['ai'],  // Preset-level: when to update prompted variables in this preset
+        showInTracker: false,  // Whether this preset's variables appear in the floating tracker
     };
     const settings = getSettings();
     settings.presets[presetId] = preset;
@@ -194,6 +204,36 @@ function removePresetFromChat(chatId, presetId) {
     if (idx !== -1) {
         bindings.splice(idx, 1);
         setPresetsForChat(chatId, bindings);
+    }
+}
+
+function getTrackerPresets() {
+    const settings = getSettings();
+    if (!settings.trackerPresets || !Array.isArray(settings.trackerPresets)) {
+        settings.trackerPresets = [];
+    }
+    return settings.trackerPresets;
+}
+
+function setTrackerPresets(presetIds) {
+    getSettings().trackerPresets = presetIds;
+    persistSettings();
+}
+
+function addPresetToTracker(presetId) {
+    const trackerPresets = getTrackerPresets();
+    if (!trackerPresets.includes(presetId)) {
+        trackerPresets.push(presetId);
+        setTrackerPresets(trackerPresets);
+    }
+}
+
+function removePresetFromTracker(presetId) {
+    const trackerPresets = getTrackerPresets();
+    const idx = trackerPresets.indexOf(presetId);
+    if (idx !== -1) {
+        trackerPresets.splice(idx, 1);
+        setTrackerPresets(trackerPresets);
     }
 }
 
@@ -467,13 +507,21 @@ async function runPromptedUpdates(triggerType) {
 
     const chatId = context.chatId;
     const activePresetIds = getPresetsForChat(chatId);
-    const variables = getAllVariablesFromPresets(activePresetIds);
-
-    const defs = Object.values(variables).filter((def) => {
-        if (def.category !== 'prompted' || !def.name) return false;
-        if (triggerType === 'manual-all') return true;
-        return Array.isArray(def.prompted?.triggers) && def.prompted.triggers.includes(triggerType);
-    });
+    
+    // Filter presets that have this trigger enabled
+    let presetsToUpdate = [];
+    if (triggerType === 'manual-all') {
+        presetsToUpdate = activePresetIds;
+    } else {
+        presetsToUpdate = activePresetIds.filter(presetId => {
+            const preset = settings.presets[presetId];
+            return preset && Array.isArray(preset.triggers) && preset.triggers.includes(triggerType);
+        });
+    }
+    
+    // Collect all prompted variables from presets that should update
+    const variables = getAllVariablesFromPresets(presetsToUpdate);
+    const defs = Object.values(variables).filter((def) => def.category === 'prompted' && def.name);
 
     if (defs.length === 0) return;
     if (!Array.isArray(context.chat)) return;
@@ -676,9 +724,10 @@ function renderTrackerPanel() {
     const context = SillyTavern.getContext();
     const settings = getSettings();
     const showHidden = !!settings.trackerShowHidden;
-    const chatId = context.chatId;
-    const activePresetIds = getPresetsForChat(chatId);
-    const variables = getAllVariablesFromPresets(activePresetIds);
+    
+    // Get presets that are marked to show in tracker (not based on active presets, but on tracker selection)
+    const trackerPresetIds = getTrackerPresets();
+    const variables = getAllVariablesFromPresets(trackerPresetIds);
 
     const defs = Object.values(variables)
         .filter((def) => def.name && (def.showInTracker !== false || showHidden))
