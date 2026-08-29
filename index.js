@@ -17,6 +17,9 @@ const MODULE_NAME = 'state_engine';
 const EXT_TEMPLATE_PATH = 'third-party/SillyTavern-StateEngine';
 const LOG_PREFIX = '[State Engine]';
 
+// Session state (not persisted)
+let currentPresetId = null;
+
 const DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
     contextMessageCount: 10,
@@ -321,8 +324,16 @@ function setVarValue(context, def, rawValue) {
 
 function applyDefaultsForMissing() {
     const context = SillyTavern.getContext();
-    const settings = getSettings();
-    for (const def of Object.values(settings.variables)) {
+    const chatId = context.chatId;
+    const activePresetIds = getPresetsForChat(chatId);
+    
+    // If no presets bound to this chat, use default
+    if (activePresetIds.length === 0 && getSettings().defaultPresetForNewChats) {
+        activePresetIds.push(getSettings().defaultPresetForNewChats);
+    }
+    
+    const variables = getAllVariablesFromPresets(activePresetIds);
+    for (const def of Object.values(variables)) {
         if (!def.name) continue;
         const store = varStore(context, def);
         let exists = false;
@@ -339,8 +350,11 @@ function applyDefaultsForMissing() {
 
 function applyResetOnNewChat() {
     const context = SillyTavern.getContext();
-    const settings = getSettings();
-    for (const def of Object.values(settings.variables)) {
+    const chatId = context.chatId;
+    const activePresetIds = getPresetsForChat(chatId);
+    const variables = getAllVariablesFromPresets(activePresetIds);
+    
+    for (const def of Object.values(variables)) {
         if (!def.name || !def.resetOnNewChat) continue;
         setVarValue(context, def, getDefaultValue(def));
     }
@@ -355,8 +369,12 @@ function runCounters(triggerType) {
     const settings = getSettings();
     if (!settings.enabled) return;
 
+    const chatId = context.chatId;
+    const activePresetIds = getPresetsForChat(chatId);
+    const variables = getAllVariablesFromPresets(activePresetIds);
+
     let changed = false;
-    for (const def of Object.values(settings.variables)) {
+    for (const def of Object.values(variables)) {
         if (def.category !== 'counter' || !def.name) continue;
         const trigger = def.counter?.trigger || 'ai';
         if (trigger !== 'both' && trigger !== triggerType) continue;
@@ -447,7 +465,11 @@ async function runPromptedUpdates(triggerType) {
     const settings = getSettings();
     if (!settings.enabled) return;
 
-    const defs = Object.values(settings.variables).filter((def) => {
+    const chatId = context.chatId;
+    const activePresetIds = getPresetsForChat(chatId);
+    const variables = getAllVariablesFromPresets(activePresetIds);
+
+    const defs = Object.values(variables).filter((def) => {
         if (def.category !== 'prompted' || !def.name) return false;
         if (triggerType === 'manual-all') return true;
         return Array.isArray(def.prompted?.triggers) && def.prompted.triggers.includes(triggerType);
@@ -654,8 +676,11 @@ function renderTrackerPanel() {
     const context = SillyTavern.getContext();
     const settings = getSettings();
     const showHidden = !!settings.trackerShowHidden;
+    const chatId = context.chatId;
+    const activePresetIds = getPresetsForChat(chatId);
+    const variables = getAllVariablesFromPresets(activePresetIds);
 
-    const defs = Object.values(settings.variables)
+    const defs = Object.values(variables)
         .filter((def) => def.name && (def.showInTracker !== false || showHidden))
         .sort((a, b) => (a.label || a.name).localeCompare(b.label || b.name));
 
@@ -808,15 +833,64 @@ function formatValueForDisplay(value) {
 function renderVarTable() {
     const context = SillyTavern.getContext();
     const settings = getSettings();
+    const chatId = context.chatId;
+    const activePresetIds = getPresetsForChat(chatId);
+    
+    // If no active presets, use default
+    if (activePresetIds.length === 0 && settings.defaultPresetForNewChats) {
+        activePresetIds.push(settings.defaultPresetForNewChats);
+        setPresetsForChat(chatId, activePresetIds);
+    }
+    
+    // Render tabs
+    const $tabContainer = $('#se_preset_tabs');
+    if (!$tabContainer.length) return;
+    
+    $tabContainer.empty();
+    
+    // If no presets at all, show a message
+    if (Object.keys(settings.presets).length === 0) {
+        $tabContainer.html('<div class="se-empty">No presets created. Click "New Preset" to get started.</div>');
+        return;
+    }
+    
+    // Create tab buttons
+    for (const presetId of activePresetIds) {
+        const preset = settings.presets[presetId];
+        if (!preset) continue;
+        
+        const $tab = $('<button></button>')
+            .addClass('se-tab-btn')
+            .toggleClass('se-tab-active', presetId === currentPresetId)
+            .text(preset.name)
+            .on('click', () => {
+                currentPresetId = presetId;
+                renderVarTable();
+            });
+        $tabContainer.append($tab);
+    }
+    
+    // Render variables for current preset
     const $tbody = $('#se_var_tbody');
     const $empty = $('#se_var_empty');
     if (!$tbody.length) return;
-
+    
     $tbody.empty();
-    const defs = Object.values(settings.variables).sort((a, b) => a.name.localeCompare(b.name));
-
+    
+    // If no current preset, select the first active one
+    if (!currentPresetId && activePresetIds.length > 0) {
+        currentPresetId = activePresetIds[0];
+    }
+    
+    const currentPreset = settings.presets[currentPresetId];
+    if (!currentPreset) {
+        $empty.show();
+        return;
+    }
+    
+    const defs = Object.values(currentPreset.variables).sort((a, b) => a.name.localeCompare(b.name));
     $empty.toggle(defs.length === 0);
-
+    
     for (const def of defs) {
         const value = def.name ? getVarValue(context, def) : '';
         const $row = $('<tr></tr>').attr('data-id', def.id);
@@ -919,6 +993,18 @@ function readEditorForm() {
 function saveVariableFromEditor() {
     const settings = getSettings();
     const def = readEditorForm();
+    const presetId = currentPresetId;
+
+    if (!presetId) {
+        setStatus('No preset selected.', true);
+        return;
+    }
+    
+    const preset = settings.presets[presetId];
+    if (!preset) {
+        setStatus('Preset not found.', true);
+        return;
+    }
 
     if (!def.name) {
         setStatus('Variable name is required.', true);
@@ -929,9 +1015,9 @@ function saveVariableFromEditor() {
         return;
     }
     const isNew = $('#se_editor').data('is-new');
-    const nameTaken = Object.values(settings.variables).some((other) => other.id !== def.id && other.name === def.name);
+    const nameTaken = Object.values(preset.variables).some((other) => other.id !== def.id && other.name === def.name);
     if (nameTaken) {
-        setStatus(`A variable named "${def.name}" already exists.`, true);
+        setStatus(`A variable named "${def.name}" already exists in this preset.`, true);
         return;
     }
     if (def.type === 'enum' && def.enumValues.length === 0) {
@@ -939,7 +1025,7 @@ function saveVariableFromEditor() {
         return;
     }
 
-    settings.variables[def.id] = def;
+    preset.variables[def.id] = def;
     persistSettings();
 
     if (isNew) {
@@ -954,12 +1040,20 @@ function saveVariableFromEditor() {
 
 function deleteVariable(id) {
     const settings = getSettings();
-    const def = settings.variables[id];
+    const presetId = currentPresetId;
+    
+    if (!presetId) return;
+    
+    const preset = settings.presets[presetId];
+    if (!preset) return;
+    
+    const def = preset.variables[id];
     if (!def) return;
+    
     if (!window.confirm(`Delete variable "${def.name}"? This only removes the definition; any value already stored for it is left in place.`)) {
         return;
     }
-    delete settings.variables[id];
+    delete preset.variables[id];
     persistSettings();
     renderVarTable();
     setStatus(`Deleted "${def.name}".`);
@@ -1013,6 +1107,17 @@ function bindPanelEvents() {
 
     $('#se_run_now').on('click', () => runPromptedUpdates('manual-all'));
 
+    $('#se_new_preset').on('click', () => {
+       const name = prompt('Preset name:');
+       if (name && name.trim()) {
+           const presetId = createPreset(name.trim());
+           currentPresetId = presetId;
+           renderPresetList();
+           renderVarTable();
+           setStatus(`Created preset "${name}".`);
+       }
+    });
+
     $('#se_add_var').on('click', () => openEditor(null));
     $('#se_cancel_edit').on('click', closeEditor);
     $('#se_save_var').on('click', saveVariableFromEditor);
@@ -1021,14 +1126,69 @@ function bindPanelEvents() {
     $('#se_f_category').on('change', toggleEditorSections);
 
     $('#se_var_tbody').on('click', '.se-edit-btn', function () {
-        const id = $(this).closest('tr').attr('data-id');
-        const def = getSettings().variables[id];
-        if (def) openEditor(def);
+       const id = $(this).closest('tr').attr('data-id');
+       if (!currentPresetId) return;
+       const preset = getSettings().presets[currentPresetId];
+       if (preset) {
+           const def = preset.variables[id];
+           if (def) openEditor(def);
+       }
     });
     $('#se_var_tbody').on('click', '.se-delete-btn', function () {
-        const id = $(this).closest('tr').attr('data-id');
-        deleteVariable(id);
+       const id = $(this).closest('tr').attr('data-id');
+       deleteVariable(id);
     });
+
+    renderPresetList();
+}
+
+function renderPresetList() {
+    const settings = getSettings();
+    const $list = $('#se_preset_list');
+    if (!$list.length) return;
+
+    $list.empty();
+
+    if (Object.keys(settings.presets).length === 0) {
+       $list.html('<div class="se-empty">No presets yet. Click "New Preset" to create one.</div>');
+       return;
+    }
+
+    for (const [presetId, preset] of Object.entries(settings.presets)) {
+       const $item = $('<div></div>').addClass('se-preset-item');
+       const $name = $('<span></span>').addClass('se-preset-name').text(preset.name);
+       const $actions = $('<div></div>').addClass('se-preset-actions');
+
+       const $renameBtn = $('<button></button>')
+           .addClass('menu_button se-preset-btn')
+           .text('Rename')
+           .on('click', () => {
+               const newName = prompt('New name:', preset.name);
+               if (newName && newName.trim()) {
+                   renamePreset(presetId, newName.trim());
+                   renderPresetList();
+                   renderVarTable();
+                   setStatus(`Renamed to "${newName}".`);
+               }
+           });
+
+       const $deleteBtn = $('<button></button>')
+           .addClass('menu_button se-preset-btn')
+           .text('Delete')
+           .on('click', () => {
+               if (window.confirm(`Delete preset "${preset.name}"? Variables in this preset won't be deleted.`)) {
+                   deletePreset(presetId);
+                   if (currentPresetId === presetId) currentPresetId = null;
+                   renderPresetList();
+                   renderVarTable();
+                   setStatus(`Deleted "${preset.name}".`);
+               }
+           });
+
+       $actions.append($renameBtn, $deleteBtn);
+       $item.append($name, $actions);
+       $list.append($item);
+    }
 }
 
 async function initPanel() {

@@ -160,6 +160,68 @@
     margin-bottom: 6px;
 }
 
+/* Preset management */
+#state_engine_settings .se-preset-list {
+    margin-bottom: 8px;
+}
+
+#state_engine_settings .se-preset-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 8px;
+    background: rgba(128, 128, 128, 0.06);
+    border: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.2));
+    border-radius: 4px;
+    margin-bottom: 4px;
+}
+
+#state_engine_settings .se-preset-name {
+    font-weight: 500;
+    flex: 1;
+}
+
+#state_engine_settings .se-preset-actions {
+    display: flex;
+    gap: 4px;
+}
+
+#state_engine_settings .se-preset-btn {
+    padding: 2px 6px;
+    font-size: 0.8em;
+}
+
+/* Preset tabs */
+#state_engine_settings .se-tabs {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.2));
+    flex-wrap: wrap;
+}
+
+#state_engine_settings .se-tab-btn {
+    background: transparent;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.2));
+    border-bottom: none;
+    color: inherit;
+    padding: 4px 10px;
+    border-radius: 4px 4px 0 0;
+    cursor: pointer;
+    font-size: 0.9em;
+    opacity: 0.7;
+}
+
+#state_engine_settings .se-tab-btn:hover {
+    opacity: 0.9;
+}
+
+#state_engine_settings .se-tab-btn.se-tab-active {
+    background: rgba(128, 128, 128, 0.1);
+    border-color: var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.4));
+    opacity: 1;
+}
+
 /* -------------------------------------------------------------------- */
 /* Floating tracker panel (lives outside #state_engine_settings, in     */
 /* document.body, so its rules are unscoped)                            */
