@@ -497,6 +497,106 @@ function migrateToPresets(settings) {
         if (!Array.isArray(preset.triggers)) preset.triggers = ['ai'];
         if (preset.showInTracker === undefined) preset.showInTracker = false;
     }
+
+    seedExamplePresets(settings);
+}
+
+function seedExamplePresets(settings) {
+    if (Object.keys(settings.presets || {}).length > 0) return;
+
+    const makeVar = (overrides) => normalizeDefinition({
+        id: genId(),
+        name: '',
+        label: '',
+        description: '',
+        category: 'manual',
+        scope: 'chat',
+        type: 'string',
+        defaultValue: '',
+        enumValues: [],
+        min: null,
+        max: null,
+        resetOnNewChat: false,
+        showInTracker: true,
+        counter: { trigger: 'ai', direction: 'increment', step: 1 },
+        cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
+        prompted: { triggers: ['ai'], instructions: '' },
+        ...overrides,
+    });
+
+    const presets = [
+        {
+            name: 'Story Progression',
+            triggers: ['ai'],
+            vars: [
+                makeVar({ name: 'chapter', label: 'Chapter', category: 'counter', type: 'number', defaultValue: 1, min: 1, counter: { trigger: 'prompted', direction: 'increment', step: 1 }, description: 'Main narrative chapter progression.' }),
+                makeVar({ name: 'arc_phase', label: 'Arc Phase', category: 'cycling', type: 'enum', enumValues: ['setup', 'rising_action', 'climax', 'aftermath'], defaultValue: 'setup', cycling: { trigger: 'prompted', values: ['setup', 'rising_action', 'climax', 'aftermath'], promptedInstructions: 'Advance when the current arc phase has clearly resolved in roleplay context.' }, description: 'Current high-level story arc phase.' }),
+                makeVar({ name: 'quest_active', label: 'Quest Active', category: 'manual', type: 'boolean', defaultValue: false, description: 'Whether a main quest is currently active.' }),
+                makeVar({ name: 'quest_name', label: 'Quest Name', category: 'manual', type: 'string', defaultValue: '', description: 'Current quest title.' }),
+            ],
+        },
+        {
+            name: 'Location and Time',
+            triggers: ['user', 'ai'],
+            vars: [
+                makeVar({ name: 'current_location', label: 'Current Location', category: 'manual', type: 'enum', enumValues: ['tavern', 'market', 'arena', 'road', 'wilderness'], defaultValue: 'tavern', description: 'Current scene location.' }),
+                makeVar({ name: 'time_of_day', label: 'Time of Day', category: 'cycling', type: 'enum', enumValues: ['dawn', 'morning', 'noon', 'evening', 'night'], defaultValue: 'morning', cycling: { trigger: 'prompted', values: ['dawn', 'morning', 'noon', 'evening', 'night'], promptedInstructions: 'Advance when scene pacing or narration implies time has progressed.' }, description: 'Narrative time period.' }),
+                makeVar({ name: 'weather', label: 'Weather', category: 'prompted', type: 'string', defaultValue: 'clear', prompted: { triggers: ['ai'], instructions: 'Infer weather from current narrative context. Keep concise (1-3 words).' }, description: 'Current weather condition.' }),
+                makeVar({ name: 'is_indoor', label: 'Indoor Scene', category: 'manual', type: 'boolean', defaultValue: true, description: 'Whether current scene is indoors.' }),
+            ],
+        },
+        {
+            name: 'Relationships',
+            triggers: ['ai'],
+            vars: [
+                makeVar({ name: 'npc_trust', label: 'NPC Trust', category: 'prompted', type: 'number', defaultValue: 25, min: 0, max: 100, prompted: { triggers: ['ai'], instructions: 'Estimate trust from recent interactions on a 0-100 scale.' }, description: 'General trust level with a focal NPC.' }),
+                makeVar({ name: 'npc_affection', label: 'NPC Affection', category: 'prompted', type: 'number', defaultValue: 20, min: 0, max: 100, prompted: { triggers: ['ai'], instructions: 'Estimate affection from recent interactions on a 0-100 scale.' }, description: 'General affection level with a focal NPC.' }),
+                makeVar({ name: 'relationship_status', label: 'Relationship Status', category: 'cycling', type: 'enum', enumValues: ['strangers', 'acquaintances', 'friends', 'allies', 'intimate'], defaultValue: 'strangers', cycling: { trigger: 'prompted', values: ['strangers', 'acquaintances', 'friends', 'allies', 'intimate'], promptedInstructions: 'Advance only when interactions clearly justify relationship progression.' }, description: 'Current relationship state.' }),
+                makeVar({ name: 'betrayal_flag', label: 'Betrayal Flag', category: 'manual', type: 'boolean', defaultValue: false, description: 'Set true if betrayal has occurred.' }),
+            ],
+        },
+        {
+            name: 'Combat and Encounter',
+            triggers: ['user', 'ai'],
+            vars: [
+                makeVar({ name: 'combat_active', label: 'Combat Active', category: 'manual', type: 'boolean', defaultValue: false, description: 'Whether combat is currently active.' }),
+                makeVar({ name: 'rounds_elapsed', label: 'Rounds Elapsed', category: 'counter', type: 'number', defaultValue: 0, min: 0, counter: { trigger: 'prompted', direction: 'increment', step: 1 }, description: 'Combat rounds elapsed.' }),
+                makeVar({ name: 'threat_level', label: 'Threat Level', category: 'manual', type: 'enum', enumValues: ['low', 'medium', 'high', 'critical'], defaultValue: 'low', description: 'Current encounter danger level.' }),
+                makeVar({ name: 'encounter_tags', label: 'Encounter Tags', category: 'manual', type: 'array', defaultValue: '[]', description: 'Array of current encounter tags, e.g. [\"ambush\",\"boss\"].' }),
+            ],
+        },
+        {
+            name: 'Mixed Showcase',
+            triggers: ['ai'],
+            vars: [
+                makeVar({ name: 'mood', label: 'Mood', category: 'prompted', type: 'string', defaultValue: 'neutral', prompted: { triggers: ['ai'], instructions: 'Infer room mood in one word: calm, tense, hopeful, ominous, etc.' }, description: 'Prompted text example.' }),
+                makeVar({ name: 'danger_score', label: 'Danger Score', category: 'prompted', type: 'number', defaultValue: 10, min: 0, max: 100, prompted: { triggers: ['ai'], instructions: 'Estimate danger from recent context from 0-100.' }, description: 'Prompted number with min/max.' }),
+                makeVar({ name: 'story_flags', label: 'Story Flags', category: 'manual', type: 'array', defaultValue: '[]', description: 'Manual array, e.g. [\"blood_moon\",\"debt_paid\"].' }),
+                makeVar({ name: 'event_stage', label: 'Event Stage', category: 'cycling', type: 'enum', enumValues: ['seed', 'signal', 'portent', 'manifest'], defaultValue: 'seed', cycling: { trigger: 'prompted', values: ['seed', 'signal', 'portent', 'manifest'], promptedInstructions: 'Advance when narrative omens intensify enough to justify next stage.' }, description: 'Cycling enum showcase.' }),
+                makeVar({ name: 'heartbeat', label: 'Heartbeat Counter', category: 'counter', type: 'number', defaultValue: 0, counter: { trigger: 'both', direction: 'increment', step: 1 }, description: 'Simple per-message counter.' }),
+                makeVar({ name: 'omens_unlocked', label: 'Omens Unlocked', category: 'manual', type: 'boolean', defaultValue: false, description: 'Manual boolean toggle showcase.' }),
+            ],
+        },
+    ];
+
+    const createdPresetIds = [];
+    for (const seed of presets) {
+        const presetId = genId();
+        const variables = {};
+        for (const def of seed.vars) variables[def.id] = def;
+        settings.presets[presetId] = {
+            id: presetId,
+            name: seed.name,
+            variables,
+            triggers: seed.triggers,
+            showInTracker: true,
+        };
+        createdPresetIds.push(presetId);
+    }
+
+    settings.defaultPresetForNewChats = createdPresetIds[0] || '';
+    settings.trackerPresets = createdPresetIds.slice(0, 3);
+    console.log(`${LOG_PREFIX} seeded ${createdPresetIds.length} example presets for first-run experience`);
 }
 
 // Fills in fields that may be missing from a definition created by an
