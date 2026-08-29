@@ -498,12 +498,10 @@ function migrateToPresets(settings) {
         if (preset.showInTracker === undefined) preset.showInTracker = false;
     }
 
-    seedExamplePresets(settings);
+    seedExamplePresets(settings, false);
 }
 
-function seedExamplePresets(settings) {
-    if (Object.keys(settings.presets || {}).length > 0) return;
-
+function getStarterPresetBlueprints() {
     const makeVar = (overrides) => normalizeDefinition({
         id: genId(),
         name: '',
@@ -524,7 +522,7 @@ function seedExamplePresets(settings) {
         ...overrides,
     });
 
-    const presets = [
+    return [
         {
             name: 'Story Progression',
             triggers: ['ai'],
@@ -578,9 +576,24 @@ function seedExamplePresets(settings) {
             ],
         },
     ];
+}
+
+function seedExamplePresets(settings, restoreMissing) {
+    const blueprints = getStarterPresetBlueprints();
+    const existingNames = new Map();
+    for (const preset of Object.values(settings.presets || {})) {
+        existingNames.set(String(preset.name || '').toLowerCase(), preset);
+    }
 
     const createdPresetIds = [];
-    for (const seed of presets) {
+    for (const seed of blueprints) {
+        const existing = existingNames.get(seed.name.toLowerCase());
+        if (existing && !restoreMissing) {
+            continue;
+        }
+        if (existing && restoreMissing) {
+            continue;
+        }
         const presetId = genId();
         const variables = {};
         for (const def of seed.vars) variables[def.id] = def;
@@ -595,7 +608,9 @@ function seedExamplePresets(settings) {
     }
 
     settings.defaultPresetForNewChats = createdPresetIds[0] || '';
-    settings.trackerPresets = createdPresetIds.slice(0, 3);
+    if (createdPresetIds.length > 0 && !settings.trackerPresets?.length) {
+        settings.trackerPresets = createdPresetIds.slice(0, 3);
+    }
     console.log(`${LOG_PREFIX} seeded ${createdPresetIds.length} example presets for first-run experience`);
 }
 
@@ -1989,6 +2004,18 @@ function bindPanelEvents() {
            renderVarTable();
            setStatus(`Created preset "${name}".`);
        }
+    });
+
+    $('#se_restore_defaults').on('click', () => {
+        const settings = getSettings();
+        const before = Object.keys(settings.presets).length;
+        seedExamplePresets(settings, true);
+        persistSettings();
+        renderPresetList();
+        renderTrackerPresetList();
+        renderVarTable();
+        const after = Object.keys(settings.presets).length;
+        setStatus(after > before ? 'Starter presets restored.' : 'Starter presets are already present.');
     });
 
     $('#se_add_var').on('click', () => openEditor(null));
