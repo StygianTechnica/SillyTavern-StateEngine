@@ -133,6 +133,7 @@
                             <option value="string">Text</option>
                             <option value="boolean">True / False</option>
                             <option value="enum">Choice list</option>
+                            <option value="array">Array / List</option>
                         </select>
                     </div>
                     <div>
@@ -157,6 +158,10 @@
                         <label for="se_f_max">Maximum (optional)</label>
                         <input id="se_f_max" type="number" step="any" class="text_pole" />
                     </div>
+                </div>
+
+                <div class="se-row" id="se_f_array_row" style="display:none;">
+                    <small>For array type, enter a JSON array like <code>["item1", "item2"]</code> or <code>[1, 2, 3]</code></small>
                 </div>
 
                 <div class="se-row">

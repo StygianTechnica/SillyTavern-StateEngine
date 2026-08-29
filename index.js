@@ -294,6 +294,13 @@ function getDefaultValue(def) {
             return String(def.default).trim().toLowerCase() === 'true';
         case 'enum':
             return def.enumValues.includes(def.default) ? def.default : (def.enumValues[0] ?? '');
+        case 'array':
+            if (Array.isArray(def.default)) return [...def.default];
+            if (typeof def.default === 'string' && def.default.trim()) {
+                try { return JSON.parse(def.default); }
+                catch { return []; }
+            }
+            return [];
         default:
             return def.default ?? '';
     }
@@ -308,6 +315,115 @@ function clampNumber(def, n) {
         result = Math.min(result, Number(def.max));
     }
     return result;
+}
+
+// Validate a value against type constraints; return {valid: boolean, value: coerced, error?: string}
+function validateValueStrict(def, raw) {
+    if (raw === undefined || raw === null) {
+        return { valid: true, value: getDefaultValue(def) };
+    }
+
+    const errors = [];
+    let coerced = raw;
+
+    try {
+        switch (def.type) {
+            case 'number': {
+                if (typeof raw === 'number') {
+                    coerced = raw;
+                } else if (typeof raw === 'string' && raw.trim() !== '') {
+                    coerced = Number(raw.trim());
+                    if (Number.isNaN(coerced)) {
+                        errors.push(`Cannot convert "${raw}" to number`);
+                        coerced = getDefaultValue(def);
+                        break;
+                    }
+                } else {
+                    errors.push(`Expected number, got ${typeof raw}`);
+                    coerced = getDefaultValue(def);
+                    break;
+                }
+                
+                if (!Number.isFinite(coerced)) {
+                    errors.push(`Not a valid number (got ${raw})`);
+                    coerced = getDefaultValue(def);
+                } else {
+                    coerced = clampNumber(def, coerced);
+                }
+                break;
+            }
+
+            case 'boolean': {
+                if (typeof raw === 'boolean') {
+                    coerced = raw;
+                } else if (typeof raw === 'number') {
+                    coerced = raw !== 0;
+                } else if (typeof raw === 'string') {
+                    const s = raw.trim().toLowerCase();
+                    if (['true', 'yes', '1', 'on'].includes(s)) {
+                        coerced = true;
+                    } else if (['false', 'no', '0', 'off'].includes(s)) {
+                        coerced = false;
+                    } else {
+                        errors.push(`"${raw}" is not a valid boolean`);
+                        coerced = getDefaultValue(def);
+                    }
+                } else {
+                    errors.push(`Expected boolean, got ${typeof raw}`);
+                    coerced = getDefaultValue(def);
+                }
+                break;
+            }
+
+            case 'enum': {
+                const s = String(raw);
+                if (!def.enumValues.includes(s)) {
+                    errors.push(`"${s}" not in allowed values: [${def.enumValues.join(', ')}]`);
+                    coerced = getDefaultValue(def);
+                } else {
+                    coerced = s;
+                }
+                break;
+            }
+
+            case 'array': {
+                if (Array.isArray(raw)) {
+                    coerced = raw;
+                } else if (typeof raw === 'string') {
+                    try {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            coerced = parsed;
+                        } else {
+                            errors.push(`Parsed JSON is not an array`);
+                            coerced = getDefaultValue(def);
+                        }
+                    } catch (e) {
+                        errors.push(`Invalid JSON for array: ${e.message}`);
+                        coerced = getDefaultValue(def);
+                    }
+                } else {
+                    errors.push(`Expected array, got ${typeof raw}`);
+                    coerced = getDefaultValue(def);
+                }
+                break;
+            }
+
+            default: {
+                // String type: accept anything, stringify it
+                coerced = String(raw);
+            }
+        }
+    } catch (err) {
+        errors.push(`Validation error: ${err.message}`);
+        coerced = getDefaultValue(def);
+    }
+
+    return {
+        valid: errors.length === 0,
+        value: coerced,
+        error: errors.length > 0 ? errors.join('; ') : undefined,
+    };
 }
 
 function coerceValue(def, raw) {
@@ -326,6 +442,14 @@ function coerceValue(def, raw) {
         case 'enum': {
             const s = String(raw);
             return def.enumValues.includes(s) ? s : getDefaultValue(def);
+        }
+        case 'array': {
+            if (Array.isArray(raw)) return raw;
+            if (typeof raw === 'string') {
+                try { return JSON.parse(raw); }
+                catch { return getDefaultValue(def); }
+            }
+            return getDefaultValue(def);
         }
         default:
             return String(raw);
@@ -350,13 +474,18 @@ function getVarValue(context, def) {
 
 function setVarValue(context, def, rawValue) {
     const store = varStore(context, def);
-    const coerced = coerceValue(def, rawValue);
+    const validation = validateValueStrict(def, rawValue);
+    
+    if (!validation.valid && validation.error) {
+        console.warn(LOG_PREFIX, `Type validation for "${def.name}": ${validation.error}`);
+    }
+    
     try {
-        store.set(def.name, coerced);
+        store.set(def.name, validation.value);
     } catch (err) {
         console.error(LOG_PREFIX, `could not write variable "${def.name}"`, err);
     }
-    return coerced;
+    return validation.value;
 }
 
 // ---------------------------------------------------------------------------
@@ -871,11 +1000,16 @@ function typeLabel(type) {
     if (type === 'number') return 'Number';
     if (type === 'boolean') return 'True/False';
     if (type === 'enum') return 'Choice';
+    if (type === 'array') return 'Array';
     return 'Text';
 }
 
 function formatValueForDisplay(value) {
     if (typeof value === 'boolean') return value ? 'true' : 'false';
+    if (Array.isArray(value)) {
+        if (value.length === 0) return '[]';
+        return `[${value.map(v => typeof v === 'string' ? `"${v}"` : String(v)).join(', ')}]`;
+    }
     if (value === '' || value === undefined || value === null) return '—';
     return String(value);
 }
@@ -967,6 +1101,7 @@ function toggleEditorSections() {
     const category = $('#se_f_category').val();
     $('#se_f_enum_row').toggle(type === 'enum');
     $('#se_f_minmax_row').toggle(type === 'number');
+    $('#se_f_array_row').toggle(type === 'array');
     $('.se-cat-counter').toggle(category === 'counter');
     $('.se-cat-prompted').toggle(category === 'prompted');
 }
