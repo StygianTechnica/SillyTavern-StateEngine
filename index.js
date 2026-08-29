@@ -26,7 +26,9 @@ const DEFAULT_SETTINGS = Object.freeze({
     trackerPanelPos: { top: 100, left: 100 },
     trackerPanelCollapsed: false,
     trackerShowHidden: false,
-    variables: {},
+    presets: {},
+    chatPresetBindings: {},
+    defaultPresetForNewChats: '',
 });
 
 // All the moments a "prompted" variable can be told to re-evaluate at —
@@ -51,11 +53,40 @@ function getSettings() {
     if (!settings.trackerPanelPos || typeof settings.trackerPanelPos !== 'object') settings.trackerPanelPos = { top: 100, left: 100 };
     if (settings.trackerPanelCollapsed === undefined) settings.trackerPanelCollapsed = false;
     if (settings.trackerShowHidden === undefined) settings.trackerShowHidden = false;
-    if (!settings.variables || typeof settings.variables !== 'object') settings.variables = {};
-    for (const def of Object.values(settings.variables)) {
-        normalizeDefinition(def);
+    
+    // Migrate old flat variables to presets
+    migrateToPresets(settings);
+    
+    if (!settings.presets || typeof settings.presets !== 'object') settings.presets = {};
+    if (!settings.chatPresetBindings || typeof settings.chatPresetBindings !== 'object') settings.chatPresetBindings = {};
+    if (!settings.defaultPresetForNewChats) settings.defaultPresetForNewChats = '';
+    
+    // Normalize all presets and their variables
+    for (const preset of Object.values(settings.presets)) {
+        if (!preset.variables || typeof preset.variables !== 'object') preset.variables = {};
+        for (const def of Object.values(preset.variables)) {
+            normalizeDefinition(def);
+        }
     }
+    
     return settings;
+}
+
+function migrateToPresets(settings) {
+    // If using old flat variables format and no presets yet, create default preset
+    if (settings.variables && Object.keys(settings.variables).length > 0 && Object.keys(settings.presets || {}).length === 0) {
+        const defaultPresetId = genId();
+        const defaultPreset = {
+            id: defaultPresetId,
+            name: 'Default',
+            variables: settings.variables,
+        };
+        settings.presets = { [defaultPresetId]: defaultPreset };
+        settings.defaultPresetForNewChats = defaultPresetId;
+        settings.chatPresetBindings = {}; // Will be populated on chat switch
+        delete settings.variables; // Remove old flat structure
+        console.log(LOG_PREFIX, 'migrated old variables to default preset');
+    }
 }
 
 // Fills in fields that may be missing from a definition created by an
@@ -87,6 +118,92 @@ function persistSettings() {
     } catch (err) {
         console.error(LOG_PREFIX, 'failed to save settings', err);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Preset management
+// ---------------------------------------------------------------------------
+
+function createPreset(name) {
+    const presetId = genId();
+    const preset = {
+        id: presetId,
+        name: name || 'New Preset',
+        variables: {},
+    };
+    const settings = getSettings();
+    settings.presets[presetId] = preset;
+    persistSettings();
+    return presetId;
+}
+
+function renamePreset(presetId, newName) {
+    const settings = getSettings();
+    if (settings.presets[presetId]) {
+        settings.presets[presetId].name = newName;
+        persistSettings();
+    }
+}
+
+function deletePreset(presetId) {
+    const settings = getSettings();
+    delete settings.presets[presetId];
+    
+    // Remove from all chat bindings
+    for (const bindingList of Object.values(settings.chatPresetBindings)) {
+        const idx = bindingList.indexOf(presetId);
+        if (idx !== -1) bindingList.splice(idx, 1);
+    }
+    
+    // Clear as default if it was
+    if (settings.defaultPresetForNewChats === presetId) {
+        settings.defaultPresetForNewChats = '';
+    }
+    
+    persistSettings();
+}
+
+function getPresetsForChat(chatId) {
+    const settings = getSettings();
+    if (!settings.chatPresetBindings[chatId]) {
+        settings.chatPresetBindings[chatId] = [];
+    }
+    return settings.chatPresetBindings[chatId];
+}
+
+function setPresetsForChat(chatId, presetIds) {
+    const settings = getSettings();
+    settings.chatPresetBindings[chatId] = presetIds;
+    persistSettings();
+}
+
+function addPresetToChat(chatId, presetId) {
+    const bindings = getPresetsForChat(chatId);
+    if (!bindings.includes(presetId)) {
+        bindings.push(presetId);
+        setPresetsForChat(chatId, bindings);
+    }
+}
+
+function removePresetFromChat(chatId, presetId) {
+    const bindings = getPresetsForChat(chatId);
+    const idx = bindings.indexOf(presetId);
+    if (idx !== -1) {
+        bindings.splice(idx, 1);
+        setPresetsForChat(chatId, bindings);
+    }
+}
+
+function getAllVariablesFromPresets(presetIds) {
+    const settings = getSettings();
+    const allVars = {};
+    for (const presetId of presetIds) {
+        const preset = settings.presets[presetId];
+        if (preset && preset.variables) {
+            Object.assign(allVars, preset.variables);
+        }
+    }
+    return allVars;
 }
 
 function structuredCloneSafe(obj) {
