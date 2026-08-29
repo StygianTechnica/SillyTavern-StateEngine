@@ -32,6 +32,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     presets: {},
     chatPresetBindings: {},
     defaultPresetForNewChats: '',
+    trackerPresets: [],
 });
 
 // All the moments a "prompted" variable can be told to re-evaluate at —
@@ -1171,6 +1172,9 @@ function bindPanelEvents() {
     $('#se_cancel_edit').on('click', closeEditor);
     $('#se_save_var').on('click', saveVariableFromEditor);
 
+    $('#se_cancel_preset_edit').on('click', () => $('#se_preset_editor').hide());
+    $('#se_save_preset').on('click', savePresetSettings);
+
     $('#se_f_type').on('change', toggleEditorSections);
     $('#se_f_category').on('change', toggleEditorSections);
 
@@ -1189,6 +1193,8 @@ function bindPanelEvents() {
     });
 
     renderPresetList();
+    renderTrackerPresetList();
+    renderVarTable();
 }
 
 function renderPresetList() {
@@ -1199,7 +1205,7 @@ function renderPresetList() {
     $list.empty();
 
     if (Object.keys(settings.presets).length === 0) {
-       $list.html('<div class="se-empty">No presets yet. Click "New Preset" to create one.</div>');
+       $list.html('<div class="se-empty">No presets yet. Click the + button to create one.</div>');
        return;
     }
 
@@ -1208,9 +1214,18 @@ function renderPresetList() {
        const $name = $('<span></span>').addClass('se-preset-name').text(preset.name);
        const $actions = $('<div></div>').addClass('se-preset-actions');
 
+       // Edit/Settings button
+       const $settingsBtn = $('<button></button>')
+           .addClass('se-preset-btn')
+           .html('<i class="fa-solid fa-cog"></i>')
+           .attr('title', 'Edit triggers for this preset')
+           .on('click', () => editPresetSettings(presetId));
+
+       // Rename button
        const $renameBtn = $('<button></button>')
-           .addClass('menu_button se-preset-btn')
-           .text('Rename')
+           .addClass('se-preset-btn')
+           .html('<i class="fa-solid fa-pencil"></i>')
+           .attr('title', 'Rename preset')
            .on('click', () => {
                const newName = prompt('New name:', preset.name);
                if (newName && newName.trim()) {
@@ -1221,9 +1236,11 @@ function renderPresetList() {
                }
            });
 
+       // Delete button
        const $deleteBtn = $('<button></button>')
-           .addClass('menu_button se-preset-btn')
-           .text('Delete')
+           .addClass('se-preset-btn')
+           .html('<i class="fa-solid fa-trash"></i>')
+           .attr('title', 'Delete preset (variables stay)')
            .on('click', () => {
                if (window.confirm(`Delete preset "${preset.name}"? Variables in this preset won't be deleted.`)) {
                    deletePreset(presetId);
@@ -1234,10 +1251,88 @@ function renderPresetList() {
                }
            });
 
-       $actions.append($renameBtn, $deleteBtn);
+       $actions.append($settingsBtn, $renameBtn, $deleteBtn);
        $item.append($name, $actions);
        $list.append($item);
     }
+}
+
+function renderTrackerPresetList() {
+    const settings = getSettings();
+    const $list = $('#se_tracker_preset_list');
+    if (!$list.length) return;
+
+    $list.empty();
+
+    const trackerPresets = getTrackerPresets();
+
+    if (Object.keys(settings.presets).length === 0) {
+       $list.html('<div class="se-empty">Create a preset first.</div>');
+       return;
+    }
+
+    for (const [presetId, preset] of Object.entries(settings.presets)) {
+       const isChecked = trackerPresets.includes(presetId);
+       const $item = $('<label></label>').addClass('se-tracker-preset-item checkbox_label');
+       const $checkbox = $('<input></input>')
+           .attr('type', 'checkbox')
+           .prop('checked', isChecked)
+           .on('change', function () {
+               if ($(this).is(':checked')) {
+                   addPresetToTracker(presetId);
+               } else {
+                   removePresetFromTracker(presetId);
+               }
+               renderTrackerPanel();
+               setStatus(`Tracker display updated.`);
+           });
+       const $label = $('<span></span>').text(preset.name);
+       $item.append($checkbox, $label);
+       $list.append($item);
+    }
+}
+
+function editPresetSettings(presetId) {
+    const settings = getSettings();
+    const preset = settings.presets[presetId];
+    if (!preset) return;
+
+    const $editor = $('#se_preset_editor');
+    const $title = $('#se_preset_edit_title');
+    $title.text(`Edit "${preset.name}" - Update Triggers`);
+    $('#se_preset_edit_id').val(presetId);
+
+    // Clear checkboxes
+    $('.se-preset-trigger').prop('checked', false);
+
+    // Set which triggers are active
+    if (preset.triggers && Array.isArray(preset.triggers)) {
+        preset.triggers.forEach(trigger => {
+            $(`.se-preset-trigger[value="${trigger}"]`).prop('checked', true);
+        });
+    }
+
+    $editor.show();
+    $('html, body').scrollTop($editor.offset().top - 100);
+}
+
+function savePresetSettings() {
+    const presetId = $('#se_preset_edit_id').val();
+    const settings = getSettings();
+    const preset = settings.presets[presetId];
+    if (!preset) return;
+
+    const triggers = [];
+    $('.se-preset-trigger:checked').each(function () {
+        triggers.push($(this).val());
+    });
+
+    preset.triggers = triggers;
+    persistSettings();
+    
+    $('#se_preset_editor').hide();
+    setStatus(`Triggers updated for "${preset.name}".`);
+    renderVarTable(); // Refresh in case prompt variables are shown
 }
 
 async function initPanel() {
