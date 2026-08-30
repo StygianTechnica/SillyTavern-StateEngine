@@ -2466,6 +2466,32 @@ async function initPanel() {
 // Stylesheet loader
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Dynamic script/stylesheet loader
+// ---------------------------------------------------------------------------
+
+function loadManagerModalScript() {
+    const scriptId = 'se-manager-modal-script';
+    if (document.getElementById(scriptId)) return Promise.resolve(); // Already loaded
+
+    const scriptPath = `scripts/extensions/${EXT_TEMPLATE_PATH}/manager-modal.js`;
+    
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.id = scriptId;
+        script.src = scriptPath;
+        script.onload = () => {
+            console.log(LOG_PREFIX, 'manager modal script loaded');
+            resolve();
+        };
+        script.onerror = () => {
+            console.error(LOG_PREFIX, 'failed to load manager modal script');
+            reject(new Error('Failed to load manager-modal.js'));
+        };
+        document.head.appendChild(script);
+    });
+}
+
 function loadManagerModalStyles() {
     const styleId = 'se-manager-modal-styles';
     if (document.getElementById(styleId)) return; // Already loaded
@@ -2500,6 +2526,7 @@ async function registerTemplates() {
 
 jQuery(async () => {
     try {
+        await loadManagerModalScript(); // Load manager-modal.js dynamically
         loadManagerModalStyles(); // Load manager-modal.css dynamically
         getSettings(); // ensure defaults exist / migrate
         await registerTemplates();
