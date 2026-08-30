@@ -2463,6 +2463,23 @@ async function initPanel() {
 }
 
 // ---------------------------------------------------------------------------
+// Stylesheet loader
+// ---------------------------------------------------------------------------
+
+function loadManagerModalStyles() {
+    const styleId = 'se-manager-modal-styles';
+    if (document.getElementById(styleId)) return; // Already loaded
+
+    const cssPath = `scripts/extensions/${EXT_TEMPLATE_PATH}/manager-modal.css`;
+    const link = document.createElement('link');
+    link.id = styleId;
+    link.rel = 'stylesheet';
+    link.href = cssPath;
+    document.head.appendChild(link);
+    console.log(LOG_PREFIX, 'manager modal styles loaded');
+}
+
+// ---------------------------------------------------------------------------
 // Template registration
 // ---------------------------------------------------------------------------
 
@@ -2483,6 +2500,7 @@ async function registerTemplates() {
 
 jQuery(async () => {
     try {
+        loadManagerModalStyles(); // Load manager-modal.css dynamically
         getSettings(); // ensure defaults exist / migrate
         await registerTemplates();
         await initPanel();
