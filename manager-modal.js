@@ -1,8 +1,8 @@
 // State Engine Manager Modal
 // Complete tabbed interface for preset/variable/trigger/worldinfo management
-// Assumes: jQuery ($), currentPresetId, getSettings(), persistSettings(), and helper functions available in global scope
+// Uses ES6 modules - imported by index.js
 
-function buildManagerModal() {
+export function buildManagerModal() {
     // Check if modal already exists
     if ($('#se-manager-overlay').length) {
         return showManagerModal();
@@ -72,21 +72,21 @@ function buildManagerModal() {
     return showManagerModal();
 }
 
-function showManagerModal() {
+export function showManagerModal() {
     const $overlay = $('#se-manager-overlay');
     if ($overlay.length) {
         $overlay.fadeIn(200);
     }
 }
 
-function hideManagerModal() {
+export function hideManagerModal() {
     const $overlay = $('#se-manager-overlay');
     if ($overlay.length) {
         $overlay.fadeOut(200);
     }
 }
 
-function renderManagerPresetsTab() {
+export function renderManagerPresetsTab() {
     const settings = getSettings();
     const $tab = $('#se-manager-presets-tab');
     if (!$tab.length) return;
@@ -137,7 +137,7 @@ function renderManagerPresetsTab() {
     $tab.html(html);
 }
 
-function renderManagerVariablesTab() {
+export function renderManagerVariablesTab() {
     const settings = getSettings();
     const $tab = $('#se-manager-variables-tab');
     if (!$tab.length) return;
@@ -207,7 +207,7 @@ function renderManagerVariablesTab() {
     }
 }
 
-function renderManagerTriggersTab() {
+export function renderManagerTriggersTab() {
     const settings = getSettings();
     const $tab = $('#se-manager-triggers-tab');
     if (!$tab.length) return;
@@ -252,7 +252,7 @@ function renderManagerTriggersTab() {
     $tab.html(html);
 }
 
-function renderManagerWorldInfoTab() {
+export function renderManagerWorldInfoTab() {
     const settings = getSettings();
     const $tab = $('#se-manager-worldinfo-tab');
     if (!$tab.length) return;
@@ -292,7 +292,7 @@ function renderManagerWorldInfoTab() {
     $tab.html(html);
 }
 
-function wireManagerModalEvents() {
+export function wireManagerModalEvents() {
     const $overlay = $('#se-manager-overlay');
     if (!$overlay.length) return;
 
