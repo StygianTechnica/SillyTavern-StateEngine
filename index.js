@@ -2237,6 +2237,8 @@ function bindPanelEvents() {
 
     $('#se_run_now').on('click', () => runPromptedUpdates('manual-all'));
 
+    $('#se_open_manager').on('click', () => buildManagerModal());
+
     $('#se_new_preset').on('click', () => {
        const name = prompt('Preset name:');
        if (name && name.trim()) {
