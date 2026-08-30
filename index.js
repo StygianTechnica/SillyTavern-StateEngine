@@ -2245,7 +2245,13 @@ function bindPanelEvents() {
 
     $('#se_run_now').on('click', () => runPromptedUpdates('manual-all'));
 
-    $('#se_open_manager').on('click', () => buildManagerModal());
+    $('#se_open_manager').on('click', function() {
+        if (typeof buildManagerModal !== 'function') {
+            alert('Manager modal is still loading. Please wait a moment and try again.');
+            return;
+        }
+        buildManagerModal();
+    });
 
     $('#se_new_preset').on('click', () => {
        const name = prompt('Preset name:');
@@ -2474,7 +2480,7 @@ function loadManagerModalScript() {
     const scriptId = 'se-manager-modal-script';
     if (document.getElementById(scriptId)) return Promise.resolve(); // Already loaded
 
-    const scriptPath = `scripts/extensions/${EXT_TEMPLATE_PATH}/manager-modal.js`;
+    const scriptPath = `scripts/extensions/${EXT_TEMPLATE_PATH}/manager-modal.js?v=${Date.now()}`;
     
     return new Promise((resolve, reject) => {
         const script = document.createElement('script');
