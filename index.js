@@ -2526,8 +2526,6 @@ async function registerTemplates() {
 
 jQuery(async () => {
     try {
-        await loadManagerModalScript(); // Load manager-modal.js dynamically
-        loadManagerModalStyles(); // Load manager-modal.css dynamically
         getSettings(); // ensure defaults exist / migrate
         await registerTemplates();
         await initPanel();
@@ -2536,6 +2534,11 @@ jQuery(async () => {
         applyDefaultsForMissing();
         // Covers the case where APP_READY already fired before we got here.
         runStartupOnce();
+        
+        // Load manager modal script AFTER everything is initialized
+        await loadManagerModalScript();
+        loadManagerModalStyles();
+        
         console.log(LOG_PREFIX, 'loaded');
     } catch (err) {
         console.error(LOG_PREFIX, 'failed to initialize', err);
