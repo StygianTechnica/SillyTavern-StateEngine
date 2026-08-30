@@ -6,7 +6,7 @@
     "js": ["index.js", "manager-modal.js"],
     "css": "style.css",
     "author": "Rebecca (with Claude)",
-    "version": "0.6.1",
+    "version": "0.6.2",
     "homePage": "",
     "auto_update": false
 }
