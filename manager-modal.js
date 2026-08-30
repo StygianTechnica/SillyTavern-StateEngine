@@ -93,7 +93,61 @@ export function renderManagerPresetsTab() {
 
     $tab.empty();
 
-    const presetList = Object.entries(settings.presets || {})
+    // Get current chat ID
+    let currentChatId = null;
+    try {
+        const context = window.SillyTavern?.getContext?.();
+        currentChatId = context?.chat?.id;
+    } catch (e) {
+        // Chat context not available
+    }
+
+    if (!currentChatId) {
+        const html = `
+            <div class="se-manager-section">
+                <div class="se-empty" style="padding: 20px; text-align: center;">
+                    <p><i class="fa-solid fa-circle-info"></i> No chat selected</p>
+                    <small>Select or create a chat to manage presets for this conversation.</small>
+                </div>
+            </div>
+        `;
+        $tab.html(html);
+        return;
+    }
+
+    // Get presets bound to current chat
+    const chatPresets = settings.chatPresetBindings[currentChatId] || [];
+    const allPresets = settings.presets || {};
+    
+    // Separate bound and unbound presets
+    const boundPresetsList = chatPresets
+        .filter(presetId => allPresets[presetId])
+        .map(presetId => {
+            const preset = allPresets[presetId];
+            const triggers = preset.triggers || [];
+            return `
+                <div class="se-manager-preset-row se-manager-preset-bound">
+                    <div class="se-manager-preset-info">
+                        <div class="se-manager-preset-name">${escapeHtml(preset.name)}</div>
+                        <small class="se-manager-preset-triggers">
+                            Triggers: ${triggers.length > 0 ? triggers.join(', ') : 'none'}
+                        </small>
+                    </div>
+                    <div class="se-manager-preset-actions">
+                        <button class="se-manager-action-btn se-manager-unbind-preset" data-preset-id="${presetId}" data-chat-id="${currentChatId}" title="Unbind from this chat">
+                            <i class="fa-solid fa-link-slash"></i>
+                        </button>
+                        <button class="se-manager-action-btn se-manager-clone-preset" data-preset-id="${presetId}" title="Clone">
+                            <i class="fa-solid fa-copy"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+        })
+        .join('');
+
+    const unboundPresetsList = Object.entries(allPresets)
+        .filter(([presetId]) => !chatPresets.includes(presetId))
         .map(([presetId, preset]) => {
             const triggers = preset.triggers || [];
             return `
@@ -105,14 +159,11 @@ export function renderManagerPresetsTab() {
                         </small>
                     </div>
                     <div class="se-manager-preset-actions">
+                        <button class="se-manager-action-btn se-manager-bind-preset" data-preset-id="${presetId}" data-chat-id="${currentChatId}" title="Bind to this chat">
+                            <i class="fa-solid fa-link"></i>
+                        </button>
                         <button class="se-manager-action-btn se-manager-clone-preset" data-preset-id="${presetId}" title="Clone">
                             <i class="fa-solid fa-copy"></i>
-                        </button>
-                        <button class="se-manager-action-btn se-manager-rename-preset" data-preset-id="${presetId}" title="Rename">
-                            <i class="fa-solid fa-pencil"></i>
-                        </button>
-                        <button class="se-manager-action-btn se-manager-delete-preset" data-preset-id="${presetId}" title="Delete">
-                            <i class="fa-solid fa-trash"></i>
                         </button>
                     </div>
                 </div>
@@ -123,13 +174,22 @@ export function renderManagerPresetsTab() {
     const html = `
         <div class="se-manager-section">
             <div class="se-manager-section-header">
-                <h3>Presets</h3>
+                <h3>Active for this chat</h3>
                 <button id="se-manager-new-preset" class="menu_button" title="Create a new preset">
                     <i class="fa-solid fa-plus"></i> New
                 </button>
             </div>
             <div class="se-manager-preset-list">
-                ${presetList || '<div class="se-empty">No presets yet. Click "New" to create one.</div>'}
+                ${boundPresetsList || '<div class="se-empty">No presets bound to this chat. Click a link icon below to add one.</div>'}
+            </div>
+        </div>
+
+        <div class="se-manager-section">
+            <div class="se-manager-section-header">
+                <h3>Available presets</h3>
+            </div>
+            <div class="se-manager-preset-list">
+                ${unboundPresetsList || '<div class="se-empty">All presets are already bound to this chat.</div>'}
             </div>
         </div>
     `;
@@ -160,13 +220,12 @@ export function renderManagerVariablesTab() {
                     <div class="se-manager-variable-info">
                         <div class="se-manager-variable-name">${escapeHtml(varDef.name || varId)}</div>
                         <small class="se-manager-variable-meta">
-                            ${escapeHtml(varDef.category || 'manual')} • ${escapeHtml(varDef.type || 'string')} • 
-                            ${varDef.showInTracker ? '👁️ visible' : '👁️ hidden'}
+                            ${escapeHtml(varDef.category || 'manual')} • ${escapeHtml(varDef.type || 'string')}
                         </small>
                     </div>
                     <div class="se-manager-variable-actions">
-                        <button class="se-manager-action-btn se-manager-edit-variable" data-var-id="${varId}" data-preset-id="${selectedPresetId}" title="Edit">
-                            <i class="fa-solid fa-pencil"></i>
+                        <button class="se-manager-action-btn se-manager-toggle-visibility" data-var-id="${varId}" data-preset-id="${selectedPresetId}" title="Toggle visibility in tracker">
+                            <i class="fa-solid ${varDef.showInTracker !== false ? 'fa-eye' : 'fa-eye-slash'}"></i>
                         </button>
                         <button class="se-manager-action-btn se-manager-delete-variable" data-var-id="${varId}" data-preset-id="${selectedPresetId}" title="Delete">
                             <i class="fa-solid fa-trash"></i>
@@ -333,6 +392,30 @@ export function wireManagerModalEvents() {
         }
     });
 
+    $overlay.on('click', '.se-manager-bind-preset', function () {
+        const presetId = $(this).attr('data-preset-id');
+        const chatId = $(this).attr('data-chat-id');
+        const settings = getSettings();
+        const preset = settings.presets[presetId];
+        if (!preset) return;
+
+        addPresetToChat(chatId, presetId);
+        renderManagerPresetsTab();
+        setStatus(`Bound "${preset.name}" to this chat.`);
+    });
+
+    $overlay.on('click', '.se-manager-unbind-preset', function () {
+        const presetId = $(this).attr('data-preset-id');
+        const chatId = $(this).attr('data-chat-id');
+        const settings = getSettings();
+        const preset = settings.presets[presetId];
+        if (!preset) return;
+
+        removePresetFromChat(chatId, presetId);
+        renderManagerPresetsTab();
+        setStatus(`Unbound "${preset.name}" from this chat.`);
+    });
+
     $overlay.on('click', '.se-manager-clone-preset', function () {
         const presetId = $(this).attr('data-preset-id');
         const settings = getSettings();
@@ -392,20 +475,44 @@ export function wireManagerModalEvents() {
             alert('Select a preset first.');
             return;
         }
-        // Open variable editor for new variable
-        openEditor(null);
+        // Create new variable with defaults
+        const settings = getSettings();
+        const preset = settings.presets[currentPresetId];
+        if (!preset) return;
+        
+        const varId = generateUUID();
+        if (!preset.variables) preset.variables = {};
+        
+        // Create a new variable with defaults
+        preset.variables[varId] = {
+            id: varId,
+            name: 'New Variable',
+            label: '',
+            category: 'manual',
+            scope: 'chat',
+            type: 'string',
+            default: '',
+            showInTracker: true,
+            description: ''
+        };
+        
+        persistSettings(settings);
+        renderManagerVariablesTab();
+        setStatus('New variable created. Edit name and settings as needed.');
     });
 
-    $overlay.on('click', '.se-manager-edit-variable', function () {
+    $overlay.on('click', '.se-manager-toggle-visibility', function () {
         const varId = $(this).attr('data-var-id');
         const presetId = $(this).attr('data-preset-id');
-        currentPresetId = presetId;
-        // Open editor for this variable
         const settings = getSettings();
         const preset = settings.presets[presetId];
-        if (preset && preset.variables && preset.variables[varId]) {
-            openEditor(preset.variables[varId]);
-        }
+        if (!preset || !preset.variables[varId]) return;
+        
+        const varDef = preset.variables[varId];
+        varDef.showInTracker = varDef.showInTracker === false;
+        persistSettings(settings);
+        renderManagerVariablesTab();
+        setStatus(`Visibility toggled for "${varDef.name}".`);
     });
 
     $overlay.on('click', '.se-manager-delete-variable', function () {
