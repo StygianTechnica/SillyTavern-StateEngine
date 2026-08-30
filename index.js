@@ -2535,15 +2535,17 @@ jQuery(async () => {
         getSettings(); // ensure defaults exist / migrate
         await registerTemplates();
         await initPanel();
+        
+        // Load manager modal script FIRST so it's available when event handlers are registered
+        await loadManagerModalScript();
+        loadManagerModalStyles();
+        
         registerEvents();
         registerSlashCommand();
         applyDefaultsForMissing();
         // Covers the case where APP_READY already fired before we got here.
         runStartupOnce();
         
-        // Load manager modal script AFTER everything is initialized
-        await loadManagerModalScript();
-        loadManagerModalStyles();
         
         console.log(LOG_PREFIX, 'loaded');
     } catch (err) {
