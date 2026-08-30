@@ -1713,6 +1713,14 @@ function registerSlashCommand() {
             },
             helpString: 'Force State Engine to run all prompted variable updates right now.',
         }));
+        context.SlashCommandParser.addCommandObject(context.SlashCommand.fromProps({
+            name: 'state-manager',
+            callback: async () => {
+                buildManagerModal();
+                return '';
+            },
+            helpString: 'Open the State Engine Manager (tabbed interface for presets, variables, triggers, and world info).',
+        }));
     } catch (err) {
         console.warn(LOG_PREFIX, 'slash command registration skipped', err);
     }

@@ -392,9 +392,8 @@ function wireManagerModalEvents() {
             alert('Select a preset first.');
             return;
         }
-        // Open variable editor (would call openEditor or similar)
-        // For now, just show the drawer editor
-        showEditor();
+        // Open variable editor for new variable
+        openEditor(null);
     });
 
     $overlay.on('click', '.se-manager-edit-variable', function () {
@@ -402,7 +401,11 @@ function wireManagerModalEvents() {
         const presetId = $(this).attr('data-preset-id');
         currentPresetId = presetId;
         // Open editor for this variable
-        showEditor(varId);
+        const settings = getSettings();
+        const preset = settings.presets[presetId];
+        if (preset && preset.variables && preset.variables[varId]) {
+            openEditor(preset.variables[varId]);
+        }
     });
 
     $overlay.on('click', '.se-manager-delete-variable', function () {
