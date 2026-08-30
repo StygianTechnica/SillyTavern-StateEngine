@@ -38,9 +38,6 @@ export function buildManagerModal() {
             <button class="se-manager-tab-btn" data-tab="variables">
                 <i class="fa-solid fa-list"></i> Variables
             </button>
-            <button class="se-manager-tab-btn" data-tab="triggers">
-                <i class="fa-solid fa-bolt"></i> Triggers
-            </button>
             <button class="se-manager-tab-btn" data-tab="worldinfo">
                 <i class="fa-solid fa-book"></i> World Info
             </button>
@@ -52,7 +49,6 @@ export function buildManagerModal() {
         .html(`
             <div class="se-manager-tab-pane se-manager-tab-active" data-tab="presets" id="se-manager-presets-tab"></div>
             <div class="se-manager-tab-pane" data-tab="variables" id="se-manager-variables-tab"></div>
-            <div class="se-manager-tab-pane" data-tab="triggers" id="se-manager-triggers-tab"></div>
             <div class="se-manager-tab-pane" data-tab="worldinfo" id="se-manager-worldinfo-tab"></div>
         `);
 
@@ -63,7 +59,6 @@ export function buildManagerModal() {
     // Initial tab rendering
     renderManagerPresetsTab();
     renderManagerVariablesTab();
-    renderManagerTriggersTab();
     renderManagerWorldInfoTab();
 
     // Wire events
@@ -119,56 +114,80 @@ export function renderManagerPresetsTab() {
     const chatPresets = settings.chatPresetBindings[currentChatId] || [];
     const allPresets = settings.presets || {};
     
-    // Separate bound and unbound presets
-    const boundPresetsList = chatPresets
+    const TRIGGER_KEYS = ['startup', 'new_chat', 'chat_change', 'user', 'pre_generation', 'ai', 'group_draft'];
+    
+    // Render bound presets as accordion items
+    const boundPresetsHtml = chatPresets
         .filter(presetId => allPresets[presetId])
         .map(presetId => {
             const preset = allPresets[presetId];
             const triggers = preset.triggers || [];
+            
+            // Build trigger checkboxes for this preset
+            const triggerCheckboxes = TRIGGER_KEYS
+                .map(trigger => `
+                    <label class="checkbox_label se-manager-trigger-checkbox" style="display: block; margin: 8px 0;">
+                        <input type="checkbox" class="se-preset-trigger-checkbox" 
+                               data-preset-id="${presetId}" data-trigger="${trigger}"
+                               ${triggers.includes(trigger) ? 'checked' : ''} />
+                        <span>${trigger}</span>
+                    </label>
+                `)
+                .join('');
+            
             return `
-                <div class="se-manager-preset-row se-manager-preset-bound">
-                    <div class="se-manager-preset-info">
-                        <div class="se-manager-preset-name">${escapeHtml(preset.name)}</div>
-                        <small class="se-manager-preset-triggers">
-                            Triggers: ${triggers.length > 0 ? triggers.join(', ') : 'none'}
-                        </small>
+                <div class="se-manager-preset-accordion-item">
+                    <div class="se-manager-preset-accordion-header" data-preset-id="${presetId}">
+                        <div class="se-manager-preset-accordion-toggle">
+                            <i class="fa-solid fa-chevron-right"></i>
+                        </div>
+                        <div class="se-manager-preset-info">
+                            <div class="se-manager-preset-name">${escapeHtml(preset.name)}</div>
+                            <small class="se-manager-preset-meta">
+                                Active triggers: ${triggers.length > 0 ? triggers.join(', ') : 'none'}
+                            </small>
+                        </div>
+                        <div class="se-manager-preset-header-actions">
+                            <button class="se-manager-action-btn se-manager-unbind-preset" data-preset-id="${presetId}" data-chat-id="${currentChatId}" title="Unbind from this chat">
+                                <i class="fa-solid fa-link-slash"></i>
+                            </button>
+                            <button class="se-manager-action-btn se-manager-clone-preset" data-preset-id="${presetId}" title="Clone">
+                                <i class="fa-solid fa-copy"></i>
+                            </button>
+                        </div>
                     </div>
-                    <div class="se-manager-preset-actions">
-                        <button class="se-manager-action-btn se-manager-unbind-preset" data-preset-id="${presetId}" data-chat-id="${currentChatId}" title="Unbind from this chat">
-                            <i class="fa-solid fa-link-slash"></i>
-                        </button>
-                        <button class="se-manager-action-btn se-manager-clone-preset" data-preset-id="${presetId}" title="Clone">
-                            <i class="fa-solid fa-copy"></i>
-                        </button>
+                    <div class="se-manager-preset-accordion-body" style="display: none;">
+                        <div class="se-manager-preset-triggers">
+                            <h4>When to update variables in this preset:</h4>
+                            <div style="padding: 0 20px;">
+                                ${triggerCheckboxes}
+                            </div>
+                        </div>
                     </div>
                 </div>
             `;
         })
         .join('');
 
-    const unboundPresetsList = Object.entries(allPresets)
+    // Render unbound presets as simple list items
+    const unboundPresetsHtml = Object.entries(allPresets)
         .filter(([presetId]) => !chatPresets.includes(presetId))
-        .map(([presetId, preset]) => {
-            const triggers = preset.triggers || [];
-            return `
-                <div class="se-manager-preset-row">
-                    <div class="se-manager-preset-info">
-                        <div class="se-manager-preset-name">${escapeHtml(preset.name)}</div>
-                        <small class="se-manager-preset-triggers">
-                            Triggers: ${triggers.length > 0 ? triggers.join(', ') : 'none'}
-                        </small>
-                    </div>
-                    <div class="se-manager-preset-actions">
-                        <button class="se-manager-action-btn se-manager-bind-preset" data-preset-id="${presetId}" data-chat-id="${currentChatId}" title="Bind to this chat">
-                            <i class="fa-solid fa-link"></i>
-                        </button>
-                        <button class="se-manager-action-btn se-manager-clone-preset" data-preset-id="${presetId}" title="Clone">
-                            <i class="fa-solid fa-copy"></i>
-                        </button>
-                    </div>
+        .map(([presetId, preset]) => `
+            <div class="se-manager-preset-row">
+                <div class="se-manager-preset-info">
+                    <div class="se-manager-preset-name">${escapeHtml(preset.name)}</div>
+                    <small class="se-manager-preset-meta">Not active in this chat</small>
                 </div>
-            `;
-        })
+                <div class="se-manager-preset-actions">
+                    <button class="se-manager-action-btn se-manager-bind-preset" data-preset-id="${presetId}" data-chat-id="${currentChatId}" title="Bind to this chat">
+                        <i class="fa-solid fa-link"></i>
+                    </button>
+                    <button class="se-manager-action-btn se-manager-clone-preset" data-preset-id="${presetId}" title="Clone">
+                        <i class="fa-solid fa-copy"></i>
+                    </button>
+                </div>
+            </div>
+        `)
         .join('');
 
     const html = `
@@ -180,7 +199,7 @@ export function renderManagerPresetsTab() {
                 </button>
             </div>
             <div class="se-manager-preset-list">
-                ${boundPresetsList || '<div class="se-empty">No presets bound to this chat. Click a link icon below to add one.</div>'}
+                ${boundPresetsHtml || '<div class="se-empty">No presets bound to this chat. Click a link icon below to add one.</div>'}
             </div>
         </div>
 
@@ -189,7 +208,7 @@ export function renderManagerPresetsTab() {
                 <h3>Available presets</h3>
             </div>
             <div class="se-manager-preset-list">
-                ${unboundPresetsList || '<div class="se-empty">All presets are already bound to this chat.</div>'}
+                ${unboundPresetsHtml || '<div class="se-empty">All presets are already bound to this chat.</div>'}
             </div>
         </div>
     `;
@@ -266,51 +285,6 @@ export function renderManagerVariablesTab() {
     }
 }
 
-export function renderManagerTriggersTab() {
-    const settings = getSettings();
-    const $tab = $('#se-manager-triggers-tab');
-    if (!$tab.length) return;
-
-    $tab.empty();
-
-    const triggerRows = Object.entries(settings.presets || {})
-        .map(([presetId, preset]) => {
-            const triggers = preset.triggers || [];
-            const triggerHtml = ['startup', 'new_chat', 'chat_change', 'user', 'pre_generation', 'ai', 'group_draft']
-                .map(t => `
-                    <label class="checkbox_label se-manager-trigger-checkbox">
-                        <input type="checkbox" class="se-manager-trigger-checkbox-input" 
-                               data-preset-id="${presetId}" data-trigger="${t}"
-                               ${triggers.includes(t) ? 'checked' : ''} />
-                        <span>${t}</span>
-                    </label>
-                `)
-                .join('');
-
-            return `
-                <div class="se-manager-trigger-preset">
-                    <h4>${escapeHtml(preset.name)}</h4>
-                    <div class="se-manager-trigger-grid">
-                        ${triggerHtml}
-                    </div>
-                </div>
-            `;
-        })
-        .join('');
-
-    const html = `
-        <div class="se-manager-section">
-            <h3>When to Update Variables</h3>
-            <small>Select which events should trigger variable updates for each preset. Variables in a preset all update together.</small>
-            <div class="se-manager-triggers-container">
-                ${triggerRows || '<div class="se-empty">Create a preset first to configure triggers.</div>'}
-            </div>
-        </div>
-    `;
-
-    $tab.html(html);
-}
-
 export function renderManagerWorldInfoTab() {
     const settings = getSettings();
     const $tab = $('#se-manager-worldinfo-tab');
@@ -378,8 +352,22 @@ export function wireManagerModalEvents() {
         // Re-render the tab content
         if (tab === 'presets') renderManagerPresetsTab();
         else if (tab === 'variables') renderManagerVariablesTab();
-        else if (tab === 'triggers') renderManagerTriggersTab();
         else if (tab === 'worldinfo') renderManagerWorldInfoTab();
+    });
+
+    // Accordion: Toggle preset expansion
+    $overlay.on('click', '.se-manager-preset-accordion-header', function () {
+        const $header = $(this);
+        const $body = $header.next('.se-manager-preset-accordion-body');
+        const $toggle = $header.find('.se-manager-preset-accordion-toggle i');
+        
+        // Close all other accordion items
+        $overlay.find('.se-manager-preset-accordion-body').not($body).slideUp(200);
+        $overlay.find('.se-manager-preset-accordion-toggle i').removeClass('se-rotated');
+        
+        // Toggle this item
+        $body.slideToggle(200);
+        $toggle.toggleClass('se-rotated');
     });
 
     // Preset actions
@@ -530,7 +518,35 @@ export function wireManagerModalEvents() {
         }
     });
 
-    // Triggers tab
+    // Triggers in accordion (updated class name)
+    $overlay.on('change', '.se-preset-trigger-checkbox', function () {
+        const presetId = $(this).attr('data-preset-id');
+        const trigger = $(this).attr('data-trigger');
+        const settings = getSettings();
+        const preset = settings.presets[presetId];
+        if (!preset) return;
+
+        if (!preset.triggers) preset.triggers = [];
+
+        if ($(this).is(':checked')) {
+            if (!preset.triggers.includes(trigger)) {
+                preset.triggers.push(trigger);
+            }
+        } else {
+            preset.triggers = preset.triggers.filter(t => t !== trigger);
+        }
+
+        persistSettings(settings);
+        
+        // Update the trigger summary in the header
+        const $header = $(this).closest('.se-manager-preset-accordion-item').find('.se-manager-preset-meta');
+        const newTriggers = preset.triggers.length > 0 ? preset.triggers.join(', ') : 'none';
+        $header.text(`Active triggers: ${newTriggers}`);
+        
+        setStatus(`Triggers updated for "${preset.name}".`);
+    });
+
+    // Old trigger handler for backward compatibility (removed from new UI but kept for safety)
     $overlay.on('change', '.se-manager-trigger-checkbox-input', function () {
         const presetId = $(this).attr('data-preset-id');
         const trigger = $(this).attr('data-trigger');
