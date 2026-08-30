@@ -3,7 +3,7 @@
     "loading_order": 100,
     "requires": [],
     "optional": [],
-    "js": ["manager-modal.js", "index.js"],
+    "js": ["index.js", "manager-modal.js"],
     "css": "style.css",
     "author": "Rebecca (with Claude)",
     "version": "0.6.1",
