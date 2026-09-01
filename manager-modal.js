@@ -13,6 +13,8 @@ import {
     removePresetFromChat
 } from './index.js';
 
+let managerCurrentPresetId = null;
+
 export function buildManagerModal() {
     // Check if modal already exists
     if ($('#se-manager-overlay').length) {
@@ -100,13 +102,7 @@ export function renderManagerPresetsTab() {
     $tab.empty();
 
     // Get current chat ID
-    let currentChatId = null;
-    try {
-        const context = window.SillyTavern?.getContext?.();
-        currentChatId = context?.chat?.id;
-    } catch (e) {
-        // Chat context not available
-    }
+    const currentChatId = getCurrentChatId();
 
     if (!currentChatId) {
         const html = `
@@ -256,7 +252,7 @@ export function renderManagerVariablesTab() {
         .map(([id, preset]) => `<option value="${id}">${escapeHtml(preset.name)}</option>`)
         .join('');
 
-    const selectedPresetId = currentPresetId || Object.keys(settings.presets || {})[0];
+    const selectedPresetId = managerCurrentPresetId || Object.keys(settings.presets || {})[0];
 
     let variablesList = '';
     if (selectedPresetId && settings.presets[selectedPresetId]) {
@@ -447,6 +443,15 @@ function moveVariable(presetId, varId, direction) {
     renderManagerVariablesTab();
 }
 
+function getCurrentChatId() {
+    try {
+        const context = window.SillyTavern?.getContext?.();
+        return context?.chat?.id || null;
+    } catch (e) {
+        return null;
+    }
+}
+
 export function wireManagerModalEvents() {
     const $overlay = $('#se-manager-overlay');
     if (!$overlay.length) return;
@@ -566,7 +571,7 @@ export function wireManagerModalEvents() {
 
         if (window.confirm(`Delete preset "${preset.name}"? Variables in this preset won't be deleted.`)) {
             deletePreset(presetId);
-            if (currentPresetId === presetId) currentPresetId = null;
+            if (managerCurrentPresetId === presetId) managerCurrentPresetId = null;
             renderManagerPresetsTab();
             renderManagerVariablesTab();
             setStatus(`Deleted "${preset.name}".`);
@@ -576,12 +581,12 @@ export function wireManagerModalEvents() {
     // Variables tab
     $overlay.on('change', '#se-manager-preset-selector', function () {
         const presetId = $(this).val();
-        currentPresetId = presetId;
+        managerCurrentPresetId = presetId;
         renderManagerVariablesTab();
     });
 
     $overlay.on('click', '#se-manager-new-variable', function () {
-        if (!currentPresetId) {
+        if (!managerCurrentPresetId) {
             alert('Select a preset first.');
             return;
         }
@@ -594,7 +599,7 @@ export function wireManagerModalEvents() {
         const settings = getSettings();
         const preset = settings.presets[presetId];
         if (!preset || !preset.variables || !preset.variables[varId]) return;
-        currentPresetId = presetId;
+        managerCurrentPresetId = presetId;
         showVariableEditor(preset.variables[varId]);
     });
 
@@ -644,7 +649,7 @@ export function wireManagerModalEvents() {
         if (!editor.length) return;
 
         const settings = getSettings();
-        const presetId = currentPresetId;
+        const presetId = managerCurrentPresetId;
         const preset = settings.presets[presetId];
         if (!preset) return;
 

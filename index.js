@@ -30,6 +30,23 @@ const LOG_PREFIX = '[State Engine]';
 // Session state (not persisted)
 let currentPresetId = null;
 
+function getCurrentChatId() {
+    try {
+        const context = window.SillyTavern?.getContext?.();
+        return context?.chat?.id || null;
+    } catch (e) {
+        return null;
+    }
+}
+
+function updateManagerButtonState() {
+    const hasChat = !!getCurrentChatId();
+    const $button = $('#se_open_manager');
+    const $hint = $('#se_open_manager_hint');
+    $button.prop('disabled', !hasChat);
+    $hint.toggle(!hasChat);
+}
+
 const DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
     contextMessageCount: 10,
@@ -2256,6 +2273,7 @@ function bindPanelEvents() {
     $('#se_run_now').on('click', () => runPromptedUpdates('manual-all'));
 
     $('#se_open_manager').on('click', () => buildManagerModal());
+    updateManagerButtonState();
 
     $('#se_new_preset').on('click', () => {
        const name = prompt('Preset name:');
@@ -2542,6 +2560,7 @@ jQuery(async () => {
         registerEvents();
         registerSlashCommand();
         applyDefaultsForMissing();
+        updateManagerButtonState();
         // Covers the case where APP_READY already fired before we got here.
         runStartupOnce();
         
