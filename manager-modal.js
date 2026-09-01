@@ -114,27 +114,35 @@ export function renderManagerPresetsTab() {
     const chatPresets = settings.chatPresetBindings[currentChatId] || [];
     const allPresets = settings.presets || {};
     
-    const TRIGGER_KEYS = ['startup', 'new_chat', 'chat_change', 'user', 'pre_generation', 'ai', 'group_draft'];
-    
+    const TRIGGER_KEYS = [
+        { key: 'startup', label: 'Execute on startup', icon: 'fa-rocket' },
+        { key: 'user', label: 'Execute on user message', icon: 'fa-user' },
+        { key: 'ai', label: 'Execute on AI message', icon: 'fa-robot' },
+        { key: 'chat_change', label: 'Execute on chat change', icon: 'fa-comment' },
+        { key: 'new_chat', label: 'Execute on new chat', icon: 'fa-comments' },
+        { key: 'group_draft', label: 'Execute on group member draft', icon: 'fa-users' },
+        { key: 'pre_generation', label: 'Execute before message generation', icon: 'fa-paper-plane' }
+    ];
+
     // Render bound presets as accordion items
     const boundPresetsHtml = chatPresets
         .filter(presetId => allPresets[presetId])
         .map(presetId => {
             const preset = allPresets[presetId];
             const triggers = preset.triggers || [];
-            
-            // Build trigger checkboxes for this preset
+
             const triggerCheckboxes = TRIGGER_KEYS
                 .map(trigger => `
-                    <label class="checkbox_label se-manager-trigger-checkbox" style="display: block; margin: 8px 0;">
-                        <input type="checkbox" class="se-preset-trigger-checkbox" 
-                               data-preset-id="${presetId}" data-trigger="${trigger}"
-                               ${triggers.includes(trigger) ? 'checked' : ''} />
-                        <span>${trigger}</span>
+                    <label class="se-manager-trigger-option">
+                        <input type="checkbox" class="se-preset-trigger-checkbox"
+                               data-preset-id="${presetId}" data-trigger="${trigger.key}"
+                               ${triggers.includes(trigger.key) ? 'checked' : ''} />
+                        <span class="se-manager-trigger-option-icon"><i class="fa-solid ${trigger.icon}"></i></span>
+                        <span class="se-manager-trigger-option-label">${trigger.label}</span>
                     </label>
                 `)
                 .join('');
-            
+
             return `
                 <div class="se-manager-preset-accordion-item">
                     <div class="se-manager-preset-accordion-header" data-preset-id="${presetId}">
@@ -144,7 +152,7 @@ export function renderManagerPresetsTab() {
                         <div class="se-manager-preset-info">
                             <div class="se-manager-preset-name">${escapeHtml(preset.name)}</div>
                             <small class="se-manager-preset-meta">
-                                Active triggers: ${triggers.length > 0 ? triggers.join(', ') : 'none'}
+                                ${triggers.length > 0 ? `${triggers.length} trigger(s) active` : 'No triggers active'}
                             </small>
                         </div>
                         <div class="se-manager-preset-header-actions">
@@ -158,8 +166,11 @@ export function renderManagerPresetsTab() {
                     </div>
                     <div class="se-manager-preset-accordion-body" style="display: none;">
                         <div class="se-manager-preset-triggers">
-                            <h4>When to update variables in this preset:</h4>
-                            <div style="padding: 0 20px;">
+                            <div class="se-manager-trigger-title">Update triggers</div>
+                            <div class="se-empty" style="margin-bottom: 10px; padding: 8px 10px;">
+                                Check one or more events to control when this preset runs.
+                            </div>
+                            <div class="se-manager-trigger-list">
                                 ${triggerCheckboxes}
                             </div>
                         </div>
@@ -198,6 +209,9 @@ export function renderManagerPresetsTab() {
                     <i class="fa-solid fa-plus"></i> New
                 </button>
             </div>
+            <div class="se-empty" style="margin-bottom: 12px; padding: 10px 12px;">
+                Click the link icon on an available preset to activate it for this chat.
+            </div>
             <div class="se-manager-preset-list">
                 ${boundPresetsHtml || '<div class="se-empty">No presets bound to this chat. Click a link icon below to add one.</div>'}
             </div>
@@ -206,6 +220,9 @@ export function renderManagerPresetsTab() {
         <div class="se-manager-section">
             <div class="se-manager-section-header">
                 <h3>Available presets</h3>
+            </div>
+            <div class="se-empty" style="margin-bottom: 12px; padding: 10px 12px;">
+                These presets are not active in this chat yet. Use the link icon to activate one.
             </div>
             <div class="se-manager-preset-list">
                 ${unboundPresetsHtml || '<div class="se-empty">All presets are already bound to this chat.</div>'}
@@ -233,8 +250,9 @@ export function renderManagerVariablesTab() {
     let variablesList = '';
     if (selectedPresetId && settings.presets[selectedPresetId]) {
         const preset = settings.presets[selectedPresetId];
-        variablesList = Object.entries(preset.variables || {})
-            .map(([varId, varDef]) => `
+        const variableEntries = Object.entries(preset.variables || {});
+        variablesList = variableEntries
+            .map(([varId, varDef], index) => `
                 <div class="se-manager-variable-row">
                     <div class="se-manager-variable-info">
                         <div class="se-manager-variable-name">${escapeHtml(varDef.name || varId)}</div>
@@ -243,8 +261,17 @@ export function renderManagerVariablesTab() {
                         </small>
                     </div>
                     <div class="se-manager-variable-actions">
+                        <button class="se-manager-action-btn se-manager-move-variable-up" data-var-id="${varId}" data-preset-id="${selectedPresetId}" title="Move up" ${index === 0 ? 'disabled' : ''}>
+                            <i class="fa-solid fa-arrow-up"></i>
+                        </button>
+                        <button class="se-manager-action-btn se-manager-move-variable-down" data-var-id="${varId}" data-preset-id="${selectedPresetId}" title="Move down" ${index === variableEntries.length - 1 ? 'disabled' : ''}>
+                            <i class="fa-solid fa-arrow-down"></i>
+                        </button>
                         <button class="se-manager-action-btn se-manager-toggle-visibility" data-var-id="${varId}" data-preset-id="${selectedPresetId}" title="Toggle visibility in tracker">
                             <i class="fa-solid ${varDef.showInTracker !== false ? 'fa-eye' : 'fa-eye-slash'}"></i>
+                        </button>
+                        <button class="se-manager-action-btn se-manager-edit-variable" data-var-id="${varId}" data-preset-id="${selectedPresetId}" title="Edit">
+                            <i class="fa-solid fa-pencil"></i>
                         </button>
                         <button class="se-manager-action-btn se-manager-delete-variable" data-var-id="${varId}" data-preset-id="${selectedPresetId}" title="Delete">
                             <i class="fa-solid fa-trash"></i>
@@ -270,6 +297,7 @@ export function renderManagerVariablesTab() {
                     <i class="fa-solid fa-plus"></i> New Variable
                 </button>
             </div>
+            <div id="se-manager-variable-editor" class="se-manager-variable-editor" style="display:none;"></div>
 
             <div class="se-manager-variable-list">
                 ${variablesList || '<div class="se-empty">No variables in this preset yet.</div>'}
@@ -323,6 +351,89 @@ export function renderManagerWorldInfoTab() {
     `;
 
     $tab.html(html);
+}
+
+function showVariableEditor(def) {
+    const d = def || {
+        id: generateUUID(),
+        name: '',
+        label: '',
+        category: 'manual',
+        scope: 'chat',
+        type: 'string',
+        default: '',
+        enumValues: [],
+        min: '',
+        max: '',
+        description: '',
+        resetOnNewChat: false,
+        showInTracker: true,
+        counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
+        cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
+        prompted: { triggers: [], instructions: '' }
+    };
+
+    const $editor = $('#se-manager-variable-editor');
+    if (!$editor.length) return;
+
+    $editor.html(`
+        <div class="se-manager-section">
+            <div class="se-manager-section-header">
+                <h3>${def ? 'Edit variable' : 'New variable'}</h3>
+                <div class="se-manager-variable-editor-actions">
+                    <button class="menu_button se-manager-save-variable">${def ? 'Save' : 'Create'}</button>
+                    <button class="menu_button se-manager-cancel-variable">Cancel</button>
+                </div>
+            </div>
+            <div class="se-manager-variable-editor-grid">
+                <input class="text_pole se-manager-var-field" data-field="name" placeholder="Variable name" value="${escapeHtml(d.name || '')}" />
+                <input class="text_pole se-manager-var-field" data-field="label" placeholder="Label" value="${escapeHtml(d.label || '')}" />
+                <select class="text_pole se-manager-var-field" data-field="category">
+                    <option value="manual" ${d.category === 'manual' ? 'selected' : ''}>Manual</option>
+                    <option value="cycling" ${d.category === 'cycling' ? 'selected' : ''}>Cycling</option>
+                    <option value="prompted" ${d.category === 'prompted' ? 'selected' : ''}>Prompted</option>
+                </select>
+                <select class="text_pole se-manager-var-field" data-field="type">
+                    <option value="string" ${d.type === 'string' ? 'selected' : ''}>String</option>
+                    <option value="number" ${d.type === 'number' ? 'selected' : ''}>Number</option>
+                    <option value="boolean" ${d.type === 'boolean' ? 'selected' : ''}>Boolean</option>
+                    <option value="enum" ${d.type === 'enum' ? 'selected' : ''}>Enum</option>
+                </select>
+                <input class="text_pole se-manager-var-field" data-field="default" placeholder="Default value" value="${escapeHtml(d.default || '')}" />
+            </div>
+        </div>
+    `).show().data('editing-id', d.id).data('editing-existing', !!def);
+}
+
+function collectVariableEditorValues() {
+    const $editor = $('#se-manager-variable-editor');
+    const values = { id: $editor.data('editing-id') };
+    $editor.find('.se-manager-var-field').each(function () {
+        values[$(this).attr('data-field')] = $(this).val();
+    });
+    values.showInTracker = true;
+    return values;
+}
+
+function moveVariable(presetId, varId, direction) {
+    const settings = getSettings();
+    const preset = settings.presets[presetId];
+    if (!preset || !preset.variables) return;
+
+    const entries = Object.entries(preset.variables);
+    const idx = entries.findIndex(([id]) => id === varId);
+    if (idx === -1) return;
+
+    const nextIdx = idx + direction;
+    if (nextIdx < 0 || nextIdx >= entries.length) return;
+
+    const swapped = entries.slice();
+    const tmp = swapped[idx];
+    swapped[idx] = swapped[nextIdx];
+    swapped[nextIdx] = tmp;
+    preset.variables = Object.fromEntries(swapped);
+    persistSettings(settings);
+    renderManagerVariablesTab();
 }
 
 export function wireManagerModalEvents() {
@@ -463,30 +574,25 @@ export function wireManagerModalEvents() {
             alert('Select a preset first.');
             return;
         }
-        // Create new variable with defaults
+        showVariableEditor(null);
+    });
+
+    $overlay.on('click', '.se-manager-edit-variable', function () {
+        const varId = $(this).attr('data-var-id');
+        const presetId = $(this).attr('data-preset-id');
         const settings = getSettings();
-        const preset = settings.presets[currentPresetId];
-        if (!preset) return;
-        
-        const varId = generateUUID();
-        if (!preset.variables) preset.variables = {};
-        
-        // Create a new variable with defaults
-        preset.variables[varId] = {
-            id: varId,
-            name: 'New Variable',
-            label: '',
-            category: 'manual',
-            scope: 'chat',
-            type: 'string',
-            default: '',
-            showInTracker: true,
-            description: ''
-        };
-        
-        persistSettings(settings);
-        renderManagerVariablesTab();
-        setStatus('New variable created. Edit name and settings as needed.');
+        const preset = settings.presets[presetId];
+        if (!preset || !preset.variables || !preset.variables[varId]) return;
+        currentPresetId = presetId;
+        showVariableEditor(preset.variables[varId]);
+    });
+
+    $overlay.on('click', '.se-manager-move-variable-up', function () {
+        moveVariable($(this).attr('data-preset-id'), $(this).attr('data-var-id'), -1);
+    });
+
+    $overlay.on('click', '.se-manager-move-variable-down', function () {
+        moveVariable($(this).attr('data-preset-id'), $(this).attr('data-var-id'), 1);
     });
 
     $overlay.on('click', '.se-manager-toggle-visibility', function () {
@@ -518,7 +624,54 @@ export function wireManagerModalEvents() {
         }
     });
 
-    // Triggers in accordion (updated class name)
+    $overlay.on('click', '.se-manager-cancel-variable', function () {
+        $('#se-manager-variable-editor').hide().empty();
+    });
+
+    $overlay.on('click', '.se-manager-save-variable', function () {
+        const editor = $('#se-manager-variable-editor');
+        if (!editor.length) return;
+
+        const settings = getSettings();
+        const presetId = currentPresetId;
+        const preset = settings.presets[presetId];
+        if (!preset) return;
+
+        const values = collectVariableEditorValues();
+        const isNew = !editor.data('editing-existing');
+
+        if (!values.name || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(values.name)) {
+            alert('Variable name is required and must start with a letter or underscore.');
+            return;
+        }
+
+        if (!preset.variables) preset.variables = {};
+        if (isNew && preset.variables[values.id]) {
+            values.id = generateUUID();
+        }
+
+        preset.variables[values.id] = {
+            id: values.id,
+            name: values.name.trim(),
+            label: String(values.label || '').trim(),
+            category: values.category || 'manual',
+            scope: 'chat',
+            type: values.type || 'string',
+            default: values.default || '',
+            showInTracker: true,
+            description: '',
+            counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
+            cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
+            prompted: { triggers: [], instructions: '' }
+        };
+
+        persistSettings(settings);
+        editor.hide().empty();
+        renderManagerVariablesTab();
+        setStatus(isNew ? 'Variable created.' : 'Variable updated.');
+    });
+
+    // Triggers in accordion
     $overlay.on('change', '.se-preset-trigger-checkbox', function () {
         const presetId = $(this).attr('data-preset-id');
         const trigger = $(this).attr('data-trigger');
@@ -537,17 +690,12 @@ export function wireManagerModalEvents() {
         }
 
         persistSettings(settings);
-        
-        // Update the trigger summary in the header
-        const $header = $(this).closest('.se-manager-preset-accordion-item').find('.se-manager-preset-meta');
-        const newTriggers = preset.triggers.length > 0 ? preset.triggers.join(', ') : 'none';
-        $header.text(`Active triggers: ${newTriggers}`);
-        
+        const $item = $(this).closest('.se-manager-preset-accordion-item');
+        const $headerMeta = $item.find('.se-manager-preset-meta');
+        $headerMeta.text(preset.triggers.length > 0 ? `${preset.triggers.length} trigger(s) active` : 'No triggers active');
+
         setStatus(`Triggers updated for "${preset.name}".`);
     });
-
-    // Old trigger handler for backward compatibility (removed from new UI but kept for safety)
-    $overlay.on('change', '.se-manager-trigger-checkbox-input', function () {
         const presetId = $(this).attr('data-preset-id');
         const trigger = $(this).attr('data-trigger');
         const settings = getSettings();
