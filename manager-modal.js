@@ -104,19 +104,6 @@ export function renderManagerPresetsTab() {
     // Get current chat ID
     const currentChatId = getCurrentChatId();
 
-    if (!currentChatId) {
-        const html = `
-            <div class="se-manager-section">
-                <div class="se-empty" style="padding: 20px; text-align: center;">
-                    <p><i class="fa-solid fa-circle-info"></i> No chat selected</p>
-                    <small>Select or create a chat to manage presets for this conversation.</small>
-                </div>
-            </div>
-        `;
-        $tab.html(html);
-        return;
-    }
-
     // Get presets bound to current chat
     const chatPresets = getPresetsForChat(currentChatId);
     const allPresets = settings.presets || {};
@@ -462,7 +449,7 @@ export function wireManagerModalEvents() {
     });
 
     // Close on overlay click (outside window)
-    $overlay.on('click', '.se-manager-overlay', function (e) {
+    $overlay.on('click', function (e) {
         if (e.target === this) {
             hideManagerModal();
         }

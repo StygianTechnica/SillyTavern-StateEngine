@@ -47,6 +47,14 @@ function updateManagerButtonState() {
     $hint.toggle(!hasChat);
 }
 
+function openManagerIfReady() {
+    if (!getCurrentChatId()) {
+        updateManagerButtonState();
+        return;
+    }
+    buildManagerModal();
+}
+
 const DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
     contextMessageCount: 10,
@@ -2272,7 +2280,7 @@ function bindPanelEvents() {
 
     $('#se_run_now').on('click', () => runPromptedUpdates('manual-all'));
 
-    $('#se_open_manager').on('click', () => buildManagerModal());
+    $('#se_open_manager').on('click', () => openManagerIfReady());
     updateManagerButtonState();
 
     $('#se_new_preset').on('click', () => {
