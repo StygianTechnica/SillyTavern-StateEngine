@@ -468,3 +468,11 @@
 #se_wi_cond_value_container.hidden {
     display: none;
 }
+.se-manager-hint {
+    display: none;
+    width: 100%;
+    color: #ff6b6b;
+    margin-top: 4px;
+    line-height: 1.3;
+    white-space: normal;
+}

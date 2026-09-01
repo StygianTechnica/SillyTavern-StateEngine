@@ -162,6 +162,113 @@
     gap: 8px;
 }
 
+/* Accordion Preset Items */
+.se-manager-preset-accordion-item {
+    background-color: var(--bg-secondary, #222);
+    border: 1px solid var(--border-color, #333);
+    border-radius: 4px;
+    overflow: hidden;
+    transition: all 0.2s;
+}
+
+.se-manager-preset-accordion-item:hover {
+    border-color: var(--accent-color, #4a9eff);
+}
+
+.se-manager-preset-accordion-header {
+    display: flex;
+    align-items: center;
+    padding: 12px;
+    background-color: var(--bg-secondary, #222);
+    cursor: pointer;
+    transition: background-color 0.2s;
+    gap: 12px;
+}
+
+.se-manager-preset-accordion-header:hover {
+    background-color: rgba(74, 158, 255, 0.05);
+}
+
+.se-manager-preset-accordion-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    color: var(--accent-color, #4a9eff);
+    transition: transform 0.3s ease;
+}
+
+.se-manager-preset-accordion-toggle i {
+    transition: transform 0.3s ease;
+}
+
+.se-manager-preset-accordion-toggle i.se-rotated {
+    transform: rotate(90deg);
+}
+
+.se-manager-preset-accordion-body {
+    padding: 16px 12px;
+    background-color: var(--bg-color, #1a1a1a);
+    border-top: 1px solid var(--border-color, #333);
+}
+
+.se-manager-preset-triggers {
+    color: var(--text-color, #fff);
+}
+
+.se-manager-trigger-title {
+    margin: 0 0 10px 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-color, #bbb);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.se-manager-trigger-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.se-manager-trigger-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text-color, #ddd);
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.se-manager-trigger-option:hover {
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--accent-color, #4a9eff);
+}
+
+.se-manager-trigger-option input {
+    margin: 0;
+    width: 16px;
+    height: 16px;
+    accent-color: var(--accent-color, #4a9eff);
+    flex: 0 0 auto;
+}
+
+.se-manager-trigger-option-icon {
+    width: 18px;
+    text-align: center;
+    color: var(--text-color, #bbb);
+    flex: 0 0 18px;
+}
+
+.se-manager-trigger-option-label {
+    flex: 1;
+    line-height: 1.2;
+}
+
 .se-manager-preset-row {
     display: flex;
     align-items: center;
@@ -188,7 +295,56 @@
     margin-bottom: 4px;
 }
 
-.se-manager-preset-triggers {
+.se-manager-preset-description {
+    color: var(--text-color, #aaa);
+    font-size: 13px;
+    margin-bottom: 6px;
+    font-style: italic;
+}
+
+.se-manager-preset-meta {
+    color: var(--text-color, #999);
+    font-size: 12px;
+}
+
+.se-manager-preset-description-section {
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-color, #333);
+}
+
+.se-manager-label {
+    display: block;
+    color: var(--text-color, #bbb);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-bottom: 8px;
+}
+
+.se-manager-preset-description-input {
+    width: 100%;
+    padding: 8px 10px;
+    background-color: var(--bg-secondary, #222);
+    border: 1px solid var(--border-color, #333);
+    border-radius: 3px;
+    color: var(--text-color, #fff);
+    font-family: inherit;
+    font-size: 13px;
+    resize: vertical;
+    min-height: 60px;
+    max-height: 120px;
+    transition: border-color 0.2s;
+}
+
+.se-manager-preset-description-input:focus {
+    outline: none;
+    border-color: var(--accent-color, #4a9eff);
+    background-color: var(--bg-color, #1a1a1a);
+}
+
+.se-manager-triggers {
     color: var(--text-color, #999);
     font-size: 12px;
 }
@@ -242,50 +398,6 @@
     display: flex;
     gap: 4px;
     flex: 0 0 auto;
-}
-
-/* Triggers Tab */
-.se-manager-triggers-container {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-}
-
-.se-manager-trigger-preset {
-    padding: 16px;
-    background-color: var(--bg-secondary, #222);
-    border: 1px solid var(--border-color, #333);
-    border-radius: 4px;
-}
-
-.se-manager-trigger-preset h4 {
-    margin: 0 0 12px 0;
-    color: var(--text-color, #fff);
-    font-size: 14px;
-}
-
-.se-manager-trigger-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 8px;
-}
-
-.se-manager-trigger-checkbox {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    cursor: pointer;
-    color: var(--text-color, #fff);
-}
-
-.se-manager-trigger-checkbox input {
-    cursor: pointer;
-    width: 16px;
-    height: 16px;
-}
-
-.se-manager-trigger-checkbox:hover {
-    color: var(--accent-color, #4a9eff);
 }
 
 /* World Info Tab */

@@ -13,12 +13,79 @@
 // generation, and the results are written straight into SillyTavern's
 // native chat/global variable store.
 
+import { 
+    buildManagerModal, 
+    showManagerModal, 
+    hideManagerModal,
+    renderManagerPresetsTab,
+    renderManagerVariablesTab,
+    renderManagerWorldInfoTab,
+    setManagerApi,
+    wireManagerModalEvents
+} from './manager-modal.js';
+
 const MODULE_NAME = 'state_engine';
 const EXT_TEMPLATE_PATH = 'third-party/SillyTavern-StateEngine';
 const LOG_PREFIX = '[State Engine]';
 
 // Session state (not persisted)
 let currentPresetId = null;
+
+setManagerApi({
+    getSettings,
+    persistSettings,
+    createPreset,
+    renamePreset,
+    deletePreset,
+    getPresetsForChat,
+    addPresetToChat,
+    removePresetFromChat,
+    setStatus,
+    renderVarTable,
+    renderTrackerPanel
+});
+
+function getCurrentChatId() {
+    try {
+        const context = window.SillyTavern?.getContext?.();
+        return context?.chatId || context?.chat?.id || context?.groupId || context?.group?.id || null;
+    } catch (e) {
+        return null;
+    }
+}
+
+function updateManagerButtonState() {
+    const hasChat = !!getCurrentChatId();
+    const $button = $('#se_open_manager');
+    const $hint = $('#se_open_manager_hint');
+    $button.prop('disabled', !hasChat);
+    $hint.toggle(!hasChat);
+}
+
+function refreshManagerButtonLater() {
+    setTimeout(updateManagerButtonState, 0);
+    setTimeout(updateManagerButtonState, 250);
+}
+
+function watchChatSelection() {
+    const target = document.body;
+    if (!target) return;
+
+    const observer = new MutationObserver(() => {
+        updateManagerButtonState();
+    });
+
+    observer.observe(target, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'data-id', 'data-chat-id'] });
+    updateManagerButtonState();
+}
+
+function openManagerIfReady() {
+    if (!getCurrentChatId()) {
+        updateManagerButtonState();
+        return;
+    }
+    buildManagerModal();
+}
 
 const DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
@@ -675,7 +742,7 @@ function openWorldInfoConditionManager() {
 // Settings helpers
 // ---------------------------------------------------------------------------
 
-function getSettings() {
+export function getSettings() {
     const context = SillyTavern.getContext();
     if (!context.extensionSettings[MODULE_NAME]) {
         context.extensionSettings[MODULE_NAME] = structuredCloneSafe(DEFAULT_SETTINGS);
@@ -760,6 +827,7 @@ function getStarterPresetBlueprints() {
     return [
         {
             name: 'Story Progression',
+            description: 'Track narrative progression: chapters, story arcs, quests, and major plot points.',
             triggers: ['ai'],
             vars: [
                 makeVar({ name: 'chapter', label: 'Chapter', category: 'counter', type: 'number', defaultValue: 1, min: 1, counter: { trigger: 'prompted', direction: 'increment', step: 1 }, description: 'Main narrative chapter progression.' }),
@@ -770,6 +838,7 @@ function getStarterPresetBlueprints() {
         },
         {
             name: 'Location and Time',
+            description: 'Manage scene settings: current location, time of day, weather, and environment state.',
             triggers: ['user', 'ai'],
             vars: [
                 makeVar({ name: 'current_location', label: 'Current Location', category: 'manual', type: 'enum', enumValues: ['tavern', 'market', 'arena', 'road', 'wilderness'], defaultValue: 'tavern', description: 'Current scene location.' }),
@@ -780,6 +849,7 @@ function getStarterPresetBlueprints() {
         },
         {
             name: 'Relationships',
+            description: 'Track character dynamics: trust levels, affection, relationship status, and betrayals.',
             triggers: ['ai'],
             vars: [
                 makeVar({ name: 'npc_trust', label: 'NPC Trust', category: 'prompted', type: 'number', defaultValue: 25, min: 0, max: 100, prompted: { triggers: ['ai'], instructions: 'Estimate trust from recent interactions on a 0-100 scale.' }, description: 'General trust level with a focal NPC.' }),
@@ -790,6 +860,7 @@ function getStarterPresetBlueprints() {
         },
         {
             name: 'Combat and Encounter',
+            description: 'Manage combat state: active/inactive status, round count, threat level, and encounter tags.',
             triggers: ['user', 'ai'],
             vars: [
                 makeVar({ name: 'combat_active', label: 'Combat Active', category: 'manual', type: 'boolean', defaultValue: false, description: 'Whether combat is currently active.' }),
@@ -800,6 +871,7 @@ function getStarterPresetBlueprints() {
         },
         {
             name: 'Mixed Showcase',
+            description: 'Example preset demonstrating all variable types: prompted text/numbers, cycling enums, counters, arrays, and booleans.',
             triggers: ['ai'],
             vars: [
                 makeVar({ name: 'mood', label: 'Mood', category: 'prompted', type: 'string', defaultValue: 'neutral', prompted: { triggers: ['ai'], instructions: 'Infer room mood in one word: calm, tense, hopeful, ominous, etc.' }, description: 'Prompted text example.' }),
@@ -835,6 +907,7 @@ function seedExamplePresets(settings, restoreMissing) {
         settings.presets[presetId] = {
             id: presetId,
             name: seed.name,
+            description: seed.description || '',
             variables,
             triggers: seed.triggers,
             showInTracker: true,
@@ -876,7 +949,7 @@ function normalizeDefinition(def) {
     return def;
 }
 
-function persistSettings() {
+export function persistSettings() {
     try {
         SillyTavern.getContext().saveSettingsDebounced();
     } catch (err) {
@@ -888,11 +961,12 @@ function persistSettings() {
 // Preset management
 // ---------------------------------------------------------------------------
 
-function createPreset(name) {
+export function createPreset(name) {
     const presetId = genId();
     const preset = {
         id: presetId,
         name: name || 'New Preset',
+        description: '',  // User-provided explanation of what this preset does
         variables: {},
         triggers: ['ai'],  // Preset-level: when to update prompted variables in this preset
         showInTracker: false,  // Whether this preset's variables appear in the floating tracker
@@ -903,7 +977,7 @@ function createPreset(name) {
     return presetId;
 }
 
-function renamePreset(presetId, newName) {
+export function renamePreset(presetId, newName) {
     const settings = getSettings();
     if (settings.presets[presetId]) {
         settings.presets[presetId].name = newName;
@@ -911,7 +985,7 @@ function renamePreset(presetId, newName) {
     }
 }
 
-function deletePreset(presetId) {
+export function deletePreset(presetId) {
     const settings = getSettings();
     delete settings.presets[presetId];
     
@@ -929,7 +1003,7 @@ function deletePreset(presetId) {
     persistSettings();
 }
 
-function getPresetsForChat(chatId) {
+export function getPresetsForChat(chatId) {
     const settings = getSettings();
     if (!settings.chatPresetBindings[chatId]) {
         settings.chatPresetBindings[chatId] = [];
@@ -937,13 +1011,13 @@ function getPresetsForChat(chatId) {
     return settings.chatPresetBindings[chatId];
 }
 
-function setPresetsForChat(chatId, presetIds) {
+export function setPresetsForChat(chatId, presetIds) {
     const settings = getSettings();
     settings.chatPresetBindings[chatId] = presetIds;
     persistSettings();
 }
 
-function addPresetToChat(chatId, presetId) {
+export function addPresetToChat(chatId, presetId) {
     const bindings = getPresetsForChat(chatId);
     if (!bindings.includes(presetId)) {
         bindings.push(presetId);
@@ -951,7 +1025,7 @@ function addPresetToChat(chatId, presetId) {
     }
 }
 
-function removePresetFromChat(chatId, presetId) {
+export function removePresetFromChat(chatId, presetId) {
     const bindings = getPresetsForChat(chatId);
     const idx = bindings.indexOf(presetId);
     if (idx !== -1) {
@@ -1648,12 +1722,14 @@ function registerEvents() {
         applyDefaultsForMissing();
         runPromptedUpdates('new_chat');
         refreshPanelIfOpen();
+        refreshManagerButtonLater();
     });
 
     eventSource.on(eventTypes.CHAT_CHANGED, () => {
         applyDefaultsForMissing();
         runPromptedUpdates('chat_change');
         refreshPanelIfOpen();
+        refreshManagerButtonLater();
     });
 
     eventSource.on(eventTypes.USER_MESSAGE_RENDERED, () => {
@@ -1773,9 +1849,15 @@ function renderTrackerPanel() {
     const context = SillyTavern.getContext();
     const settings = getSettings();
     const showHidden = !!settings.trackerShowHidden;
-    
-    // Get presets that are marked to show in tracker (not based on active presets, but on tracker selection)
-    const trackerPresetIds = getTrackerPresets();
+    const chatId = context.chatId;
+     
+    if (!chatId) {
+        $body.empty().append($('<div></div>').addClass('se-tracker-empty').text('Select a chat to view state variables.'));
+        return;
+    }
+     
+    // Always use active presets for the current chat
+    const trackerPresetIds = getPresetsForChat(chatId);
     const variables = getAllVariablesFromPresets(trackerPresetIds);
 
     const defs = Object.values(variables)
@@ -1938,10 +2020,20 @@ function renderVarTable() {
     const context = SillyTavern.getContext();
     const settings = getSettings();
     const chatId = context.chatId;
+    if (!chatId) {
+        const $tabContainer = $('#se_preset_tabs');
+        const $tbody = $('#se_var_tbody');
+        const $empty = $('#se_var_empty');
+        if ($tabContainer.length) $tabContainer.empty();
+        if ($tbody.length) $tbody.empty();
+        if ($empty.length) $empty.show().text('Select a chat to view state variables.');
+        currentPresetId = null;
+        return;
+    }
     const activePresetIds = getPresetsForChat(chatId);
     
-    // If no active presets, use default
-    if (activePresetIds.length === 0 && settings.defaultPresetForNewChats) {
+    // If no active presets, use default only when a chat exists
+    if (activePresetIds.length === 0 && settings.defaultPresetForNewChats && getCurrentChatId()) {
         activePresetIds.push(settings.defaultPresetForNewChats);
         setPresetsForChat(chatId, activePresetIds);
     }
@@ -2124,6 +2216,49 @@ function readEditorForm() {
     };
 }
 
+// Known SillyTavern built-in variables and reserved names
+const SILLYTAVERN_RESERVED_VARS = new Set([
+    // Built-in SillyTavern character/chat variables
+    'charname', 'char_name', 'user', 'user_name', 'bot_name', 'bot',
+    'time', 'date', 'timestamp', 'year', 'month', 'day', 'hour', 'minute', 'second',
+    'idle_duration', 'gmtime', 'lastmessage', 'lastsender', 'lastchar',
+    'version', 'model', 'current_date', 'current_time',
+    'random', 'randomfrom', 'dice',
+    'counter', 'pos', 'iscreator', 'isgroup',
+    'avatar', 'char', 'me', 'you', 'them',
+    // Common extensions might use these
+    'groupdesc', 'groupchat', 'group_name', 'group', 'members',
+]);
+
+function isReservedVariable(name) {
+    try {
+        // Check against known built-in SillyTavern variables (case-insensitive)
+        if (SILLYTAVERN_RESERVED_VARS.has(name.toLowerCase())) {
+            return true;
+        }
+        
+        // Also check if SillyTavern has this as a stored variable already
+        const context = SillyTavern.getContext();
+        if (context?.chat) {
+            // Check chat variables
+            const chatVars = context.chat.mes || [];
+            if (chatVars.some && typeof chatVars === 'object') {
+                // If it looks like there's a variable storage, check it
+                if (context.chat.mesVariables && context.chat.mesVariables[name]) {
+                    return true;
+                }
+            }
+        }
+        
+        // Check if getvar macro exists with this name already (from SillyTavern's system)
+        // This is harder to detect without direct API access, so we rely on the list above
+        return false;
+    } catch (e) {
+        // If we can't check, assume it's not reserved (fail open)
+        return false;
+    }
+}
+
 function saveVariableFromEditor() {
     const settings = getSettings();
     const def = readEditorForm();
@@ -2152,6 +2287,11 @@ function saveVariableFromEditor() {
     const nameTaken = Object.values(preset.variables).some((other) => other.id !== def.id && other.name === def.name);
     if (nameTaken) {
         setStatus(`A variable named "${def.name}" already exists in this preset.`, true);
+        return;
+    }
+    // Check against SillyTavern's reserved variable names
+    if (isReservedVariable(def.name)) {
+        setStatus(`"${def.name}" is a reserved SillyTavern variable name and cannot be overridden. Choose a different name.`, true);
         return;
     }
     if (def.type === 'enum' && def.enumValues.length === 0) {
@@ -2213,6 +2353,7 @@ function refreshPanelIfOpen() {
     if ($('#se_tracker_panel').length) {
         renderTrackerPanel();
     }
+    updateManagerButtonState();
 }
 
 function bindPanelEvents() {
@@ -2245,7 +2386,8 @@ function bindPanelEvents() {
 
     $('#se_run_now').on('click', () => runPromptedUpdates('manual-all'));
 
-    $('#se_open_manager').on('click', () => buildManagerModal());
+    $('#se_open_manager').on('click', () => openManagerIfReady());
+    updateManagerButtonState();
 
     $('#se_new_preset').on('click', () => {
        const name = prompt('Preset name:');
@@ -2455,7 +2597,22 @@ async function initPanel() {
 
     bindPanelEvents();
     loadGeneralSettingsIntoForm();
-    renderVarTable();
+     
+    const chatId = getCurrentChatId();
+    if (chatId) {
+        const activePresetIds = getPresetsForChat(chatId);
+        if (activePresetIds.length > 0) {
+            currentPresetId = activePresetIds[0];
+        }
+        renderVarTable();
+    } else {
+        const $tabContainer = $('#se_preset_tabs');
+        const $tbody = $('#se_var_tbody');
+        const $empty = $('#se_var_empty');
+        if ($tabContainer.length) $tabContainer.empty();
+        if ($tbody.length) $tbody.empty();
+        if ($empty.length) $empty.show().text('Select a chat to view state variables.');
+    }
 
     if (getSettings().showTrackerPanel) {
         setTrackerPanelVisible(true);
@@ -2474,7 +2631,7 @@ function loadManagerModalScript() {
     const scriptId = 'se-manager-modal-script';
     if (document.getElementById(scriptId)) return Promise.resolve(); // Already loaded
 
-    const scriptPath = `scripts/extensions/${EXT_TEMPLATE_PATH}/manager-modal.js`;
+    const scriptPath = `scripts/extensions/${EXT_TEMPLATE_PATH}/manager-modal.js?v=${Date.now()}`;
     
     return new Promise((resolve, reject) => {
         const script = document.createElement('script');
@@ -2526,16 +2683,20 @@ async function registerTemplates() {
 
 jQuery(async () => {
     try {
-        await loadManagerModalScript(); // Load manager-modal.js dynamically
-        loadManagerModalStyles(); // Load manager-modal.css dynamically
         getSettings(); // ensure defaults exist / migrate
         await registerTemplates();
         await initPanel();
         registerEvents();
         registerSlashCommand();
         applyDefaultsForMissing();
+        updateManagerButtonState();
+        watchChatSelection();
         // Covers the case where APP_READY already fired before we got here.
         runStartupOnce();
+        
+        // Load manager modal styles
+        loadManagerModalStyles();
+        
         console.log(LOG_PREFIX, 'loaded');
     } catch (err) {
         console.error(LOG_PREFIX, 'failed to initialize', err);
