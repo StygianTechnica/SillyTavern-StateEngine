@@ -42,7 +42,8 @@ setManagerApi({
     removePresetFromChat,
     setStatus,
     renderVarTable,
-    renderTrackerPanel
+    renderTrackerPanel,
+    restoreDefaultPresets
 });
 
 function getCurrentChatId() {
@@ -924,6 +925,26 @@ function seedExamplePresets(settings, restoreMissing) {
     if (createdPresetIds.length > 0) {
         console.log(`${LOG_PREFIX} seeded ${createdPresetIds.length} starter preset(s)`);
     }
+}
+
+export function restoreDefaultPresets() {
+    const settings = getSettings();
+    const blueprints = getStarterPresetBlueprints();
+    
+    // Delete existing default presets by name so we can restore them
+    for (const seed of blueprints) {
+        for (const [presetId, preset] of Object.entries(settings.presets)) {
+            if (preset.name === seed.name) {
+                deletePreset(presetId);
+                break;
+            }
+        }
+    }
+    
+    // Re-seed the defaults
+    seedExamplePresets(settings, false);
+    persistSettings();
+    console.log(`${LOG_PREFIX} restored default presets`);
 }
 
 // Fills in fields that may be missing from a definition created by an

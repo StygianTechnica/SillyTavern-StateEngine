@@ -155,6 +155,12 @@
     flex: 1;
 }
 
+.se-manager-section-buttons {
+    display: flex;
+    gap: 8px;
+    flex: 0 0 auto;
+}
+
 /* Presets Tab */
 .se-manager-preset-list {
     display: flex;

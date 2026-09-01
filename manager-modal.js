@@ -187,9 +187,14 @@ export function renderManagerPresetsTab() {
         <div class="se-manager-section">
             <div class="se-manager-section-header">
                 <h3>Presets</h3>
-                <button id="se-manager-new-preset" class="menu_button" title="Create a new preset">
-                    <i class="fa-solid fa-plus"></i> New
-                </button>
+                <div class="se-manager-section-buttons">
+                    <button id="se-manager-restore-presets" class="menu_button" title="Restore default presets">
+                        <i class="fa-solid fa-redo"></i> Restore Defaults
+                    </button>
+                    <button id="se-manager-new-preset" class="menu_button" title="Create a new preset">
+                        <i class="fa-solid fa-plus"></i> New
+                    </button>
+                </div>
             </div>
             <div class="se-manager-preset-list">
                 ${presetRows || '<div class="se-empty">No presets yet. Click New to create one.</div>'}
@@ -480,6 +485,15 @@ export function wireManagerModalEvents() {
     });
 
     // Preset actions
+    $overlay.on('click', '#se-manager-restore-presets', function () {
+        if (window.confirm('Restore default presets? This will delete any custom changes to the default presets.')) {
+            managerApi.restoreDefaultPresets();
+            renderManagerPresetsTab();
+            managerApi.renderVarTable();
+            managerApi.setStatus('Restored default presets.');
+        }
+    });
+
     $overlay.on('click', '#se-manager-new-preset', function () {
         const name = prompt('New preset name:');
         if (name && name.trim()) {
