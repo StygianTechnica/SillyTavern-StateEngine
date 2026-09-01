@@ -183,10 +183,18 @@
     cursor: pointer;
     transition: background-color 0.2s;
     gap: 12px;
+    justify-content: space-between;
 }
 
 .se-manager-preset-accordion-header:hover {
     background-color: rgba(74, 158, 255, 0.05);
+}
+
+.se-row-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 0 auto;
 }
 
 .se-manager-preset-accordion-toggle {
@@ -293,6 +301,17 @@
     color: var(--text-color, #fff);
     font-weight: 500;
     margin-bottom: 4px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.se-manager-preset-description-inline {
+    color: var(--text-color, #aaa);
+    font-size: 12px;
+    font-style: italic;
+    font-weight: normal;
 }
 
 .se-manager-preset-description {

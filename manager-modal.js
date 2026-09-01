@@ -140,24 +140,26 @@ export function renderManagerPresetsTab() {
                             <i class="fa-solid fa-chevron-right"></i>
                         </div>
                         <div class="se-manager-preset-info">
-                            <div class="se-manager-preset-name">${escapeHtml(preset.name)}</div>
-                            ${preset.description ? `<div class="se-manager-preset-description">${escapeHtml(preset.description)}</div>` : ''}
+                            <div class="se-manager-preset-name">
+                                ${escapeHtml(preset.name)}
+                                ${preset.description ? `<span class="se-manager-preset-description-inline">${escapeHtml(preset.description)}</span>` : ''}
+                            </div>
                             <small class="se-manager-preset-meta">
                                 ${isActive ? 'Active' : 'Inactive'} • ${triggers.length > 0 ? `${triggers.length} trigger(s)` : 'No triggers'}
                             </small>
                         </div>
                         <div class="se-row-actions">
-                            <button class="menu_button se-manager-toggle-active" data-preset-id="${presetId}" data-chat-id="${currentChatId}" title="${isActive ? 'Deactivate for this chat' : 'Activate for this chat'}">
+                            <button class="se-manager-action-btn se-manager-toggle-active" data-preset-id="${presetId}" data-chat-id="${currentChatId}" title="${isActive ? 'Deactivate for this chat' : 'Activate for this chat'}">
                                 <i class="fa-solid ${isActive ? 'fa-toggle-on' : 'fa-toggle-off'}"></i>
                             </button>
-                            <button class="menu_button se-manager-clone-preset" data-preset-id="${presetId}" title="Clone">
-                                Clone
+                            <button class="se-manager-action-btn se-manager-clone-preset" data-preset-id="${presetId}" title="Clone">
+                                <i class="fa-solid fa-copy"></i>
                             </button>
-                            <button class="menu_button se-manager-rename-preset" data-preset-id="${presetId}" title="Rename">
-                                Rename
+                            <button class="se-manager-action-btn se-manager-rename-preset" data-preset-id="${presetId}" title="Rename">
+                                <i class="fa-solid fa-pen"></i>
                             </button>
-                            <button class="menu_button se-manager-delete-preset" data-preset-id="${presetId}" title="Delete">
-                                Delete
+                            <button class="se-manager-action-btn se-manager-delete-preset" data-preset-id="${presetId}" title="Delete">
+                                <i class="fa-solid fa-trash"></i>
                             </button>
                         </div>
                     </div>
