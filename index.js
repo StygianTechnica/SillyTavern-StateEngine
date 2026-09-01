@@ -33,7 +33,7 @@ let currentPresetId = null;
 function getCurrentChatId() {
     try {
         const context = window.SillyTavern?.getContext?.();
-        return context?.chat?.id || null;
+        return context?.chatId || context?.chat?.id || context?.groupId || context?.group?.id || null;
     } catch (e) {
         return null;
     }
@@ -45,6 +45,11 @@ function updateManagerButtonState() {
     const $hint = $('#se_open_manager_hint');
     $button.prop('disabled', !hasChat);
     $hint.toggle(!hasChat);
+}
+
+function refreshManagerButtonLater() {
+    setTimeout(updateManagerButtonState, 0);
+    setTimeout(updateManagerButtonState, 250);
 }
 
 function openManagerIfReady() {
@@ -1683,14 +1688,14 @@ function registerEvents() {
         applyDefaultsForMissing();
         runPromptedUpdates('new_chat');
         refreshPanelIfOpen();
-        updateManagerButtonState();
+        refreshManagerButtonLater();
     });
 
     eventSource.on(eventTypes.CHAT_CHANGED, () => {
         applyDefaultsForMissing();
         runPromptedUpdates('chat_change');
         refreshPanelIfOpen();
-        updateManagerButtonState();
+        refreshManagerButtonLater();
     });
 
     eventSource.on(eventTypes.USER_MESSAGE_RENDERED, () => {
