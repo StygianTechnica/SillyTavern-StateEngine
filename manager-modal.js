@@ -480,6 +480,7 @@ export function wireManagerModalEvents() {
         }
         renderManagerPresetsTab();
         managerApi.renderVarTable();
+        managerApi.renderTrackerPanel();
         managerApi.setStatus(`${managerApi.getPresetsForChat(chatId).includes(presetId) ? 'Activated' : 'Deactivated'} "${preset.name}" for this chat.`);
     });
 

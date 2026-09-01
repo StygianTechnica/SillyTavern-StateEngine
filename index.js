@@ -41,7 +41,8 @@ setManagerApi({
     addPresetToChat,
     removePresetFromChat,
     setStatus,
-    renderVarTable
+    renderVarTable,
+    renderTrackerPanel
 });
 
 function getCurrentChatId() {
@@ -1841,9 +1842,18 @@ function renderTrackerPanel() {
     const context = SillyTavern.getContext();
     const settings = getSettings();
     const showHidden = !!settings.trackerShowHidden;
-    
-    // Get presets that are marked to show in tracker (not based on active presets, but on tracker selection)
-    const trackerPresetIds = getTrackerPresets();
+    const chatId = context.chatId;
+     
+    if (!chatId) {
+        $body.empty().append($('<div></div>').addClass('se-tracker-empty').text('Select a chat to view state variables.'));
+        return;
+    }
+     
+    // Use active presets for this chat, or saved tracker presets if not empty
+    let trackerPresetIds = getTrackerPresets();
+    if (trackerPresetIds.length === 0) {
+        trackerPresetIds = getPresetsForChat(chatId);
+    }
     const variables = getAllVariablesFromPresets(trackerPresetIds);
 
     const defs = Object.values(variables)
