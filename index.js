@@ -20,6 +20,7 @@ import {
     renderManagerPresetsTab,
     renderManagerVariablesTab,
     renderManagerWorldInfoTab,
+    setManagerApi,
     wireManagerModalEvents
 } from './manager-modal.js';
 
@@ -29,6 +30,17 @@ const LOG_PREFIX = '[State Engine]';
 
 // Session state (not persisted)
 let currentPresetId = null;
+
+setManagerApi({
+    getSettings,
+    persistSettings,
+    createPreset,
+    renamePreset,
+    deletePreset,
+    getPresetsForChat,
+    addPresetToChat,
+    removePresetFromChat
+});
 
 function getCurrentChatId() {
     try {

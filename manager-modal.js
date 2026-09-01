@@ -2,18 +2,12 @@
 // Complete tabbed interface for preset/variable/trigger/worldinfo management
 // Uses ES6 modules - imported by index.js
 
-import {
-    getSettings,
-    persistSettings,
-    createPreset,
-    renamePreset,
-    deletePreset,
-    getPresetsForChat,
-    addPresetToChat,
-    removePresetFromChat
-} from './index.js';
-
 let managerCurrentPresetId = null;
+let managerApi = null;
+
+export function setManagerApi(api) {
+    managerApi = api;
+}
 
 export function buildManagerModal() {
     // Check if modal already exists
@@ -21,7 +15,7 @@ export function buildManagerModal() {
         return showManagerModal();
     }
 
-    const settings = getSettings();
+    const settings = managerApi.getSettings();
 
     // Build main overlay and window
     const $overlay = $('<div></div>')
@@ -95,7 +89,7 @@ export function hideManagerModal() {
 }
 
 export function renderManagerPresetsTab() {
-    const settings = getSettings();
+    const settings = managerApi.getSettings();
     const $tab = $('#se-manager-presets-tab');
     if (!$tab.length) return;
 
@@ -104,7 +98,7 @@ export function renderManagerPresetsTab() {
     // Get current chat ID
     const currentChatId = getCurrentChatId();
 
-    const chatPresets = getPresetsForChat(currentChatId);
+    const chatPresets = managerApi.getPresetsForChat(currentChatId);
     const allPresets = settings.presets || {};
     
     const TRIGGER_KEYS = [
@@ -194,7 +188,7 @@ export function renderManagerPresetsTab() {
 }
 
 export function renderManagerVariablesTab() {
-    const settings = getSettings();
+    const settings = managerApi.getSettings();
     const $tab = $('#se-manager-variables-tab');
     if (!$tab.length) return;
 
@@ -274,7 +268,7 @@ export function renderManagerVariablesTab() {
 }
 
 export function renderManagerWorldInfoTab() {
-    const settings = getSettings();
+    const settings = managerApi.getSettings();
     const $tab = $('#se-manager-worldinfo-tab');
     if (!$tab.length) return;
 
@@ -376,7 +370,7 @@ function collectVariableEditorValues() {
 }
 
 function moveVariable(presetId, varId, direction) {
-    const settings = getSettings();
+    const settings = managerApi.getSettings();
     const preset = settings.presets[presetId];
     if (!preset || !preset.variables) return;
 
@@ -392,7 +386,7 @@ function moveVariable(presetId, varId, direction) {
     swapped[idx] = swapped[nextIdx];
     swapped[nextIdx] = tmp;
     preset.variables = Object.fromEntries(swapped);
-    persistSettings(settings);
+    managerApi.persistSettings(settings);
     renderManagerVariablesTab();
 }
 
@@ -454,7 +448,7 @@ export function wireManagerModalEvents() {
     $overlay.on('click', '#se-manager-new-preset', function () {
         const name = prompt('New preset name:');
         if (name && name.trim()) {
-            createPreset(name.trim());
+            managerApi.createPreset(name.trim());
             renderManagerPresetsTab();
             setStatus(`Created preset "${name}".`);
         }
@@ -463,22 +457,22 @@ export function wireManagerModalEvents() {
     $overlay.on('click', '.se-manager-toggle-active', function () {
         const presetId = $(this).attr('data-preset-id');
         const chatId = $(this).attr('data-chat-id');
-        const settings = getSettings();
+        const settings = managerApi.getSettings();
         const preset = settings.presets[presetId];
         if (!preset) return;
 
-        if (getPresetsForChat(chatId).includes(presetId)) {
-            removePresetFromChat(chatId, presetId);
+        if (managerApi.getPresetsForChat(chatId).includes(presetId)) {
+            managerApi.removePresetFromChat(chatId, presetId);
         } else {
-            addPresetToChat(chatId, presetId);
+            managerApi.addPresetToChat(chatId, presetId);
         }
         renderManagerPresetsTab();
-        setStatus(`${getPresetsForChat(chatId).includes(presetId) ? 'Activated' : 'Deactivated'} "${preset.name}" for this chat.`);
+        setStatus(`${managerApi.getPresetsForChat(chatId).includes(presetId) ? 'Activated' : 'Deactivated'} "${preset.name}" for this chat.`);
     });
 
     $overlay.on('click', '.se-manager-clone-preset', function () {
         const presetId = $(this).attr('data-preset-id');
-        const settings = getSettings();
+        const settings = managerApi.getSettings();
         const preset = settings.presets[presetId];
         if (!preset) return;
 
@@ -488,7 +482,7 @@ export function wireManagerModalEvents() {
             const newPreset = JSON.parse(JSON.stringify(preset));
             newPreset.name = newName.trim();
             settings.presets[newPresetId] = newPreset;
-            persistSettings(settings);
+            managerApi.persistSettings(settings);
             renderManagerPresetsTab();
             setStatus(`Cloned preset "${preset.name}".`);
         }
@@ -496,13 +490,13 @@ export function wireManagerModalEvents() {
 
     $overlay.on('click', '.se-manager-rename-preset', function () {
         const presetId = $(this).attr('data-preset-id');
-        const settings = getSettings();
+        const settings = managerApi.getSettings();
         const preset = settings.presets[presetId];
         if (!preset) return;
 
         const newName = prompt('New name:', preset.name);
         if (newName && newName.trim()) {
-            renamePreset(presetId, newName.trim());
+            managerApi.renamePreset(presetId, newName.trim());
             renderManagerPresetsTab();
             setStatus(`Renamed to "${newName}".`);
         }
@@ -510,12 +504,12 @@ export function wireManagerModalEvents() {
 
     $overlay.on('click', '.se-manager-delete-preset', function () {
         const presetId = $(this).attr('data-preset-id');
-        const settings = getSettings();
+        const settings = managerApi.getSettings();
         const preset = settings.presets[presetId];
         if (!preset) return;
 
         if (window.confirm(`Delete preset "${preset.name}"? Variables in this preset won't be deleted.`)) {
-            deletePreset(presetId);
+            managerApi.deletePreset(presetId);
             if (managerCurrentPresetId === presetId) managerCurrentPresetId = null;
             renderManagerPresetsTab();
             renderManagerVariablesTab();
@@ -541,7 +535,7 @@ export function wireManagerModalEvents() {
     $overlay.on('click', '.se-manager-edit-variable', function () {
         const varId = $(this).attr('data-var-id');
         const presetId = $(this).attr('data-preset-id');
-        const settings = getSettings();
+        const settings = managerApi.getSettings();
         const preset = settings.presets[presetId];
         if (!preset || !preset.variables || !preset.variables[varId]) return;
         managerCurrentPresetId = presetId;
@@ -559,13 +553,13 @@ export function wireManagerModalEvents() {
     $overlay.on('click', '.se-manager-toggle-visibility', function () {
         const varId = $(this).attr('data-var-id');
         const presetId = $(this).attr('data-preset-id');
-        const settings = getSettings();
+        const settings = managerApi.getSettings();
         const preset = settings.presets[presetId];
         if (!preset || !preset.variables[varId]) return;
         
         const varDef = preset.variables[varId];
         varDef.showInTracker = varDef.showInTracker === false;
-        persistSettings(settings);
+        managerApi.persistSettings(settings);
         renderManagerVariablesTab();
         setStatus(`Visibility toggled for "${varDef.name}".`);
     });
@@ -573,13 +567,13 @@ export function wireManagerModalEvents() {
     $overlay.on('click', '.se-manager-delete-variable', function () {
         const varId = $(this).attr('data-var-id');
         const presetId = $(this).attr('data-preset-id');
-        const settings = getSettings();
+        const settings = managerApi.getSettings();
         const preset = settings.presets[presetId];
         if (!preset || !preset.variables[varId]) return;
 
         if (window.confirm(`Delete variable "${preset.variables[varId].name || varId}"?`)) {
             delete preset.variables[varId];
-            persistSettings(settings);
+            managerApi.persistSettings(settings);
             renderManagerVariablesTab();
             setStatus(`Variable deleted.`);
         }
@@ -593,7 +587,7 @@ export function wireManagerModalEvents() {
         const editor = $('#se-manager-variable-editor');
         if (!editor.length) return;
 
-        const settings = getSettings();
+        const settings = managerApi.getSettings();
         const presetId = managerCurrentPresetId;
         const preset = settings.presets[presetId];
         if (!preset) return;
@@ -626,7 +620,7 @@ export function wireManagerModalEvents() {
             prompted: { triggers: [], instructions: '' }
         };
 
-        persistSettings(settings);
+        managerApi.persistSettings(settings);
         editor.hide().empty();
         renderManagerVariablesTab();
         setStatus(isNew ? 'Variable created.' : 'Variable updated.');
@@ -636,7 +630,7 @@ export function wireManagerModalEvents() {
     $overlay.on('change', '.se-preset-trigger-checkbox', function () {
         const presetId = $(this).attr('data-preset-id');
         const trigger = $(this).attr('data-trigger');
-        const settings = getSettings();
+        const settings = managerApi.getSettings();
         const preset = settings.presets[presetId];
         if (!preset) return;
 
@@ -650,7 +644,7 @@ export function wireManagerModalEvents() {
             preset.triggers = preset.triggers.filter(t => t !== trigger);
         }
 
-        persistSettings(settings);
+        managerApi.persistSettings(settings);
         const $item = $(this).closest('.se-manager-preset-accordion-item');
         const $headerMeta = $item.find('.se-manager-preset-meta');
         $headerMeta.text(preset.triggers.length > 0 ? `${preset.triggers.length} trigger(s) active` : 'No triggers active');
