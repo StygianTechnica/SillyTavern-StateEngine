@@ -2,6 +2,17 @@
 // Complete tabbed interface for preset/variable/trigger/worldinfo management
 // Uses ES6 modules - imported by index.js
 
+import {
+    getSettings,
+    persistSettings,
+    createPreset,
+    renamePreset,
+    deletePreset,
+    getPresetsForChat,
+    addPresetToChat,
+    removePresetFromChat
+} from './index.js';
+
 export function buildManagerModal() {
     // Check if modal already exists
     if ($('#se-manager-overlay').length) {
@@ -111,7 +122,7 @@ export function renderManagerPresetsTab() {
     }
 
     // Get presets bound to current chat
-    const chatPresets = settings.chatPresetBindings[currentChatId] || [];
+    const chatPresets = getPresetsForChat(currentChatId);
     const allPresets = settings.presets || {};
     
     const TRIGGER_KEYS = [

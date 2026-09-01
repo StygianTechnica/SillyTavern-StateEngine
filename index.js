@@ -685,7 +685,7 @@ function openWorldInfoConditionManager() {
 // Settings helpers
 // ---------------------------------------------------------------------------
 
-function getSettings() {
+export function getSettings() {
     const context = SillyTavern.getContext();
     if (!context.extensionSettings[MODULE_NAME]) {
         context.extensionSettings[MODULE_NAME] = structuredCloneSafe(DEFAULT_SETTINGS);
@@ -886,7 +886,7 @@ function normalizeDefinition(def) {
     return def;
 }
 
-function persistSettings() {
+export function persistSettings() {
     try {
         SillyTavern.getContext().saveSettingsDebounced();
     } catch (err) {
@@ -898,7 +898,7 @@ function persistSettings() {
 // Preset management
 // ---------------------------------------------------------------------------
 
-function createPreset(name) {
+export function createPreset(name) {
     const presetId = genId();
     const preset = {
         id: presetId,
@@ -913,7 +913,7 @@ function createPreset(name) {
     return presetId;
 }
 
-function renamePreset(presetId, newName) {
+export function renamePreset(presetId, newName) {
     const settings = getSettings();
     if (settings.presets[presetId]) {
         settings.presets[presetId].name = newName;
@@ -921,7 +921,7 @@ function renamePreset(presetId, newName) {
     }
 }
 
-function deletePreset(presetId) {
+export function deletePreset(presetId) {
     const settings = getSettings();
     delete settings.presets[presetId];
     
@@ -939,7 +939,7 @@ function deletePreset(presetId) {
     persistSettings();
 }
 
-function getPresetsForChat(chatId) {
+export function getPresetsForChat(chatId) {
     const settings = getSettings();
     if (!settings.chatPresetBindings[chatId]) {
         settings.chatPresetBindings[chatId] = [];
@@ -947,13 +947,13 @@ function getPresetsForChat(chatId) {
     return settings.chatPresetBindings[chatId];
 }
 
-function setPresetsForChat(chatId, presetIds) {
+export function setPresetsForChat(chatId, presetIds) {
     const settings = getSettings();
     settings.chatPresetBindings[chatId] = presetIds;
     persistSettings();
 }
 
-function addPresetToChat(chatId, presetId) {
+export function addPresetToChat(chatId, presetId) {
     const bindings = getPresetsForChat(chatId);
     if (!bindings.includes(presetId)) {
         bindings.push(presetId);
@@ -961,7 +961,7 @@ function addPresetToChat(chatId, presetId) {
     }
 }
 
-function removePresetFromChat(chatId, presetId) {
+export function removePresetFromChat(chatId, presetId) {
     const bindings = getPresetsForChat(chatId);
     const idx = bindings.indexOf(presetId);
     if (idx !== -1) {
