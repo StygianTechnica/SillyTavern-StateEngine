@@ -202,14 +202,14 @@ export function renderManagerVariablesTab() {
 
     // Preset selector
     const activePresetIds = managerApi.getPresetsForChat(getCurrentChatId());
-    const selectedPresetId = activePresetIds.includes(managerCurrentPresetId)
+    const allPresets = Object.keys(settings.presets || {});
+    const selectedPresetId = allPresets.includes(managerCurrentPresetId)
         ? managerCurrentPresetId
-        : activePresetIds[0] || null;
+        : activePresetIds[0] || allPresets[0] || null;
 
     managerCurrentPresetId = selectedPresetId;
 
     const presetOptions = Object.entries(settings.presets || {})
-        .filter(([id]) => activePresetIds.includes(id))
         .map(([id, preset]) => `<option value="${id}">${escapeHtml(preset.name)}</option>`)
         .join('');
 

@@ -1849,11 +1849,8 @@ function renderTrackerPanel() {
         return;
     }
      
-    // Use active presets for this chat, or saved tracker presets if not empty
-    let trackerPresetIds = getTrackerPresets();
-    if (trackerPresetIds.length === 0) {
-        trackerPresetIds = getPresetsForChat(chatId);
-    }
+    // Always use active presets for the current chat
+    const trackerPresetIds = getPresetsForChat(chatId);
     const variables = getAllVariablesFromPresets(trackerPresetIds);
 
     const defs = Object.values(variables)
