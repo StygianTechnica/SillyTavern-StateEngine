@@ -52,6 +52,18 @@ function refreshManagerButtonLater() {
     setTimeout(updateManagerButtonState, 250);
 }
 
+function watchChatSelection() {
+    const target = document.body;
+    if (!target) return;
+
+    const observer = new MutationObserver(() => {
+        updateManagerButtonState();
+    });
+
+    observer.observe(target, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'data-id', 'data-chat-id'] });
+    updateManagerButtonState();
+}
+
 function openManagerIfReady() {
     if (!getCurrentChatId()) {
         updateManagerButtonState();
@@ -2577,6 +2589,7 @@ jQuery(async () => {
         registerSlashCommand();
         applyDefaultsForMissing();
         updateManagerButtonState();
+        watchChatSelection();
         // Covers the case where APP_READY already fired before we got here.
         runStartupOnce();
         
