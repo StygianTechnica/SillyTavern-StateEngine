@@ -2535,7 +2535,22 @@ async function initPanel() {
 
     bindPanelEvents();
     loadGeneralSettingsIntoForm();
-    renderVarTable();
+     
+    const chatId = getCurrentChatId();
+    if (chatId) {
+        const activePresetIds = getPresetsForChat(chatId);
+        if (activePresetIds.length > 0) {
+            currentPresetId = activePresetIds[0];
+        }
+        renderVarTable();
+    } else {
+        const $tabContainer = $('#se_preset_tabs');
+        const $tbody = $('#se_var_tbody');
+        const $empty = $('#se_var_empty');
+        if ($tabContainer.length) $tabContainer.empty();
+        if ($tbody.length) $tbody.empty();
+        if ($empty.length) $empty.show().text('Select a chat to view state variables.');
+    }
 
     if (getSettings().showTrackerPanel) {
         setTrackerPanelVisible(true);

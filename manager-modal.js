@@ -152,6 +152,12 @@ export function renderManagerPresetsTab() {
                             <button class="se-manager-action-btn se-manager-clone-preset" data-preset-id="${presetId}" title="Clone">
                                 <i class="fa-solid fa-copy"></i>
                             </button>
+                            <button class="se-manager-action-btn se-manager-rename-preset" data-preset-id="${presetId}" title="Rename">
+                                <i class="fa-solid fa-pen"></i>
+                            </button>
+                            <button class="se-manager-action-btn se-manager-delete-preset" data-preset-id="${presetId}" title="Delete">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
                         </div>
                     </div>
                     <div class="se-manager-preset-accordion-body" style="display: none;">
