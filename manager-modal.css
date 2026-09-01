@@ -295,7 +295,56 @@
     margin-bottom: 4px;
 }
 
-.se-manager-preset-triggers {
+.se-manager-preset-description {
+    color: var(--text-color, #aaa);
+    font-size: 13px;
+    margin-bottom: 6px;
+    font-style: italic;
+}
+
+.se-manager-preset-meta {
+    color: var(--text-color, #999);
+    font-size: 12px;
+}
+
+.se-manager-preset-description-section {
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-color, #333);
+}
+
+.se-manager-label {
+    display: block;
+    color: var(--text-color, #bbb);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-bottom: 8px;
+}
+
+.se-manager-preset-description-input {
+    width: 100%;
+    padding: 8px 10px;
+    background-color: var(--bg-secondary, #222);
+    border: 1px solid var(--border-color, #333);
+    border-radius: 3px;
+    color: var(--text-color, #fff);
+    font-family: inherit;
+    font-size: 13px;
+    resize: vertical;
+    min-height: 60px;
+    max-height: 120px;
+    transition: border-color 0.2s;
+}
+
+.se-manager-preset-description-input:focus {
+    outline: none;
+    border-color: var(--accent-color, #4a9eff);
+    background-color: var(--bg-color, #1a1a1a);
+}
+
+.se-manager-triggers {
     color: var(--text-color, #999);
     font-size: 12px;
 }

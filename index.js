@@ -827,6 +827,7 @@ function getStarterPresetBlueprints() {
     return [
         {
             name: 'Story Progression',
+            description: 'Track narrative progression: chapters, story arcs, quests, and major plot points.',
             triggers: ['ai'],
             vars: [
                 makeVar({ name: 'chapter', label: 'Chapter', category: 'counter', type: 'number', defaultValue: 1, min: 1, counter: { trigger: 'prompted', direction: 'increment', step: 1 }, description: 'Main narrative chapter progression.' }),
@@ -837,6 +838,7 @@ function getStarterPresetBlueprints() {
         },
         {
             name: 'Location and Time',
+            description: 'Manage scene settings: current location, time of day, weather, and environment state.',
             triggers: ['user', 'ai'],
             vars: [
                 makeVar({ name: 'current_location', label: 'Current Location', category: 'manual', type: 'enum', enumValues: ['tavern', 'market', 'arena', 'road', 'wilderness'], defaultValue: 'tavern', description: 'Current scene location.' }),
@@ -847,6 +849,7 @@ function getStarterPresetBlueprints() {
         },
         {
             name: 'Relationships',
+            description: 'Track character dynamics: trust levels, affection, relationship status, and betrayals.',
             triggers: ['ai'],
             vars: [
                 makeVar({ name: 'npc_trust', label: 'NPC Trust', category: 'prompted', type: 'number', defaultValue: 25, min: 0, max: 100, prompted: { triggers: ['ai'], instructions: 'Estimate trust from recent interactions on a 0-100 scale.' }, description: 'General trust level with a focal NPC.' }),
@@ -857,6 +860,7 @@ function getStarterPresetBlueprints() {
         },
         {
             name: 'Combat and Encounter',
+            description: 'Manage combat state: active/inactive status, round count, threat level, and encounter tags.',
             triggers: ['user', 'ai'],
             vars: [
                 makeVar({ name: 'combat_active', label: 'Combat Active', category: 'manual', type: 'boolean', defaultValue: false, description: 'Whether combat is currently active.' }),
@@ -867,6 +871,7 @@ function getStarterPresetBlueprints() {
         },
         {
             name: 'Mixed Showcase',
+            description: 'Example preset demonstrating all variable types: prompted text/numbers, cycling enums, counters, arrays, and booleans.',
             triggers: ['ai'],
             vars: [
                 makeVar({ name: 'mood', label: 'Mood', category: 'prompted', type: 'string', defaultValue: 'neutral', prompted: { triggers: ['ai'], instructions: 'Infer room mood in one word: calm, tense, hopeful, ominous, etc.' }, description: 'Prompted text example.' }),
@@ -902,6 +907,7 @@ function seedExamplePresets(settings, restoreMissing) {
         settings.presets[presetId] = {
             id: presetId,
             name: seed.name,
+            description: seed.description || '',
             variables,
             triggers: seed.triggers,
             showInTracker: true,
@@ -960,6 +966,7 @@ export function createPreset(name) {
     const preset = {
         id: presetId,
         name: name || 'New Preset',
+        description: '',  // User-provided explanation of what this preset does
         variables: {},
         triggers: ['ai'],  // Preset-level: when to update prompted variables in this preset
         showInTracker: false,  // Whether this preset's variables appear in the floating tracker

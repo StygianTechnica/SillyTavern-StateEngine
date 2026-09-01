@@ -141,26 +141,31 @@ export function renderManagerPresetsTab() {
                         </div>
                         <div class="se-manager-preset-info">
                             <div class="se-manager-preset-name">${escapeHtml(preset.name)}</div>
+                            ${preset.description ? `<div class="se-manager-preset-description">${escapeHtml(preset.description)}</div>` : ''}
                             <small class="se-manager-preset-meta">
                                 ${isActive ? 'Active' : 'Inactive'} • ${triggers.length > 0 ? `${triggers.length} trigger(s)` : 'No triggers'}
                             </small>
                         </div>
-                        <div class="se-manager-preset-header-actions">
-                            <button class="se-manager-action-btn se-manager-toggle-active" data-preset-id="${presetId}" data-chat-id="${currentChatId}" title="${isActive ? 'Deactivate for this chat' : 'Activate for this chat'}">
+                        <div class="se-row-actions">
+                            <button class="menu_button se-manager-toggle-active" data-preset-id="${presetId}" data-chat-id="${currentChatId}" title="${isActive ? 'Deactivate for this chat' : 'Activate for this chat'}">
                                 <i class="fa-solid ${isActive ? 'fa-toggle-on' : 'fa-toggle-off'}"></i>
                             </button>
-                            <button class="se-manager-action-btn se-manager-clone-preset" data-preset-id="${presetId}" title="Clone">
-                                <i class="fa-solid fa-copy"></i>
+                            <button class="menu_button se-manager-clone-preset" data-preset-id="${presetId}" title="Clone">
+                                Clone
                             </button>
-                            <button class="se-manager-action-btn se-manager-rename-preset" data-preset-id="${presetId}" title="Rename">
-                                <i class="fa-solid fa-pen"></i>
+                            <button class="menu_button se-manager-rename-preset" data-preset-id="${presetId}" title="Rename">
+                                Rename
                             </button>
-                            <button class="se-manager-action-btn se-manager-delete-preset" data-preset-id="${presetId}" title="Delete">
-                                <i class="fa-solid fa-trash"></i>
+                            <button class="menu_button se-manager-delete-preset" data-preset-id="${presetId}" title="Delete">
+                                Delete
                             </button>
                         </div>
                     </div>
                     <div class="se-manager-preset-accordion-body" style="display: none;">
+                        <div class="se-manager-preset-description-section">
+                            <label class="se-manager-label">Description</label>
+                            <textarea class="se-manager-preset-description-input" data-preset-id="${presetId}" placeholder="Describe what this preset does...">${escapeHtml(preset.description || '')}</textarea>
+                        </div>
                         <div class="se-manager-preset-triggers">
                             <div class="se-manager-trigger-title">Update triggers</div>
                             <div class="se-empty" style="margin-bottom: 10px; padding: 8px 10px;">
@@ -685,6 +690,19 @@ export function wireManagerModalEvents() {
         $headerMeta.text(preset.triggers.length > 0 ? `${preset.triggers.length} trigger(s) active` : 'No triggers active');
 
         managerApi.setStatus(`Triggers updated for "${preset.name}".`);
+    });
+
+    // Preset description
+    $overlay.on('change', '.se-manager-preset-description-input', function () {
+        const presetId = $(this).attr('data-preset-id');
+        const newDescription = $(this).val();
+        const settings = managerApi.getSettings();
+        const preset = settings.presets[presetId];
+        if (!preset) return;
+
+        preset.description = newDescription;
+        managerApi.persistSettings(settings);
+        managerApi.setStatus(`Description updated for "${preset.name}".`);
     });
 }
 
