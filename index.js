@@ -1683,12 +1683,14 @@ function registerEvents() {
         applyDefaultsForMissing();
         runPromptedUpdates('new_chat');
         refreshPanelIfOpen();
+        updateManagerButtonState();
     });
 
     eventSource.on(eventTypes.CHAT_CHANGED, () => {
         applyDefaultsForMissing();
         runPromptedUpdates('chat_change');
         refreshPanelIfOpen();
+        updateManagerButtonState();
     });
 
     eventSource.on(eventTypes.USER_MESSAGE_RENDERED, () => {
@@ -2248,6 +2250,7 @@ function refreshPanelIfOpen() {
     if ($('#se_tracker_panel').length) {
         renderTrackerPanel();
     }
+    updateManagerButtonState();
 }
 
 function bindPanelEvents() {
