@@ -559,12 +559,12 @@ export function wireManagerModalEvents() {
         const preset = settings.presets[presetId];
         if (!preset) return;
 
-        if (window.confirm(`Delete preset "${preset.name}"? Variables in this preset won't be deleted.`)) {
+        if (window.confirm(`Delete preset "${preset.name}"? This will also delete all variables in this preset.`)) {
             managerApi.deletePreset(presetId);
             if (managerCurrentPresetId === presetId) managerCurrentPresetId = null;
             renderManagerPresetsTab();
             renderManagerVariablesTab();
-            managerApi.setStatus(`Deleted "${preset.name}".`);
+            managerApi.setStatus(`Deleted "${preset.name}" and all its variables.`);
         }
     });
 
@@ -718,6 +718,10 @@ export function wireManagerModalEvents() {
 
         preset.description = newDescription;
         managerApi.persistSettings(settings);
+        
+        // Re-render the preset tab to update inline description display
+        renderManagerPresetsTab();
+        
         managerApi.setStatus(`Description updated for "${preset.name}".`);
     });
 }
