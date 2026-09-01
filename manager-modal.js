@@ -124,7 +124,6 @@ export function renderManagerPresetsTab() {
             return bActive - aActive;
         })
         .map(([presetId, preset]) => {
-            const preset = allPresets[presetId];
             const isActive = chatPresets.includes(presetId);
             const triggers = preset.triggers || [];
 
