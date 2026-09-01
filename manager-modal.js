@@ -48,6 +48,9 @@ export function buildManagerModal() {
             <button class="se-manager-tab-btn" data-tab="worldinfo">
                 <i class="fa-solid fa-book"></i> World Info
             </button>
+            <button class="se-manager-tab-btn" data-tab="debug">
+                <i class="fa-solid fa-bug"></i> Debug
+            </button>
         `);
 
     // Build tab content container
@@ -57,6 +60,7 @@ export function buildManagerModal() {
             <div class="se-manager-tab-pane se-manager-tab-active" data-tab="presets" id="se-manager-presets-tab"></div>
             <div class="se-manager-tab-pane" data-tab="variables" id="se-manager-variables-tab"></div>
             <div class="se-manager-tab-pane" data-tab="worldinfo" id="se-manager-worldinfo-tab"></div>
+            <div class="se-manager-tab-pane" data-tab="debug" id="se-manager-debug-tab"></div>
         `);
 
     $window.append($header, $tabButtons, $content);
@@ -439,6 +443,109 @@ function getCurrentChatId() {
     }
 }
 
+export function renderManagerDebugTab() {
+    const $tab = $('#se-manager-debug-tab');
+    if (!$tab.length) return;
+
+    const debugInfo = managerApi.getDebugInfo();
+    const isEnabled = debugInfo.debugEnabled;
+
+    let activePresetsHtml = '';
+    if (debugInfo.activePresets && debugInfo.activePresets.length > 0) {
+        activePresetsHtml = debugInfo.activePresets
+            .map(p => `
+                <div style="margin-bottom: 12px; padding: 8px; background: #2a2a2a; border-radius: 4px;">
+                    <div><strong>${escapeHtml(p.name)}</strong></div>
+                    <small style="color: #aaa;">ID: ${escapeHtml(p.id)}</small>
+                    <small style="color: #aaa;">Variables: ${p.variableCount}, Triggers: ${p.triggers.length}</small>
+                </div>
+            `)
+            .join('');
+    } else {
+        activePresetsHtml = '<div style="color: #999;">No active presets for this chat</div>';
+    }
+
+    let variablesHtml = '';
+    if (debugInfo.variables && debugInfo.variables.length > 0) {
+        variablesHtml = `<table style="width: 100%; border-collapse: collapse;">
+            <thead style="border-bottom: 1px solid #444;">
+                <tr style="text-align: left;">
+                    <th style="padding: 6px; font-weight: bold;">Name</th>
+                    <th style="padding: 6px; font-weight: bold;">Type</th>
+                    <th style="padding: 6px; font-weight: bold;">Value</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${debugInfo.variables
+                    .map(v => `
+                        <tr style="border-bottom: 1px solid #333;">
+                            <td style="padding: 6px;"><code>${escapeHtml(v.name)}</code></td>
+                            <td style="padding: 6px;"><small style="color: #aaa;">${v.type}</small></td>
+                            <td style="padding: 6px;"><code style="color: #7ec699;">${escapeHtml(JSON.stringify(v.value))}</code></td>
+                        </tr>
+                    `)
+                    .join('')}
+            </tbody>
+        </table>`;
+    } else {
+        variablesHtml = '<div style="color: #999;">No variables in active presets</div>';
+    }
+
+    const html = `
+        <div class="se-manager-section">
+            <div class="se-manager-section-header">
+                <h3 style="margin: 0;">Debug Mode</h3>
+                <div class="se-manager-section-buttons">
+                    <button id="se-manager-debug-toggle" class="menu_button" title="Toggle debug logging">
+                        <i class="fa-solid ${isEnabled ? 'fa-check-circle' : 'fa-circle'}"></i> 
+                        ${isEnabled ? 'Disable' : 'Enable'}
+                    </button>
+                </div>
+            </div>
+            <div style="margin-bottom: 12px; padding: 8px; background: #1a1a1a; border-left: 2px solid ${isEnabled ? '#7ec699' : '#666'}; border-radius: 2px;">
+                <div><strong>Status:</strong> <span style="color: ${isEnabled ? '#7ec699' : '#999'};">${isEnabled ? 'ENABLED' : 'DISABLED'}</span></div>
+                <small style="color: #aaa;">Debug mode logs additional info to console and displays diagnostic data below.</small>
+            </div>
+        </div>
+
+        <div class="se-manager-section">
+            <h3 style="margin-top: 0;">Chat Information</h3>
+            <div style="font-family: monospace; font-size: 0.9em; background: #1a1a1a; padding: 8px; border-radius: 4px;">
+                <div><strong>Chat ID:</strong> <code>${debugInfo.chatId ? escapeHtml(debugInfo.chatId) : '(no chat selected)'}</code></div>
+                <div><strong>Timestamp:</strong> <code>${debugInfo.currentTimestamp}</code></div>
+                <div><strong>Total Presets:</strong> ${debugInfo.totalPresets}</div>
+            </div>
+        </div>
+
+        <div class="se-manager-section">
+            <h3>Active Presets</h3>
+            ${activePresetsHtml}
+        </div>
+
+        <div class="se-manager-section">
+            <h3>Variables in Active Presets</h3>
+            ${variablesHtml}
+        </div>
+
+        <div class="se-manager-section">
+            <h3>Export & Inspect</h3>
+            <div class="se-manager-section-buttons">
+                <button id="se-manager-debug-copy-json" class="menu_button" title="Copy debug info as JSON">
+                    <i class="fa-solid fa-copy"></i> Copy JSON
+                </button>
+                <button id="se-manager-debug-log-console" class="menu_button" title="Log debug info to console">
+                    <i class="fa-solid fa-terminal"></i> Log to Console
+                </button>
+            </div>
+            <small style="color: #999; display: block; margin-top: 8px;">
+                Click "Copy JSON" to copy all debug data to clipboard, or "Log to Console" to inspect in the browser developer tools.
+            </small>
+        </div>
+    `;
+
+    $tab.html(html);
+}
+
 export function wireManagerModalEvents() {
     const $overlay = $('#se-manager-overlay');
     if (!$overlay.length) return;
@@ -467,6 +574,7 @@ export function wireManagerModalEvents() {
         if (tab === 'presets') renderManagerPresetsTab();
         else if (tab === 'variables') renderManagerVariablesTab();
         else if (tab === 'worldinfo') renderManagerWorldInfoTab();
+        else if (tab === 'debug') renderManagerDebugTab();
     });
 
     // Accordion: Toggle preset expansion
@@ -723,6 +831,32 @@ export function wireManagerModalEvents() {
         renderManagerPresetsTab();
         
         managerApi.setStatus(`Description updated for "${preset.name}".`);
+    });
+
+    // Debug mode controls
+    $overlay.on('click', '#se-manager-debug-toggle', function () {
+        const enabled = managerApi.toggleDebugMode();
+        renderManagerDebugTab();
+        managerApi.setStatus(`Debug mode ${enabled ? 'ENABLED' : 'DISABLED'}`);
+    });
+
+    $overlay.on('click', '#se-manager-debug-copy-json', function () {
+        const debugInfo = managerApi.getDebugInfo();
+        const json = JSON.stringify(debugInfo, null, 2);
+        navigator.clipboard.writeText(json).then(() => {
+           managerApi.setStatus('Debug info copied to clipboard!');
+        }).catch(err => {
+           console.error('Failed to copy:', err);
+           managerApi.setStatus('Failed to copy to clipboard');
+        });
+    });
+
+    $overlay.on('click', '#se-manager-debug-log-console', function () {
+        const debugInfo = managerApi.getDebugInfo();
+        console.log('%c=== STATE ENGINE DEBUG INFO ===', 'background: #222; color: #bada55; font-weight: bold');
+        console.table(debugInfo);
+        console.log('Full settings:', debugInfo.fullSettings);
+        managerApi.setStatus('Debug info logged to console');
     });
 }
 

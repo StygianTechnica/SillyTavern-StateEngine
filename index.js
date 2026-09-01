@@ -28,6 +28,21 @@ const MODULE_NAME = 'state_engine';
 const EXT_TEMPLATE_PATH = 'third-party/SillyTavern-StateEngine';
 const LOG_PREFIX = '[State Engine]';
 
+// Debug mode - session-only, not persisted
+window.seDebugMode = false;
+
+export function toggleDebugMode() {
+    window.seDebugMode = !window.seDebugMode;
+    console.log(`${LOG_PREFIX} Debug mode ${window.seDebugMode ? 'ENABLED' : 'DISABLED'}`);
+    return window.seDebugMode;
+}
+
+export function debugLog(...args) {
+    if (window.seDebugMode) {
+        console.log(LOG_PREFIX, ...args);
+    }
+}
+
 // Session state (not persisted)
 let currentPresetId = null;
 
@@ -43,7 +58,10 @@ setManagerApi({
     setStatus,
     renderVarTable,
     renderTrackerPanel,
-    restoreDefaultPresets
+    restoreDefaultPresets,
+    toggleDebugMode,
+    debugLog,
+    getDebugInfo
 });
 
 function getCurrentChatId() {
@@ -1043,6 +1061,7 @@ export function addPresetToChat(chatId, presetId) {
     if (!bindings.includes(presetId)) {
         bindings.push(presetId);
         setPresetsForChat(chatId, bindings);
+        debugLog(`Added preset ${presetId} to chat ${chatId}. Active presets:`, bindings);
     }
 }
 
@@ -1052,6 +1071,7 @@ export function removePresetFromChat(chatId, presetId) {
     if (idx !== -1) {
         bindings.splice(idx, 1);
         setPresetsForChat(chatId, bindings);
+        debugLog(`Removed preset ${presetId} from chat ${chatId}. Active presets:`, bindings);
     }
 }
 
@@ -1334,6 +1354,62 @@ function setVarValue(context, def, rawValue) {
         console.error(LOG_PREFIX, `could not write variable "${def.name}"`, err);
     }
     return validation.value;
+}
+
+// ---------------------------------------------------------------------------
+// Debug info collection
+// ---------------------------------------------------------------------------
+
+export function getDebugInfo() {
+    try {
+        const context = SillyTavern.getContext();
+        const chatId = getCurrentChatId();
+        const settings = getSettings();
+        const activePresetIds = getPresetsForChat(chatId);
+        
+        // Collect active preset details
+        const activePresetsInfo = activePresetIds.map(id => {
+            const preset = settings.presets[id];
+            return {
+                id,
+                name: preset?.name || 'unknown',
+                description: preset?.description || '',
+                variableCount: Object.keys(preset?.variables || {}).length,
+                triggers: preset?.triggers || []
+            };
+        });
+        
+        // Collect all variables and their current values
+        const variables = getAllVariablesFromPresets(activePresetIds);
+        const variablesWithValues = Object.entries(variables).map(([varId, varDef]) => {
+            const value = getVarValue(context, varDef);
+            return {
+                id: varId,
+                name: varDef.name,
+                label: varDef.label,
+                category: varDef.category,
+                type: varDef.type,
+                scope: varDef.scope,
+                value: value,
+                default: varDef.default,
+                showInTracker: varDef.showInTracker !== false
+            };
+        });
+        
+        return {
+            chatId,
+            currentTimestamp: new Date().toISOString(),
+            activePresets: activePresetsInfo,
+            variables: variablesWithValues,
+            totalPresets: Object.keys(settings.presets || {}).length,
+            debugEnabled: window.seDebugMode,
+            settingsKeys: Object.keys(settings),
+            fullSettings: settings  // Full raw settings for inspection
+        };
+    } catch (err) {
+        console.error(`${LOG_PREFIX} Error collecting debug info:`, err);
+        return { error: err.message };
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1871,6 +1947,8 @@ function renderTrackerPanel() {
     const settings = getSettings();
     const showHidden = !!settings.trackerShowHidden;
     const chatId = context.chatId;
+    
+    debugLog('renderTrackerPanel called for chat:', chatId);
      
     if (!chatId) {
         $body.empty().append($('<div></div>').addClass('se-tracker-empty').text('Select a chat to view state variables.'));
@@ -1879,11 +1957,16 @@ function renderTrackerPanel() {
      
     // Always use active presets for the current chat
     const trackerPresetIds = getPresetsForChat(chatId);
+    debugLog('  activePresetIds:', trackerPresetIds);
+    
     const variables = getAllVariablesFromPresets(trackerPresetIds);
+    debugLog('  variables from presets:', variables);
 
     const defs = Object.values(variables)
         .filter((def) => def.name && (def.showInTracker !== false || showHidden))
         .sort((a, b) => (a.label || a.name).localeCompare(b.label || b.name));
+
+    debugLog('  filtered defs (after showInTracker check):', defs);
 
     $body.empty();
     if (defs.length === 0) {
