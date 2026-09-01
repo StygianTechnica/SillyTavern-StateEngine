@@ -696,25 +696,6 @@ export function wireManagerModalEvents() {
 
         setStatus(`Triggers updated for "${preset.name}".`);
     });
-        const presetId = $(this).attr('data-preset-id');
-        const trigger = $(this).attr('data-trigger');
-        const settings = getSettings();
-        const preset = settings.presets[presetId];
-        if (!preset) return;
-
-        if (!preset.triggers) preset.triggers = [];
-
-        if ($(this).is(':checked')) {
-            if (!preset.triggers.includes(trigger)) {
-                preset.triggers.push(trigger);
-            }
-        } else {
-            preset.triggers = preset.triggers.filter(t => t !== trigger);
-        }
-
-        persistSettings(settings);
-        setStatus(`Triggers updated for "${preset.name}".`);
-    });
 }
 
 function escapeHtml(text) {
