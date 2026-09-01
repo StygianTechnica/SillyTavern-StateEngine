@@ -118,6 +118,11 @@ export function renderManagerPresetsTab() {
     ];
 
     const presetRows = Object.entries(allPresets)
+        .sort(([aId], [bId]) => {
+            const aActive = chatPresets.includes(aId) ? 1 : 0;
+            const bActive = chatPresets.includes(bId) ? 1 : 0;
+            return bActive - aActive;
+        })
         .map(([presetId, preset]) => {
             const preset = allPresets[presetId];
             const isActive = chatPresets.includes(presetId);
