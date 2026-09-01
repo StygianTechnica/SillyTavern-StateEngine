@@ -2011,12 +2011,13 @@ function renderVarTable() {
         if ($tabContainer.length) $tabContainer.empty();
         if ($tbody.length) $tbody.empty();
         if ($empty.length) $empty.show().text('Select a chat to view state variables.');
+        currentPresetId = null;
         return;
     }
     const activePresetIds = getPresetsForChat(chatId);
     
     // If no active presets, use default only when a chat exists
-    if (activePresetIds.length === 0 && settings.defaultPresetForNewChats) {
+    if (activePresetIds.length === 0 && settings.defaultPresetForNewChats && getCurrentChatId()) {
         activePresetIds.push(settings.defaultPresetForNewChats);
         setPresetsForChat(chatId, activePresetIds);
     }

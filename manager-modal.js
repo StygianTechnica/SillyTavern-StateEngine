@@ -456,7 +456,7 @@ export function wireManagerModalEvents() {
         if (name && name.trim()) {
             managerApi.createPreset(name.trim());
             renderManagerPresetsTab();
-            setStatus(`Created preset "${name}".`);
+            managerApi.setStatus(`Created preset "${name}".`);
         }
     });
 
@@ -473,7 +473,7 @@ export function wireManagerModalEvents() {
             managerApi.addPresetToChat(chatId, presetId);
         }
         renderManagerPresetsTab();
-        setStatus(`${managerApi.getPresetsForChat(chatId).includes(presetId) ? 'Activated' : 'Deactivated'} "${preset.name}" for this chat.`);
+        managerApi.setStatus(`${managerApi.getPresetsForChat(chatId).includes(presetId) ? 'Activated' : 'Deactivated'} "${preset.name}" for this chat.`);
     });
 
     $overlay.on('click', '.se-manager-clone-preset', function () {
@@ -490,7 +490,7 @@ export function wireManagerModalEvents() {
             settings.presets[newPresetId] = newPreset;
             managerApi.persistSettings(settings);
             renderManagerPresetsTab();
-            setStatus(`Cloned preset "${preset.name}".`);
+            managerApi.setStatus(`Cloned preset "${preset.name}".`);
         }
     });
 
@@ -504,7 +504,7 @@ export function wireManagerModalEvents() {
         if (newName && newName.trim()) {
             managerApi.renamePreset(presetId, newName.trim());
             renderManagerPresetsTab();
-            setStatus(`Renamed to "${newName}".`);
+            managerApi.setStatus(`Renamed to "${newName}".`);
         }
     });
 
@@ -519,7 +519,7 @@ export function wireManagerModalEvents() {
             if (managerCurrentPresetId === presetId) managerCurrentPresetId = null;
             renderManagerPresetsTab();
             renderManagerVariablesTab();
-            setStatus(`Deleted "${preset.name}".`);
+            managerApi.setStatus(`Deleted "${preset.name}".`);
         }
     });
 
@@ -567,7 +567,7 @@ export function wireManagerModalEvents() {
         varDef.showInTracker = varDef.showInTracker === false;
         managerApi.persistSettings(settings);
         renderManagerVariablesTab();
-        setStatus(`Visibility toggled for "${varDef.name}".`);
+        managerApi.setStatus(`Visibility toggled for "${varDef.name}".`);
     });
 
     $overlay.on('click', '.se-manager-delete-variable', function () {
@@ -581,7 +581,7 @@ export function wireManagerModalEvents() {
             delete preset.variables[varId];
             managerApi.persistSettings(settings);
             renderManagerVariablesTab();
-            setStatus(`Variable deleted.`);
+            managerApi.setStatus(`Variable deleted.`);
         }
     });
 
@@ -629,7 +629,7 @@ export function wireManagerModalEvents() {
         managerApi.persistSettings(settings);
         editor.hide().empty();
         renderManagerVariablesTab();
-        setStatus(isNew ? 'Variable created.' : 'Variable updated.');
+        managerApi.setStatus(isNew ? 'Variable created.' : 'Variable updated.');
     });
 
     // Triggers in accordion
@@ -655,7 +655,7 @@ export function wireManagerModalEvents() {
         const $headerMeta = $item.find('.se-manager-preset-meta');
         $headerMeta.text(preset.triggers.length > 0 ? `${preset.triggers.length} trigger(s) active` : 'No triggers active');
 
-        setStatus(`Triggers updated for "${preset.name}".`);
+        managerApi.setStatus(`Triggers updated for "${preset.name}".`);
     });
 }
 
