@@ -104,7 +104,6 @@ export function renderManagerPresetsTab() {
     // Get current chat ID
     const currentChatId = getCurrentChatId();
 
-    // Get presets bound to current chat
     const chatPresets = getPresetsForChat(currentChatId);
     const allPresets = settings.presets || {};
     
@@ -118,11 +117,10 @@ export function renderManagerPresetsTab() {
         { key: 'pre_generation', label: 'Execute before message generation', icon: 'fa-paper-plane' }
     ];
 
-    // Render bound presets as accordion items
-    const boundPresetsHtml = chatPresets
-        .filter(presetId => allPresets[presetId])
-        .map(presetId => {
+    const presetRows = Object.entries(allPresets)
+        .map(([presetId, preset]) => {
             const preset = allPresets[presetId];
+            const isActive = chatPresets.includes(presetId);
             const triggers = preset.triggers || [];
 
             const triggerCheckboxes = TRIGGER_KEYS
@@ -146,12 +144,12 @@ export function renderManagerPresetsTab() {
                         <div class="se-manager-preset-info">
                             <div class="se-manager-preset-name">${escapeHtml(preset.name)}</div>
                             <small class="se-manager-preset-meta">
-                                ${triggers.length > 0 ? `${triggers.length} trigger(s) active` : 'No triggers active'}
+                                ${isActive ? 'Active' : 'Inactive'} • ${triggers.length > 0 ? `${triggers.length} trigger(s)` : 'No triggers'}
                             </small>
                         </div>
                         <div class="se-manager-preset-header-actions">
-                            <button class="se-manager-action-btn se-manager-unbind-preset" data-preset-id="${presetId}" data-chat-id="${currentChatId}" title="Unbind from this chat">
-                                <i class="fa-solid fa-link-slash"></i>
+                            <button class="se-manager-action-btn se-manager-toggle-active" data-preset-id="${presetId}" data-chat-id="${currentChatId}" title="${isActive ? 'Deactivate for this chat' : 'Activate for this chat'}">
+                                <i class="fa-solid ${isActive ? 'fa-toggle-on' : 'fa-toggle-off'}"></i>
                             </button>
                             <button class="se-manager-action-btn se-manager-clone-preset" data-preset-id="${presetId}" title="Clone">
                                 <i class="fa-solid fa-copy"></i>
@@ -174,52 +172,16 @@ export function renderManagerPresetsTab() {
         })
         .join('');
 
-    // Render unbound presets as simple list items
-    const unboundPresetsHtml = Object.entries(allPresets)
-        .filter(([presetId]) => !chatPresets.includes(presetId))
-        .map(([presetId, preset]) => `
-            <div class="se-manager-preset-row">
-                <div class="se-manager-preset-info">
-                    <div class="se-manager-preset-name">${escapeHtml(preset.name)}</div>
-                    <small class="se-manager-preset-meta">Not active in this chat</small>
-                </div>
-                <div class="se-manager-preset-actions">
-                    <button class="se-manager-action-btn se-manager-bind-preset" data-preset-id="${presetId}" data-chat-id="${currentChatId}" title="Bind to this chat">
-                        <i class="fa-solid fa-link"></i>
-                    </button>
-                    <button class="se-manager-action-btn se-manager-clone-preset" data-preset-id="${presetId}" title="Clone">
-                        <i class="fa-solid fa-copy"></i>
-                    </button>
-                </div>
-            </div>
-        `)
-        .join('');
-
     const html = `
         <div class="se-manager-section">
             <div class="se-manager-section-header">
-                <h3>Active for this chat</h3>
+                <h3>Presets</h3>
                 <button id="se-manager-new-preset" class="menu_button" title="Create a new preset">
                     <i class="fa-solid fa-plus"></i> New
                 </button>
             </div>
-            <div class="se-empty" style="margin-bottom: 12px; padding: 10px 12px;">
-                Click the link icon on an available preset to activate it for this chat.
-            </div>
             <div class="se-manager-preset-list">
-                ${boundPresetsHtml || '<div class="se-empty">No presets bound to this chat. Click a link icon below to add one.</div>'}
-            </div>
-        </div>
-
-        <div class="se-manager-section">
-            <div class="se-manager-section-header">
-                <h3>Available presets</h3>
-            </div>
-            <div class="se-empty" style="margin-bottom: 12px; padding: 10px 12px;">
-                These presets are not active in this chat yet. Use the link icon to activate one.
-            </div>
-            <div class="se-manager-preset-list">
-                ${unboundPresetsHtml || '<div class="se-empty">All presets are already bound to this chat.</div>'}
+                ${presetRows || '<div class="se-empty">No presets yet. Click New to create one.</div>'}
             </div>
         </div>
     `;
@@ -494,28 +456,20 @@ export function wireManagerModalEvents() {
         }
     });
 
-    $overlay.on('click', '.se-manager-bind-preset', function () {
+    $overlay.on('click', '.se-manager-toggle-active', function () {
         const presetId = $(this).attr('data-preset-id');
         const chatId = $(this).attr('data-chat-id');
         const settings = getSettings();
         const preset = settings.presets[presetId];
         if (!preset) return;
 
-        addPresetToChat(chatId, presetId);
+        if (getPresetsForChat(chatId).includes(presetId)) {
+            removePresetFromChat(chatId, presetId);
+        } else {
+            addPresetToChat(chatId, presetId);
+        }
         renderManagerPresetsTab();
-        setStatus(`Bound "${preset.name}" to this chat.`);
-    });
-
-    $overlay.on('click', '.se-manager-unbind-preset', function () {
-        const presetId = $(this).attr('data-preset-id');
-        const chatId = $(this).attr('data-chat-id');
-        const settings = getSettings();
-        const preset = settings.presets[presetId];
-        if (!preset) return;
-
-        removePresetFromChat(chatId, presetId);
-        renderManagerPresetsTab();
-        setStatus(`Unbound "${preset.name}" from this chat.`);
+        setStatus(`${getPresetsForChat(chatId).includes(presetId) ? 'Activated' : 'Deactivated'} "${preset.name}" for this chat.`);
     });
 
     $overlay.on('click', '.se-manager-clone-preset', function () {
