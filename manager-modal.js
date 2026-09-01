@@ -473,6 +473,7 @@ export function wireManagerModalEvents() {
             managerApi.addPresetToChat(chatId, presetId);
         }
         renderManagerPresetsTab();
+        managerApi.renderVarTable();
         managerApi.setStatus(`${managerApi.getPresetsForChat(chatId).includes(presetId) ? 'Activated' : 'Deactivated'} "${preset.name}" for this chat.`);
     });
 

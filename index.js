@@ -39,7 +39,9 @@ setManagerApi({
     deletePreset,
     getPresetsForChat,
     addPresetToChat,
-    removePresetFromChat
+    removePresetFromChat,
+    setStatus,
+    renderVarTable
 });
 
 function getCurrentChatId() {
