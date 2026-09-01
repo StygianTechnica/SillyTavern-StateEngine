@@ -19,7 +19,6 @@ import {
     hideManagerModal,
     renderManagerPresetsTab,
     renderManagerVariablesTab,
-    renderManagerTriggersTab,
     renderManagerWorldInfoTab,
     wireManagerModalEvents
 } from './manager-modal.js';
