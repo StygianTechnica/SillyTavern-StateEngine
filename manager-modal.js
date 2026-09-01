@@ -209,8 +209,18 @@ export function renderManagerVariablesTab() {
 
     managerCurrentPresetId = selectedPresetId;
 
-    const presetOptions = Object.entries(settings.presets || {})
-        .map(([id, preset]) => `<option value="${id}">${escapeHtml(preset.name)}</option>`)
+    const showActiveOnly = window.managerShowActiveOnly || false;
+    const presetsToShow = showActiveOnly
+        ? allPresets.filter(id => activePresetIds.includes(id))
+        : allPresets;
+
+    const presetOptions = presetsToShow
+        .map(id => {
+            const preset = settings.presets[id];
+            const isActive = activePresetIds.includes(id);
+            const indicator = isActive ? ' ✓' : '';
+            return `<option value="${id}">${escapeHtml(preset.name)}${indicator}</option>`;
+        })
         .join('');
 
     let variablesList = '';
@@ -251,13 +261,19 @@ export function renderManagerVariablesTab() {
     const html = `
         <div class="se-manager-section">
             <div class="se-manager-section-header">
-                <h3>Variables for Preset:</h3>
-                <select id="se-manager-preset-selector" class="text_pole">
-                    <option value="">-- Select preset --</option>
-                    ${presetOptions}
-                </select>
+                <div style="display: flex; align-items: center; gap: 12px; flex: 1;">
+                    <h3 style="margin: 0;">Variables for Preset:</h3>
+                    <select id="se-manager-preset-selector" class="text_pole">
+                        <option value="">-- Select preset --</option>
+                        ${presetOptions}
+                    </select>
+                    <label style="margin: 0; white-space: nowrap; display: flex; align-items: center; gap: 4px;">
+                        <input type="checkbox" id="se-manager-filter-active" ${showActiveOnly ? 'checked' : ''} />
+                        <span style="font-size: 0.9em;">Show active only</span>
+                    </label>
+                </div>
             </div>
-            
+             
             <div class="se-manager-section-header">
                 <button id="se-manager-new-variable" class="menu_button" title="Create a new variable">
                     <i class="fa-solid fa-plus"></i> New Variable
@@ -535,6 +551,11 @@ export function wireManagerModalEvents() {
     $overlay.on('change', '#se-manager-preset-selector', function () {
         const presetId = $(this).val();
         managerCurrentPresetId = presetId;
+        renderManagerVariablesTab();
+    });
+
+    $overlay.on('change', '#se-manager-filter-active', function () {
+        window.managerShowActiveOnly = $(this).prop('checked');
         renderManagerVariablesTab();
     });
 
