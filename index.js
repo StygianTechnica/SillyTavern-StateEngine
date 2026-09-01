@@ -2004,9 +2004,18 @@ function renderVarTable() {
     const context = SillyTavern.getContext();
     const settings = getSettings();
     const chatId = context.chatId;
+    if (!chatId) {
+        const $tabContainer = $('#se_preset_tabs');
+        const $tbody = $('#se_var_tbody');
+        const $empty = $('#se_var_empty');
+        if ($tabContainer.length) $tabContainer.empty();
+        if ($tbody.length) $tbody.empty();
+        if ($empty.length) $empty.show().text('Select a chat to view state variables.');
+        return;
+    }
     const activePresetIds = getPresetsForChat(chatId);
     
-    // If no active presets, use default
+    // If no active presets, use default only when a chat exists
     if (activePresetIds.length === 0 && settings.defaultPresetForNewChats) {
         activePresetIds.push(settings.defaultPresetForNewChats);
         setPresetsForChat(chatId, activePresetIds);

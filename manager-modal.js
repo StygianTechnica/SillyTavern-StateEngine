@@ -195,11 +195,17 @@ export function renderManagerVariablesTab() {
     $tab.empty();
 
     // Preset selector
+    const activePresetIds = managerApi.getPresetsForChat(getCurrentChatId());
+    const selectedPresetId = activePresetIds.includes(managerCurrentPresetId)
+        ? managerCurrentPresetId
+        : activePresetIds[0] || null;
+
+    managerCurrentPresetId = selectedPresetId;
+
     const presetOptions = Object.entries(settings.presets || {})
+        .filter(([id]) => activePresetIds.includes(id))
         .map(([id, preset]) => `<option value="${id}">${escapeHtml(preset.name)}</option>`)
         .join('');
-
-    const selectedPresetId = managerCurrentPresetId || Object.keys(settings.presets || {})[0];
 
     let variablesList = '';
     if (selectedPresetId && settings.presets[selectedPresetId]) {
