@@ -1114,6 +1114,10 @@ export function getPresetsForChat(chatId) {
     return binding.presetIds || [];
 }
 
+function shouldSkipPromptedRefresh(def) {
+    return !!(def && def.skipPromptedRefresh);
+}
+
 export function getPresetLoadOrder(chatId) {
     // Guard against invalid chatId
     if (!chatId || chatId === 'undefined' || chatId === 'null') {
