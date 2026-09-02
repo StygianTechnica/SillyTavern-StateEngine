@@ -424,6 +424,7 @@ function showInlineVariableEditor(varDef, $row) {
                 <option value="enum" ${d.type === 'enum' ? 'selected' : ''}>Enum</option>
             </select>
             <input class="text_pole se-manager-var-field" data-field="default" placeholder="Default value" value="${escapeHtml(d.default || '')}" />
+            <textarea class="text_pole se-manager-var-field se-manager-prompted-instructions" data-field="prompted.instructions" placeholder="Prompted variable instructions">${escapeHtml(d.prompted?.instructions || '')}</textarea>
             <div class="se-manager-variable-editor-actions">
                 <button class="menu_button se-manager-save-variable-inline">${varDef ? 'Save' : 'Create'}</button>
                 <button class="menu_button se-manager-cancel-variable-inline">Cancel</button>
@@ -455,6 +456,7 @@ function collectInlineVariableValues($row) {
         values[field] = $field.is(':checkbox') ? $field.is(':checked') : $field.val();
     });
     values.showInTracker = true;
+    values.prompted = { instructions: String($editor.find('.se-manager-prompted-instructions').val() || '') };
     return values;
 }
 
@@ -509,6 +511,7 @@ function showVariableEditor(def) {
                     <input type="checkbox" class="se-manager-var-field" data-field="skipPromptedRefresh" ${d.skipPromptedRefresh ? 'checked' : ''} />
                     <span>Skip prompted refresh</span>
                 </label>
+                <textarea class="text_pole se-manager-var-field se-manager-prompted-instructions" data-field="prompted.instructions" placeholder="Prompted variable instructions">${escapeHtml(d.prompted?.instructions || '')}</textarea>
             </div>
         </div>
     `).show().data('editing-id', d.id).data('editing-existing', !!def);
@@ -523,6 +526,7 @@ function collectVariableEditorValues() {
         values[field] = $field.is(':checkbox') ? $field.is(':checked') : $field.val();
     });
     values.showInTracker = true;
+    values.prompted = { instructions: String($editor.find('.se-manager-prompted-instructions').val() || '') };
     return values;
 }
 
@@ -994,8 +998,8 @@ export function wireManagerModalEvents() {
             default: values.default || '',
             showInTracker: true,
             description: '',
-            counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
-            cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
+            counter: { trigger: 'ai', direction: 'increment', step: 1, prompted.instructions: '' },
+            cycling: { trigger: 'ai', values: [], prompted.instructions: '' },
             prompted: { triggers: [], instructions: '' }
         };
 
@@ -1043,8 +1047,8 @@ export function wireManagerModalEvents() {
             default: values.default || '',
             showInTracker: true,
             description: '',
-            counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
-            cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
+            counter: { trigger: 'ai', direction: 'increment', step: 1, prompted.instructions: '' },
+            cycling: { trigger: 'ai', values: [], prompted.instructions: '' },
             prompted: { triggers: [], instructions: '' }
         };
 
