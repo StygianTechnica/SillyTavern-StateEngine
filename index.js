@@ -21,8 +21,7 @@ import {
     renderManagerVariablesTab,
     renderManagerWorldInfoTab,
     setManagerApi,
-    wireManagerModalEvents,
-    setTrackerPanelVisible
+    wireManagerModalEvents
 } from './manager-modal.js';
 
 const MODULE_NAME = 'state_engine';
