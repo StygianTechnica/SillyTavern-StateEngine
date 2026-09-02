@@ -783,6 +783,18 @@ export function getSettings() {
     
     if (!settings.presets || typeof settings.presets !== 'object') settings.presets = {};
     if (!settings.chatPresetBindings || typeof settings.chatPresetBindings !== 'object') settings.chatPresetBindings = {};
+    
+    // Clean up any "undefined", "null", or other invalid chat ID keys
+    const validKeys = Object.keys(settings.chatPresetBindings).filter(key => key && key !== 'undefined' && key !== 'null');
+    if (validKeys.length !== Object.keys(settings.chatPresetBindings).length) {
+        const cleaned = {};
+        for (const key of validKeys) {
+            cleaned[key] = settings.chatPresetBindings[key];
+        }
+        settings.chatPresetBindings = cleaned;
+        debugLog('Cleaned up invalid chat ID keys from bindings');
+    }
+    
     if (!settings.defaultPresetForNewChats) settings.defaultPresetForNewChats = '';
     if (!settings.wiConditions || typeof settings.wiConditions !== 'object') settings.wiConditions = {};
     
@@ -1046,6 +1058,12 @@ export function deletePreset(presetId) {
 
 export function getPresetsForChat(chatId) {
     const settings = getSettings();
+    
+    // Guard against invalid chatId
+    if (!chatId || chatId === 'undefined' || chatId === 'null') {
+        return [];
+    }
+    
     // Support both old format (array) and new format (object with presetIds array)
     const binding = settings.chatPresetBindings[chatId];
     
@@ -1066,6 +1084,11 @@ export function getPresetsForChat(chatId) {
 }
 
 export function getPresetLoadOrder(chatId) {
+    // Guard against invalid chatId
+    if (!chatId || chatId === 'undefined' || chatId === 'null') {
+        return [];
+    }
+    
     const settings = getSettings();
     const binding = settings.chatPresetBindings[chatId];
     
@@ -1081,6 +1104,12 @@ export function setPresetsForChat(chatId, presetIds) {
 }
 
 export function addPresetToChat(chatId, presetId) {
+    // Validate chatId to prevent storing under "undefined" or "null"
+    if (!chatId || chatId === 'undefined' || chatId === 'null') {
+        debugLog(`WARNING: addPresetToChat called with invalid chatId: "${chatId}"`);
+        return;
+    }
+    
     const settings = getSettings();
     
     // Ensure binding structure exists
@@ -1111,6 +1140,12 @@ export function addPresetToChat(chatId, presetId) {
 }
 
 export function removePresetFromChat(chatId, presetId) {
+    // Validate chatId to prevent issues with "undefined" or "null"
+    if (!chatId || chatId === 'undefined' || chatId === 'null') {
+        debugLog(`WARNING: removePresetFromChat called with invalid chatId: "${chatId}"`);
+        return;
+    }
+    
     const settings = getSettings();
     
     if (!settings.chatPresetBindings[chatId]) return;

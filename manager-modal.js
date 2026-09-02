@@ -536,6 +536,7 @@ function moveVariable(presetId, varId, direction) {
     preset.variables = Object.fromEntries(swapped);
     managerApi.persistSettings(settings);
     renderManagerVariablesTab();
+    managerApi.renderTrackerPanel(); // Update tracker with new variable order
 }
 
 export function renderManagerDebugTab() {
