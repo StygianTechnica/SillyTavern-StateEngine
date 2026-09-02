@@ -124,11 +124,33 @@ async function addStateEngineWandUi() {
     menu.append(`
         <div id="state-engine-wand-button" class="list-group-item flex-container flexGap5">
             <div class="extensionsMenuExtensionButton fa-solid fa-wand-magic-sparkles"></div>
-            State Engine
+            <span>State Engine</span>
+            <i class="fa-solid fa-chevron-right se-wand-caret"></i>
+        </div>
+        <div id="state-engine-wand-submenu" class="se-wand-submenu" style="display:none;">
+            <div id="state-engine-wand-tracker" class="list-group-item flex-container flexGap5 se-wand-subitem">
+                <div class="extensionsMenuExtensionButton fa-solid fa-list"></div>
+                <span>Tracker</span>
+            </div>
+            <div id="state-engine-wand-manager" class="list-group-item flex-container flexGap5 se-wand-subitem">
+                <div class="extensionsMenuExtensionButton fa-solid fa-sliders"></div>
+                <span>Manager</span>
+            </div>
         </div>
     `);
 
     $('#state-engine-wand-button').on('click', (e) => {
+        e.stopPropagation();
+        $('#state-engine-wand-submenu').toggle();
+        $('#state-engine-wand-button .se-wand-caret').toggleClass('fa-chevron-right fa-chevron-down');
+    });
+
+    $('#state-engine-wand-tracker').on('click', (e) => {
+        e.stopPropagation();
+        openTrackerPanelIfReady();
+    });
+
+    $('#state-engine-wand-manager').on('click', (e) => {
         e.stopPropagation();
         openManagerIfReady();
     });
