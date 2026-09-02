@@ -401,8 +401,8 @@ function showInlineVariableEditor(varDef, $row) {
         resetOnNewChat: false,
         showInTracker: true,
         skipPromptedRefresh: false,
-        counter: { trigger: 'ai', direction: 'increment', step: 1, prompted.instructions: '' },
-        cycling: { trigger: 'ai', values: [], prompted.instructions: '' },
+        counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
+        cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
         prompted: { triggers: [], instructions: '' }
     };
 
@@ -475,8 +475,8 @@ function showVariableEditor(def) {
         description: '',
         resetOnNewChat: false,
         showInTracker: true,
-        counter: { trigger: 'ai', direction: 'increment', step: 1, prompted.instructions: '' },
-        cycling: { trigger: 'ai', values: [], prompted.instructions: '' },
+        counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
+        cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
         prompted: { triggers: [], instructions: '' }
     };
 
@@ -511,7 +511,7 @@ function showVariableEditor(def) {
                     <input type="checkbox" class="se-manager-var-field" data-field="skipPromptedRefresh" ${d.skipPromptedRefresh ? 'checked' : ''} />
                     <span>Skip prompted refresh</span>
                 </label>
-                <textarea class="text_pole se-manager-var-field se-manager-prompted-instructions" data-field="prompted.instructions" placeholder="Prompted variable instructions">${escapeHtml(d.prompted?.instructions || '')}</textarea>
+                <textarea class="text_pole se-manager-var-field se-manager-prompted-instructions" data-field="prompted?.instructions" placeholder="Prompted variable instructions">${escapeHtml(d.prompted?.instructions || '')}</textarea>
             </div>
         </div>
     `).show().data('editing-id', d.id).data('editing-existing', !!def);
@@ -998,8 +998,8 @@ export function wireManagerModalEvents() {
             default: values.default || '',
             showInTracker: true,
             description: '',
-            counter: { trigger: 'ai', direction: 'increment', step: 1, prompted.instructions: '' },
-            cycling: { trigger: 'ai', values: [], prompted.instructions: '' },
+            counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
+            cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
             prompted: { triggers: [], instructions: '' }
         };
 
@@ -1047,8 +1047,8 @@ export function wireManagerModalEvents() {
             default: values.default || '',
             showInTracker: true,
             description: '',
-            counter: { trigger: 'ai', direction: 'increment', step: 1, prompted.instructions: '' },
-            cycling: { trigger: 'ai', values: [], prompted.instructions: '' },
+            counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
+            cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
             prompted: { triggers: [], instructions: '' }
         };
 
