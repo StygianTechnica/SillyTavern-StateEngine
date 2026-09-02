@@ -450,7 +450,9 @@ function collectInlineVariableValues($row) {
     const $editor = $row.find('.se-manager-variable-editor-inline');
     const values = { id: $editor.data('editing-id') };
     $editor.find('.se-manager-var-field').each(function () {
-        values[$(this).attr('data-field')] = $(this).val();
+        const $field = $(this);
+        const field = $field.attr('data-field');
+        values[field] = $field.is(':checkbox') ? $field.is(':checked') : $field.val();
     });
     values.showInTracker = true;
     return values;
