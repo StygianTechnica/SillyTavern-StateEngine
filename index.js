@@ -138,20 +138,6 @@ function registerChatTools() {
     });
 }
 
-function shouldSkipPromptedRefresh(def) {
-    return !!(def && def.skipPromptedRefresh);
-}
-
-function collectPromptedVariables(activePresetIds, settings) {
-    const variables = getAllVariablesFromPresets(activePresetIds);
-    return Object.values(variables).filter((def) => {
-        if (!def.name) return false;
-        if (def.category !== 'prompted') return false;
-        if (shouldSkipPromptedRefresh(def)) return false;
-        return true;
-    });
-}
-
 const DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
     contextMessageCount: 10,
