@@ -152,10 +152,6 @@ function collectPromptedVariables(activePresetIds, settings) {
     });
 }
 
-        }
-    });
-}
-
 const DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
     contextMessageCount: 10,
