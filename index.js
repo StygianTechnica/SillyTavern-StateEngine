@@ -124,7 +124,7 @@ function registerChatTools() {
     registerChatTool({
         name: 'State Engine',
         icon: 'fa-solid fa-wand-magic-sparkles',
-        callback: () => {},
+        callback: () => openManagerIfReady(),
         children: [
             {
                 name: 'Tracker',
