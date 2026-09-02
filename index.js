@@ -116,25 +116,20 @@ function openTrackerPanelIfReady() {
     setTrackerPanelVisible(true);
 }
 
-function getWandContainer() {
-    return $('#se_wand_container');
-}
-
 async function addStateEngineWandUi() {
     if (!getSettings().wandVisible) return;
-    const container = getWandContainer();
-    if (!container.length) return;
-    if (document.getElementById('state-engine-wand-button')) return;
+    const menu = $('#extensionsMenu');
+    if (!menu.length || document.getElementById('state-engine-wand-button')) return;
 
-    const buttonHtml = `
-        <div id="state-engine-wand-button" class="menu_button menu_button_icon">
-            <i class="fa-solid fa-wand-magic-sparkles"></i>
-            <span>State Engine</span>
+    menu.append(`
+        <div id="state-engine-wand-button" class="list-group-item flex-container flexGap5">
+            <div class="extensionsMenuExtensionButton fa-solid fa-wand-magic-sparkles"></div>
+            State Engine
         </div>
-    `;
-    container.append(buttonHtml);
+    `);
 
-    $('#state-engine-wand-button').on('click', () => {
+    $('#state-engine-wand-button').on('click', (e) => {
+        e.stopPropagation();
         openManagerIfReady();
     });
 }

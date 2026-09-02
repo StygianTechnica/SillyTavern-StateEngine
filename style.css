@@ -3,6 +3,22 @@
     margin-bottom: 8px;
 }
 
+#state_engine_settings .checkbox_label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 0;
+}
+
+#state_engine_settings .checkbox_label input[type="checkbox"] {
+    margin: 0;
+    flex: 0 0 auto;
+}
+
+#state_engine_settings .checkbox_label span {
+    display: inline;
+}
+
 #state_engine_settings .se-grid2 {
     display: grid;
     grid-template-columns: 1fr 1fr;
