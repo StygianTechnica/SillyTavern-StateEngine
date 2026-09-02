@@ -248,33 +248,36 @@ export function renderManagerVariablesTab() {
                 // Show label (display name) if available, otherwise just the name
                 const displayLabel = varDef.label ? `<span class="se-manager-variable-label">${escapeHtml(varDef.label)}</span>` : '';
                 return `
-                <div class="se-manager-variable-row" data-var-name="${(varDef.name || varId).toLowerCase()}" data-var-label="${(varDef.label || '').toLowerCase()}" data-show-in-tracker="${varDef.showInTracker !== false}">
-                    <div class="se-manager-variable-info">
-                        <div class="se-manager-variable-name">
-                            ${escapeHtml(varDef.name || varId)}
-                            ${displayLabel}
+                <div class="se-manager-variable-row" data-var-id="${varId}" data-var-name="${(varDef.name || varId).toLowerCase()}" data-var-label="${(varDef.label || '').toLowerCase()}" data-show-in-tracker="${varDef.showInTracker !== false}">
+                    <div class="se-manager-variable-row-header">
+                        <div class="se-manager-variable-info">
+                            <div class="se-manager-variable-name">
+                                ${escapeHtml(varDef.name || varId)}
+                                ${displayLabel}
+                            </div>
+                            <small class="se-manager-variable-meta">
+                                ${escapeHtml(varDef.category || 'manual')} • ${escapeHtml(varDef.type || 'string')}
+                            </small>
                         </div>
-                        <small class="se-manager-variable-meta">
-                            ${escapeHtml(varDef.category || 'manual')} • ${escapeHtml(varDef.type || 'string')}
-                        </small>
+                        <div class="se-manager-variable-actions">
+                            <button class="se-manager-action-btn se-manager-move-variable-up" data-var-id="${varId}" data-preset-id="${selectedPresetId}" title="Move up" ${index === 0 ? 'disabled' : ''}>
+                                <i class="fa-solid fa-arrow-up"></i>
+                            </button>
+                            <button class="se-manager-action-btn se-manager-move-variable-down" data-var-id="${varId}" data-preset-id="${selectedPresetId}" title="Move down" ${index === variableEntries.length - 1 ? 'disabled' : ''}>
+                                <i class="fa-solid fa-arrow-down"></i>
+                            </button>
+                            <button class="se-manager-action-btn se-manager-toggle-visibility" data-var-id="${varId}" data-preset-id="${selectedPresetId}" title="Toggle visibility in tracker">
+                                <i class="fa-solid ${varDef.showInTracker !== false ? 'fa-eye' : 'fa-eye-slash'}"></i>
+                            </button>
+                            <button class="se-manager-action-btn se-manager-edit-variable" data-var-id="${varId}" data-preset-id="${selectedPresetId}" title="Edit">
+                                <i class="fa-solid fa-pencil"></i>
+                            </button>
+                            <button class="se-manager-action-btn se-manager-delete-variable" data-var-id="${varId}" data-preset-id="${selectedPresetId}" title="Delete">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
                     </div>
-                    <div class="se-manager-variable-actions">
-                        <button class="se-manager-action-btn se-manager-move-variable-up" data-var-id="${varId}" data-preset-id="${selectedPresetId}" title="Move up" ${index === 0 ? 'disabled' : ''}>
-                            <i class="fa-solid fa-arrow-up"></i>
-                        </button>
-                        <button class="se-manager-action-btn se-manager-move-variable-down" data-var-id="${varId}" data-preset-id="${selectedPresetId}" title="Move down" ${index === variableEntries.length - 1 ? 'disabled' : ''}>
-                            <i class="fa-solid fa-arrow-down"></i>
-                        </button>
-                        <button class="se-manager-action-btn se-manager-toggle-visibility" data-var-id="${varId}" data-preset-id="${selectedPresetId}" title="Toggle visibility in tracker">
-                            <i class="fa-solid ${varDef.showInTracker !== false ? 'fa-eye' : 'fa-eye-slash'}"></i>
-                        </button>
-                        <button class="se-manager-action-btn se-manager-edit-variable" data-var-id="${varId}" data-preset-id="${selectedPresetId}" title="Edit">
-                            <i class="fa-solid fa-pencil"></i>
-                        </button>
-                        <button class="se-manager-action-btn se-manager-delete-variable" data-var-id="${varId}" data-preset-id="${selectedPresetId}" title="Delete">
-                            <i class="fa-solid fa-trash"></i>
-                        </button>
-                    </div>
+                    <div class="se-manager-variable-editor-inline" style="display:none;"></div>
                 </div>
             `;
             })
@@ -317,7 +320,6 @@ export function renderManagerVariablesTab() {
                     </select>
                 </div>
             </div>
-            <div id="se-manager-variable-editor" class="se-manager-variable-editor" style="display:none;"></div>
 
             <div class="se-manager-variable-list" id="se-manager-variable-list">
                 ${variablesList || '<div class="se-empty">No variables in this preset yet.</div>'}
@@ -381,6 +383,76 @@ export function renderManagerWorldInfoTab() {
     `;
 
     $tab.html(html);
+}
+
+function showInlineVariableEditor(varDef, $row) {
+    const d = varDef || {
+        id: generateUUID(),
+        name: '',
+        label: '',
+        category: 'manual',
+        scope: 'chat',
+        type: 'string',
+        default: '',
+        enumValues: [],
+        min: '',
+        max: '',
+        description: '',
+        resetOnNewChat: false,
+        showInTracker: true,
+        counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
+        cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
+        prompted: { triggers: [], instructions: '' }
+    };
+
+    const $editor = $row.find('.se-manager-variable-editor-inline');
+    
+    $editor.html(`
+        <div class="se-manager-variable-editor-fields">
+            <input class="text_pole se-manager-var-field" data-field="name" placeholder="Variable name" value="${escapeHtml(d.name || '')}" />
+            <input class="text_pole se-manager-var-field" data-field="label" placeholder="Label" value="${escapeHtml(d.label || '')}" />
+            <select class="text_pole se-manager-var-field" data-field="category">
+                <option value="manual" ${d.category === 'manual' ? 'selected' : ''}>Manual</option>
+                <option value="cycling" ${d.category === 'cycling' ? 'selected' : ''}>Cycling</option>
+                <option value="prompted" ${d.category === 'prompted' ? 'selected' : ''}>Prompted</option>
+            </select>
+            <select class="text_pole se-manager-var-field" data-field="type">
+                <option value="string" ${d.type === 'string' ? 'selected' : ''}>String</option>
+                <option value="number" ${d.type === 'number' ? 'selected' : ''}>Number</option>
+                <option value="boolean" ${d.type === 'boolean' ? 'selected' : ''}>Boolean</option>
+                <option value="enum" ${d.type === 'enum' ? 'selected' : ''}>Enum</option>
+            </select>
+            <input class="text_pole se-manager-var-field" data-field="default" placeholder="Default value" value="${escapeHtml(d.default || '')}" />
+            <div class="se-manager-variable-editor-actions">
+                <button class="menu_button se-manager-save-variable-inline">${varDef ? 'Save' : 'Create'}</button>
+                <button class="menu_button se-manager-cancel-variable-inline">Cancel</button>
+            </div>
+        </div>
+    `).data('editing-id', d.id).data('editing-existing', !!varDef).show();
+
+    // Disable other controls
+    $('#se-manager-new-variable, #se-manager-variable-search, #se-manager-variable-sort').prop('disabled', true).css('opacity', '0.5');
+    $row.siblings('.se-manager-variable-row').css('opacity', '0.5').find('button:not(.se-manager-edit-variable)').prop('disabled', true);
+    $row.find('.se-manager-variable-row-header').css('opacity', '0.5').find('button').prop('disabled', true);
+}
+
+function hideInlineVariableEditor($row) {
+    $row.find('.se-manager-variable-editor-inline').hide().empty().removeData('editing-id').removeData('editing-existing');
+    
+    // Re-enable other controls
+    $('#se-manager-new-variable, #se-manager-variable-search, #se-manager-variable-sort').prop('disabled', false).css('opacity', '1');
+    $row.siblings('.se-manager-variable-row').css('opacity', '1').find('button').prop('disabled', false);
+    $row.find('.se-manager-variable-row-header').css('opacity', '1').find('button').prop('disabled', false);
+}
+
+function collectInlineVariableValues($row) {
+    const $editor = $row.find('.se-manager-variable-editor-inline');
+    const values = { id: $editor.data('editing-id') };
+    $editor.find('.se-manager-var-field').each(function () {
+        values[$(this).attr('data-field')] = $(this).val();
+    });
+    values.showInTracker = true;
+    return values;
 }
 
 function showVariableEditor(def) {
@@ -812,7 +884,9 @@ export function wireManagerModalEvents() {
         const preset = settings.presets[presetId];
         if (!preset || !preset.variables || !preset.variables[varId]) return;
         managerCurrentPresetId = presetId;
-        showVariableEditor(preset.variables[varId]);
+        
+        const $row = $(this).closest('.se-manager-variable-row');
+        showInlineVariableEditor(preset.variables[varId], $row);
     });
 
     $overlay.on('click', '.se-manager-move-variable-up', function () {
@@ -864,6 +938,61 @@ export function wireManagerModalEvents() {
 
     $overlay.on('click', '.se-manager-cancel-variable', function () {
         $('#se-manager-variable-editor').hide().empty();
+    });
+
+    $overlay.on('click', '.se-manager-cancel-variable-inline', function () {
+        const $row = $(this).closest('.se-manager-variable-row');
+        hideInlineVariableEditor($row);
+    });
+
+    $overlay.on('click', '.se-manager-save-variable-inline', function () {
+        const $row = $(this).closest('.se-manager-variable-row');
+        const $editor = $row.find('.se-manager-variable-editor-inline');
+        if (!$editor.length) return;
+
+        const settings = managerApi.getSettings();
+        const presetId = managerCurrentPresetId;
+        const preset = settings.presets[presetId];
+        if (!preset) return;
+
+        const values = collectInlineVariableValues($row);
+        const isNew = !$editor.data('editing-existing');
+
+        if (!values.name || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(values.name)) {
+            alert('Variable name is required and must start with a letter or underscore.');
+            return;
+        }
+
+        // Check for reserved SillyTavern variable names
+        if (managerApi.isReservedVariable(values.name)) {
+            alert(`Cannot create variable: "${values.name}" is a reserved SillyTavern macro name.\n\nReserved names include: charname, user, bot, time, date, random, counter, and others.\n\nPlease choose a different name.`);
+            return;
+        }
+
+        if (!preset.variables) preset.variables = {};
+        if (isNew && preset.variables[values.id]) {
+            values.id = generateUUID();
+        }
+
+        preset.variables[values.id] = {
+            id: values.id,
+            name: values.name.trim(),
+            label: String(values.label || '').trim(),
+            category: values.category || 'manual',
+            scope: 'chat',
+            type: values.type || 'string',
+            default: values.default || '',
+            showInTracker: true,
+            description: '',
+            counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
+            cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
+            prompted: { triggers: [], instructions: '' }
+        };
+
+        managerApi.persistSettings(settings);
+        hideInlineVariableEditor($row);
+        renderManagerVariablesTab();
+        managerApi.setStatus(isNew ? 'Variable created.' : 'Variable updated.');
     });
 
     $overlay.on('click', '.se-manager-save-variable', function () {

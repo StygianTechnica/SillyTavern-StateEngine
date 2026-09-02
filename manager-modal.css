@@ -389,18 +389,65 @@
 
 .se-manager-variable-row {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px;
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
     background-color: var(--bg-secondary, #222);
     border: 1px solid var(--border-color, #333);
     border-radius: 4px;
     transition: all 0.2s;
+    overflow: hidden;
 }
 
-.se-manager-variable-row:hover {
+.se-manager-variable-row:hover .se-manager-variable-row-header {
     border-color: var(--accent-color, #4a9eff);
     background-color: rgba(74, 158, 255, 0.05);
+}
+
+.se-manager-variable-row-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px;
+    border-bottom: none;
+    transition: all 0.2s;
+}
+
+.se-manager-variable-editor-inline {
+    display: none;
+    padding: 12px;
+    background-color: rgba(74, 158, 255, 0.05);
+    border-top: 1px solid var(--border-color, #333);
+}
+
+.se-manager-variable-editor-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.se-manager-variable-editor-fields .se-manager-var-field {
+    width: 100%;
+    padding: 8px 10px;
+    background-color: var(--bg-secondary, #222);
+    border: 1px solid var(--border-color, #333);
+    border-radius: 3px;
+    color: var(--text-color, #fff);
+    font-family: inherit;
+    font-size: 13px;
+    transition: border-color 0.2s;
+}
+
+.se-manager-variable-editor-fields .se-manager-var-field:focus {
+    outline: none;
+    border-color: var(--accent-color, #4a9eff);
+}
+
+.se-manager-variable-editor-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
 }
 
 .se-manager-variable-info {
