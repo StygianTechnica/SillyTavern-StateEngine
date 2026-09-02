@@ -61,7 +61,8 @@ setManagerApi({
     restoreDefaultPresets,
     toggleDebugMode,
     debugLog,
-    getDebugInfo
+    getDebugInfo,
+    isReservedVariable
 });
 
 function getCurrentChatId() {

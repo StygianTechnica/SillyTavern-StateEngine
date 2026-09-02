@@ -764,6 +764,12 @@ export function wireManagerModalEvents() {
             return;
         }
 
+        // Check for reserved SillyTavern variable names
+        if (managerApi.isReservedVariable(values.name)) {
+            alert(`Cannot create variable: "${values.name}" is a reserved SillyTavern macro name.\n\nReserved names include: charname, user, bot, time, date, random, counter, and others.\n\nPlease choose a different name.`);
+            return;
+        }
+
         if (!preset.variables) preset.variables = {};
         if (isNew && preset.variables[values.id]) {
             values.id = generateUUID();
