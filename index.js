@@ -910,7 +910,7 @@ function getStarterPresetBlueprints() {
         resetOnNewChat: false,
         showInTracker: true,
         counter: { trigger: 'ai', direction: 'increment', step: 1 },
-        cycling: { trigger: 'ai', values: [], prompted?.instructions: '' },
+        cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
         prompted: { triggers: ['ai'], instructions: '' },
         ...overrides,
     });
@@ -922,7 +922,7 @@ function getStarterPresetBlueprints() {
             triggers: ['ai'],
             vars: [
                 makeVar({ name: 'chapter', label: 'Chapter', category: 'counter', type: 'number', defaultValue: 1, min: 1, counter: { trigger: 'prompted', direction: 'increment', step: 1 }, description: 'Main narrative chapter progression.' }),
-                makeVar({ name: 'arc_phase', label: 'Arc Phase', category: 'cycling', type: 'enum', enumValues: ['setup', 'rising_action', 'climax', 'aftermath'], defaultValue: 'setup', cycling: { trigger: 'prompted', values: ['setup', 'rising_action', 'climax', 'aftermath'], prompted?.instructions: 'Advance when the current arc phase has clearly resolved in roleplay context.' }, description: 'Current high-level story arc phase.' }),
+                makeVar({ name: 'arc_phase', label: 'Arc Phase', category: 'cycling', type: 'enum', enumValues: ['setup', 'rising_action', 'climax', 'aftermath'], defaultValue: 'setup', cycling: { trigger: 'prompted', values: ['setup', 'rising_action', 'climax', 'aftermath'], promptedInstructions: 'Advance when the current arc phase has clearly resolved in roleplay context.' }, description: 'Current high-level story arc phase.' }),
                 makeVar({ name: 'quest_active', label: 'Quest Active', category: 'manual', type: 'boolean', defaultValue: false, description: 'Whether a main quest is currently active.' }),
                 makeVar({ name: 'quest_name', label: 'Quest Name', category: 'manual', type: 'string', defaultValue: '', description: 'Current quest title.' }),
             ],
@@ -933,7 +933,7 @@ function getStarterPresetBlueprints() {
             triggers: ['user', 'ai'],
             vars: [
                 makeVar({ name: 'current_location', label: 'Current Location', category: 'manual', type: 'enum', enumValues: ['tavern', 'market', 'arena', 'road', 'wilderness'], defaultValue: 'tavern', description: 'Current scene location.' }),
-                makeVar({ name: 'time_of_day', label: 'Time of Day', category: 'cycling', type: 'enum', enumValues: ['dawn', 'morning', 'noon', 'evening', 'night'], defaultValue: 'morning', cycling: { trigger: 'prompted', values: ['dawn', 'morning', 'noon', 'evening', 'night'], prompted?.instructions: 'Advance when scene pacing or narration implies time has progressed.' }, description: 'Narrative time period.' }),
+                makeVar({ name: 'time_of_day', label: 'Time of Day', category: 'cycling', type: 'enum', enumValues: ['dawn', 'morning', 'noon', 'evening', 'night'], defaultValue: 'morning', cycling: { trigger: 'prompted', values: ['dawn', 'morning', 'noon', 'evening', 'night'], promptedInstructions: 'Advance when scene pacing or narration implies time has progressed.' }, description: 'Narrative time period.' }),
                 makeVar({ name: 'weather', label: 'Weather', category: 'prompted', type: 'string', defaultValue: 'clear', prompted: { triggers: ['ai'], instructions: 'Infer weather from current narrative context. Keep concise (1-3 words).' }, description: 'Current weather condition.' }),
                 makeVar({ name: 'is_indoor', label: 'Indoor Scene', category: 'manual', type: 'boolean', defaultValue: true, description: 'Whether current scene is indoors.' }),
             ],
@@ -945,7 +945,7 @@ function getStarterPresetBlueprints() {
             vars: [
                 makeVar({ name: 'npc_trust', label: 'NPC Trust', category: 'prompted', type: 'number', defaultValue: 25, min: 0, max: 100, prompted: { triggers: ['ai'], instructions: 'Estimate trust from recent interactions on a 0-100 scale.' }, description: 'General trust level with a focal NPC.' }),
                 makeVar({ name: 'npc_affection', label: 'NPC Affection', category: 'prompted', type: 'number', defaultValue: 20, min: 0, max: 100, prompted: { triggers: ['ai'], instructions: 'Estimate affection from recent interactions on a 0-100 scale.' }, description: 'General affection level with a focal NPC.' }),
-                makeVar({ name: 'relationship_status', label: 'Relationship Status', category: 'cycling', type: 'enum', enumValues: ['strangers', 'acquaintances', 'friends', 'allies', 'intimate'], defaultValue: 'strangers', cycling: { trigger: 'prompted', values: ['strangers', 'acquaintances', 'friends', 'allies', 'intimate'], prompted?.instructions: 'Advance only when interactions clearly justify relationship progression.' }, description: 'Current relationship state.' }),
+                makeVar({ name: 'relationship_status', label: 'Relationship Status', category: 'cycling', type: 'enum', enumValues: ['strangers', 'acquaintances', 'friends', 'allies', 'intimate'], defaultValue: 'strangers', cycling: { trigger: 'prompted', values: ['strangers', 'acquaintances', 'friends', 'allies', 'intimate'], promptedInstructions: 'Advance only when interactions clearly justify relationship progression.' }, description: 'Current relationship state.' }),
                 makeVar({ name: 'betrayal_flag', label: 'Betrayal Flag', category: 'manual', type: 'boolean', defaultValue: false, description: 'Set true if betrayal has occurred.' }),
             ],
         },
@@ -968,7 +968,7 @@ function getStarterPresetBlueprints() {
                 makeVar({ name: 'mood', label: 'Mood', category: 'prompted', type: 'string', defaultValue: 'neutral', prompted: { triggers: ['ai'], instructions: 'Infer room mood in one word: calm, tense, hopeful, ominous, etc.' }, description: 'Prompted text example.' }),
                 makeVar({ name: 'danger_score', label: 'Danger Score', category: 'prompted', type: 'number', defaultValue: 10, min: 0, max: 100, prompted: { triggers: ['ai'], instructions: 'Estimate danger from recent context from 0-100.' }, description: 'Prompted number with min/max.' }),
                 makeVar({ name: 'story_flags', label: 'Story Flags', category: 'manual', type: 'array', defaultValue: '[]', description: 'Manual array, e.g. [\"blood_moon\",\"debt_paid\"].' }),
-                makeVar({ name: 'event_stage', label: 'Event Stage', category: 'cycling', type: 'enum', enumValues: ['seed', 'signal', 'portent', 'manifest'], defaultValue: 'seed', cycling: { trigger: 'prompted', values: ['seed', 'signal', 'portent', 'manifest'], prompted?.instructions: 'Advance when narrative omens intensify enough to justify next stage.' }, description: 'Cycling enum showcase.' }),
+                makeVar({ name: 'event_stage', label: 'Event Stage', category: 'cycling', type: 'enum', enumValues: ['seed', 'signal', 'portent', 'manifest'], defaultValue: 'seed', cycling: { trigger: 'prompted', values: ['seed', 'signal', 'portent', 'manifest'], promptedInstructions: 'Advance when narrative omens intensify enough to justify next stage.' }, description: 'Cycling enum showcase.' }),
                 makeVar({ name: 'heartbeat', label: 'Heartbeat Counter', category: 'counter', type: 'number', defaultValue: 0, counter: { trigger: 'both', direction: 'increment', step: 1 }, description: 'Simple per-message counter.' }),
                 makeVar({ name: 'omens_unlocked', label: 'Omens Unlocked', category: 'manual', type: 'boolean', defaultValue: false, description: 'Manual boolean toggle showcase.' }),
             ],
@@ -1312,8 +1312,8 @@ function blankDefinition() {
         description: '',
         resetOnNewChat: false,
         showInTracker: true,
-        counter: { trigger: 'ai', direction: 'increment', step: 1, prompted?.instructions: '' },
-        cycling: { trigger: 'ai', values: [], prompted?.instructions: '' },
+        counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
+        cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
         prompted: { triggers: ['ai'], instructions: '' },
     };
 }
@@ -1725,7 +1725,7 @@ async function runPromptedIncrements(triggerType) {
                     return `- "${def.name}" (counter, step ${def.counter?.step ?? 1}, current: ${currentValue}): ${instructions}`;
                 } else {
                     const values = def.cycling?.values || [];
-                    const instructions = (def.cycling?.prompted?.instructions || def.description || '').trim();
+                    const instructions = (def.cycling?.promptedInstructions || def.description || '').trim();
                     return `- "${def.name}" (cycling through: ${values.join(' → ')}, current: ${currentValue}): ${instructions}`;
                 }
             })
@@ -1908,7 +1908,7 @@ async function runPromptedUpdates(triggerType) {
         const varLines = defs
             .map((def) => {
                 const current = getVarValue(context, def);
-                const instructions = (def.prompted?.instructions || def.description || '').trim();
+                const instructions = (def.promptedInstructions || def.description || '').trim();
                 return `- "${def.name}" [${describeConstraint(def)}] currently ${JSON.stringify(current)}.${instructions ? ` ${instructions}` : ''}`;
             })
             .join('\n');
@@ -2415,19 +2415,19 @@ function openEditor(def) {
     $('#se_f_counter_trigger').val(d.counter?.trigger || 'ai');
     $('#se_f_counter_direction').val(d.counter?.direction || 'increment');
     $('#se_f_counter_step').val(d.counter?.step ?? 1);
-    $('#se_f_counter_prompted_instructions').val(d.counter?.prompted?.instructions || '');
+    $('#se_f_counter_prompted_instructions').val(d.counter?.promptedInstructions || '');
     
     // Cycling fields
     $('#se_f_cycling_values').val((d.cycling?.values || []).join('\n'));
     $('#se_f_cycling_trigger').val(d.cycling?.trigger || 'ai');
-    $('#se_f_cycling_prompted_instructions').val(d.cycling?.prompted?.instructions || '');
+    $('#se_f_cycling_prompted_instructions').val(d.cycling?.promptedInstructions || '');
     
     // Prompted fields
     const activeTriggers = Array.isArray(d.prompted?.triggers) ? d.prompted.triggers : [];
     $('.se-f-prompted-trigger').each(function () {
         $(this).prop('checked', activeTriggers.includes($(this).val()));
     });
-    $('#se_f_prompted_instructions').val(d.prompted?.instructions || '');
+    $('#se_f_prompted_instructions').val(d.promptedInstructions || '');
 
     toggleEditorSections();
     $('#se_editor').data('is-new', isNew).show();
@@ -2469,12 +2469,12 @@ function readEditorForm() {
             trigger: $('#se_f_counter_trigger').val(),
             direction: $('#se_f_counter_direction').val(),
             step: Number($('#se_f_counter_step').val()) || 1,
-            prompted?.instructions: String($('#se_f_counter_prompted_instructions').val() || ''),
+            promptedInstructions: String($('#se_f_counter_prompted_instructions').val() || ''),
         },
         cycling: {
             trigger: $('#se_f_cycling_trigger').val(),
             values: cyclingValues,
-            prompted?.instructions: String($('#se_f_cycling_prompted_instructions').val() || ''),
+            promptedInstructions: String($('#se_f_cycling_prompted_instructions').val() || ''),
         },
         prompted: {
             triggers: $('.se-f-prompted-trigger:checked').map(function () { return $(this).val(); }).get(),
