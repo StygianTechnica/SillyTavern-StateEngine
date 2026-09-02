@@ -121,6 +121,7 @@ function getWandContainer() {
 }
 
 async function addStateEngineWandUi() {
+    if (!getSettings().wandVisible) return;
     const container = getWandContainer();
     if (!container.length) return;
     if (document.getElementById('state-engine-wand-button')) return;
@@ -140,6 +141,7 @@ async function addStateEngineWandUi() {
 
 const DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
+    wandVisible: true,
     contextMessageCount: 10,
     responseLength: 300,
     connectionProfileId: '',
@@ -2579,6 +2581,7 @@ function deleteVariable(id) {
 function loadGeneralSettingsIntoForm() {
     const settings = getSettings();
     $('#se_enabled').prop('checked', !!settings.enabled);
+    $('#se_wand_visible').prop('checked', settings.wandVisible !== false);
     $('#se_show_tracker_panel').prop('checked', !!settings.showTrackerPanel);
     $('#se_context_count').val(settings.contextMessageCount);
     $('#se_response_length').val(settings.responseLength);
@@ -2598,6 +2601,10 @@ function refreshPanelIfOpen() {
 function bindPanelEvents() {
     $('#se_enabled').on('change', function () {
         getSettings().enabled = $(this).is(':checked');
+        persistSettings();
+    });
+    $('#se_wand_visible').on('change', function () {
+        getSettings().wandVisible = $(this).is(':checked');
         persistSettings();
     });
     $('#se_show_tracker_panel').on('change', function () {
