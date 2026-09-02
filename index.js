@@ -49,6 +49,7 @@ let currentPresetId = null;
 setManagerApi({
     getSettings,
     persistSettings,
+    getCurrentChatId,
     createPreset,
     renamePreset,
     deletePreset,

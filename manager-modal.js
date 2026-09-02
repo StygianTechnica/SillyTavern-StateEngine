@@ -100,7 +100,7 @@ export function renderManagerPresetsTab() {
     $tab.empty();
 
     // Get current chat ID
-    const currentChatId = getCurrentChatId();
+    const currentChatId = managerApi.getCurrentChatId();
 
     const chatPresets = managerApi.getPresetsForChat(currentChatId);
     const allPresets = settings.presets || {};
@@ -217,7 +217,7 @@ export function renderManagerVariablesTab() {
     $tab.empty();
 
     // Preset selector
-    const activePresetIds = managerApi.getPresetsForChat(getCurrentChatId());
+    const activePresetIds = managerApi.getPresetsForChat(managerApi.getCurrentChatId());
     const allPresets = Object.keys(settings.presets || {});
     const selectedPresetId = allPresets.includes(managerCurrentPresetId)
         ? managerCurrentPresetId
@@ -464,15 +464,6 @@ function moveVariable(presetId, varId, direction) {
     preset.variables = Object.fromEntries(swapped);
     managerApi.persistSettings(settings);
     renderManagerVariablesTab();
-}
-
-function getCurrentChatId() {
-    try {
-        const context = window.SillyTavern?.getContext?.();
-        return context?.chat?.id || null;
-    } catch (e) {
-        return null;
-    }
 }
 
 export function renderManagerDebugTab() {
