@@ -401,8 +401,8 @@ function showInlineVariableEditor(varDef, $row) {
         resetOnNewChat: false,
         showInTracker: true,
         skipPromptedRefresh: false,
-        counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
-        cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
+        counter: { trigger: 'ai', direction: 'increment', step: 1, prompted.instructions: '' },
+        cycling: { trigger: 'ai', values: [], prompted.instructions: '' },
         prompted: { triggers: [], instructions: '' }
     };
 
@@ -475,8 +475,8 @@ function showVariableEditor(def) {
         description: '',
         resetOnNewChat: false,
         showInTracker: true,
-        counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
-        cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
+        counter: { trigger: 'ai', direction: 'increment', step: 1, prompted.instructions: '' },
+        cycling: { trigger: 'ai', values: [], prompted.instructions: '' },
         prompted: { triggers: [], instructions: '' }
     };
 
