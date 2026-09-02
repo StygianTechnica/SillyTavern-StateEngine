@@ -105,12 +105,21 @@ function openManagerIfReady() {
         updateManagerButtonState();
         return;
     }
+    if ($('#se-manager-overlay').length && $('#se-manager-overlay').is(':visible')) {
+        hideManagerModal();
+        return;
+    }
     buildManagerModal();
 }
 
 function openTrackerPanelIfReady() {
     if (!getCurrentChatId()) {
         updateManagerButtonState();
+        return;
+    }
+    const $panel = $('#se_tracker_panel');
+    if ($panel.length && $panel.is(':visible')) {
+        setTrackerPanelVisible(false);
         return;
     }
     setTrackerPanelVisible(true);
