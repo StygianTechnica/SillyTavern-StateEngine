@@ -149,7 +149,7 @@ export function renderManagerPresetsTab() {
                                 ${preset.description ? `<span class="se-manager-preset-description-inline">${escapeHtml(preset.description)}</span>` : ''}
                             </div>
                             <small class="se-manager-preset-meta">
-                                ${isActive ? 'Active' : 'Inactive'} • ${triggers.length > 0 ? `${triggers.length} trigger(s)` : 'No triggers'}
+                                ${isActive ? 'Active' : 'Inactive'} • ${triggers.length > 0 ? `${triggers.length} trigger(s)` : 'No triggers'} • ${Object.keys(preset.variables || {}).length} variable${Object.keys(preset.variables || {}).length === 1 ? '' : 's'}
                             </small>
                         </div>
                         <div class="se-row-actions">
@@ -310,8 +310,7 @@ export function renderManagerVariablesTab() {
                         placeholder="Search variables..." 
                         style="width: 200px; padding: 4px 8px; font-size: 0.9em;" 
                     />
-                    <select id="se-manager-variable-sort" class="text_pole" style="width: 150px; padding: 4px 8px; font-size: 0.9em;">
-                        <option value="order">Original order</option>
+                    <select id="se-manager-variable-sort" class="text_pole" style="width: 120px; padding: 4px 8px; font-size: 0.9em;">
                         <option value="tracker">Tracker order</option>
                         <option value="name-asc">Name (A-Z)</option>
                         <option value="name-desc">Name (Z-A)</option>
@@ -584,7 +583,7 @@ function filterAndSortVariables() {
     if (!$list.length) return;
 
     const searchTerm = $('#se-manager-variable-search').val().toLowerCase();
-    const sortMode = $('#se-manager-variable-sort').val() || 'order';
+    const sortMode = $('#se-manager-variable-sort').val() || 'tracker';
     let $rows = $list.find('.se-manager-variable-row');
 
     // Filter based on search (partial match on both name and label)
@@ -617,7 +616,7 @@ function filterAndSortVariables() {
                 $row.hide();
             }
         });
-    } else if (sortMode !== 'order') {
+    } else if (sortMode === 'name-asc' || sortMode === 'name-desc') {
         visibleRows.sort((a, b) => {
             const $aRow = $(a);
             const $bRow = $(b);
@@ -626,13 +625,10 @@ function filterAndSortVariables() {
             const aLabel = $aRow.data('var-label');
             const bLabel = $bRow.data('var-label');
 
-            switch (sortMode) {
-                case 'name-asc':
-                    return (aLabel || aName).localeCompare(bLabel || bName);
-                case 'name-desc':
-                    return (bLabel || bName).localeCompare(aLabel || aName);
-                default:
-                    return 0;
+            if (sortMode === 'name-asc') {
+                return (aLabel || aName).localeCompare(bLabel || bName);
+            } else {
+                return (bLabel || bName).localeCompare(aLabel || aName);
             }
         });
 
