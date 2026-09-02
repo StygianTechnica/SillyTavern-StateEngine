@@ -2239,11 +2239,8 @@ function renderVarTable() {
     }
     const activePresetIds = getPresetsForChat(chatId);
     
-    // If no active presets, use default only when a chat exists
-    if (activePresetIds.length === 0 && settings.defaultPresetForNewChats && getCurrentChatId()) {
-        activePresetIds.push(settings.defaultPresetForNewChats);
-        setPresetsForChat(chatId, activePresetIds);
-    }
+    // Don't auto-add default presets here — that should only happen on first chat load
+    // If user explicitly deactivated all presets, respect that choice
     
     // Render tabs
     const $tabContainer = $('#se_preset_tabs');
