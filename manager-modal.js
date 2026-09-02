@@ -244,10 +244,16 @@ export function renderManagerVariablesTab() {
         const preset = settings.presets[selectedPresetId];
         const variableEntries = Object.entries(preset.variables || {});
         variablesList = variableEntries
-            .map(([varId, varDef], index) => `
-                <div class="se-manager-variable-row">
+            .map(([varId, varDef], index) => {
+                // Show label (display name) if available, otherwise just the name
+                const displayLabel = varDef.label ? `<span class="se-manager-variable-label">${escapeHtml(varDef.label)}</span>` : '';
+                return `
+                <div class="se-manager-variable-row" data-var-name="${(varDef.name || varId).toLowerCase()}" data-var-label="${(varDef.label || '').toLowerCase()}">
                     <div class="se-manager-variable-info">
-                        <div class="se-manager-variable-name">${escapeHtml(varDef.name || varId)}</div>
+                        <div class="se-manager-variable-name">
+                            ${escapeHtml(varDef.name || varId)}
+                            ${displayLabel}
+                        </div>
                         <small class="se-manager-variable-meta">
                             ${escapeHtml(varDef.category || 'manual')} • ${escapeHtml(varDef.type || 'string')}
                         </small>
@@ -270,7 +276,8 @@ export function renderManagerVariablesTab() {
                         </button>
                     </div>
                 </div>
-            `)
+            `;
+            })
             .join('');
     }
 
@@ -294,10 +301,27 @@ export function renderManagerVariablesTab() {
                 <button id="se-manager-new-variable" class="menu_button" title="Create a new variable">
                     <i class="fa-solid fa-plus"></i> New Variable
                 </button>
+                <div style="flex: 1;"></div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <input 
+                        type="text" 
+                        id="se-manager-variable-search" 
+                        class="text_pole" 
+                        placeholder="Search variables..." 
+                        style="width: 200px; padding: 4px 8px; font-size: 0.9em;" 
+                    />
+                    <select id="se-manager-variable-sort" class="text_pole" style="width: 120px; padding: 4px 8px; font-size: 0.9em;">
+                        <option value="order">Original order</option>
+                        <option value="name-asc">Name (A-Z)</option>
+                        <option value="name-desc">Name (Z-A)</option>
+                        <option value="type">By type</option>
+                        <option value="category">By category</option>
+                    </select>
+                </div>
             </div>
             <div id="se-manager-variable-editor" class="se-manager-variable-editor" style="display:none;"></div>
 
-            <div class="se-manager-variable-list">
+            <div class="se-manager-variable-list" id="se-manager-variable-list">
                 ${variablesList || '<div class="se-empty">No variables in this preset yet.</div>'}
             </div>
         </div>
@@ -309,6 +333,10 @@ export function renderManagerVariablesTab() {
     if (selectedPresetId) {
         $('#se-manager-preset-selector').val(selectedPresetId);
     }
+
+    // Wire up search and sort handlers
+    $('#se-manager-variable-search').on('input', filterAndSortVariables);
+    $('#se-manager-variable-sort').on('change', filterAndSortVariables);
 }
 
 export function renderManagerWorldInfoTab() {
@@ -544,6 +572,76 @@ export function renderManagerDebugTab() {
     `;
 
     $tab.html(html);
+}
+
+function filterAndSortVariables() {
+    const $list = $('#se-manager-variable-list');
+    if (!$list.length) return;
+
+    const searchTerm = $('#se-manager-variable-search').val().toLowerCase();
+    const sortMode = $('#se-manager-variable-sort').val() || 'order';
+    let $rows = $list.find('.se-manager-variable-row');
+
+    // Filter based on search
+    $rows.each(function () {
+        const $row = $(this);
+        const varName = $row.data('var-name') || '';
+        const varLabel = $row.data('var-label') || '';
+        
+        if (searchTerm === '' || varName.includes(searchTerm) || varLabel.includes(searchTerm)) {
+            $row.show();
+        } else {
+            $row.hide();
+        }
+    });
+
+    // Get visible rows for sorting
+    $rows = $list.find('.se-manager-variable-row:visible');
+    const visibleRows = Array.from($rows);
+
+    // Sort based on selected mode
+    if (sortMode !== 'order') {
+        visibleRows.sort((a, b) => {
+            const $aRow = $(a);
+            const $bRow = $(b);
+            const aName = $aRow.data('var-name');
+            const bName = $bRow.data('var-name');
+            const aLabel = $aRow.data('var-label');
+            const bLabel = $bRow.data('var-label');
+            
+            let aType = $aRow.find('.se-manager-variable-meta').text().split('•')[1]?.trim() || '';
+            let bType = $bRow.find('.se-manager-variable-meta').text().split('•')[1]?.trim() || '';
+            let aCategory = $aRow.find('.se-manager-variable-meta').text().split('•')[0]?.trim() || '';
+            let bCategory = $bRow.find('.se-manager-variable-meta').text().split('•')[0]?.trim() || '';
+
+            switch (sortMode) {
+                case 'name-asc':
+                    return (aLabel || aName).localeCompare(bLabel || bName);
+                case 'name-desc':
+                    return (bLabel || bName).localeCompare(aLabel || aName);
+                case 'type':
+                    return aType.localeCompare(bType);
+                case 'category':
+                    return aCategory.localeCompare(bCategory);
+                default:
+                    return 0;
+            }
+        });
+
+        // Re-append sorted rows
+        visibleRows.forEach(row => {
+            $list.append(row);
+        });
+    }
+
+    // Show "no results" message if all hidden
+    if ($list.find('.se-manager-variable-row:visible').length === 0) {
+        if ($list.find('.se-empty').length === 0) {
+            $list.append('<div class="se-empty">No variables match your search.</div>');
+        }
+    } else {
+        $list.find('.se-empty').remove();
+    }
 }
 
 export function wireManagerModalEvents() {
