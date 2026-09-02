@@ -438,6 +438,15 @@
     flex: 0 0 auto;
 }
 
+.se-manager-action-btn.se-button-disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.se-manager-action-btn.se-button-disabled:hover {
+    color: var(--text-color, #999);
+}
+
 /* World Info Tab */
 .se-manager-worldinfo-list {
     display: flex;

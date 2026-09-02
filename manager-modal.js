@@ -248,7 +248,7 @@ export function renderManagerVariablesTab() {
                 // Show label (display name) if available, otherwise just the name
                 const displayLabel = varDef.label ? `<span class="se-manager-variable-label">${escapeHtml(varDef.label)}</span>` : '';
                 return `
-                <div class="se-manager-variable-row" data-var-name="${(varDef.name || varId).toLowerCase()}" data-var-label="${(varDef.label || '').toLowerCase()}">
+                <div class="se-manager-variable-row" data-var-name="${(varDef.name || varId).toLowerCase()}" data-var-label="${(varDef.label || '').toLowerCase()}" data-show-in-tracker="${varDef.showInTracker !== false}">
                     <div class="se-manager-variable-info">
                         <div class="se-manager-variable-name">
                             ${escapeHtml(varDef.name || varId)}
@@ -310,12 +310,11 @@ export function renderManagerVariablesTab() {
                         placeholder="Search variables..." 
                         style="width: 200px; padding: 4px 8px; font-size: 0.9em;" 
                     />
-                    <select id="se-manager-variable-sort" class="text_pole" style="width: 120px; padding: 4px 8px; font-size: 0.9em;">
+                    <select id="se-manager-variable-sort" class="text_pole" style="width: 150px; padding: 4px 8px; font-size: 0.9em;">
                         <option value="order">Original order</option>
+                        <option value="tracker">Tracker order</option>
                         <option value="name-asc">Name (A-Z)</option>
                         <option value="name-desc">Name (Z-A)</option>
-                        <option value="type">By type</option>
-                        <option value="category">By category</option>
                     </select>
                 </div>
             </div>
@@ -336,7 +335,13 @@ export function renderManagerVariablesTab() {
 
     // Wire up search and sort handlers
     $('#se-manager-variable-search').on('input', filterAndSortVariables);
-    $('#se-manager-variable-sort').on('change', filterAndSortVariables);
+    $('#se-manager-variable-sort').on('change', function () {
+        filterAndSortVariables();
+        updateMoveButtonStates();
+    });
+
+    // Set initial button states
+    updateMoveButtonStates();
 }
 
 export function renderManagerWorldInfoTab() {
@@ -582,12 +587,13 @@ function filterAndSortVariables() {
     const sortMode = $('#se-manager-variable-sort').val() || 'order';
     let $rows = $list.find('.se-manager-variable-row');
 
-    // Filter based on search
+    // Filter based on search (partial match on both name and label)
     $rows.each(function () {
         const $row = $(this);
         const varName = $row.data('var-name') || '';
         const varLabel = $row.data('var-label') || '';
         
+        // Show if: no search term, OR name contains term, OR label contains term
         if (searchTerm === '' || varName.includes(searchTerm) || varLabel.includes(searchTerm)) {
             $row.show();
         } else {
@@ -600,7 +606,18 @@ function filterAndSortVariables() {
     const visibleRows = Array.from($rows);
 
     // Sort based on selected mode
-    if (sortMode !== 'order') {
+    if (sortMode === 'tracker') {
+        // Tracker order: show only variables that appear in tracker (showInTracker !== false), keep original order
+        visibleRows.forEach(row => {
+            const $row = $(row);
+            const showInTracker = $row.data('show-in-tracker') === 'true' || $row.data('show-in-tracker') === true;
+            if (showInTracker) {
+                $row.show();
+            } else {
+                $row.hide();
+            }
+        });
+    } else if (sortMode !== 'order') {
         visibleRows.sort((a, b) => {
             const $aRow = $(a);
             const $bRow = $(b);
@@ -608,21 +625,12 @@ function filterAndSortVariables() {
             const bName = $bRow.data('var-name');
             const aLabel = $aRow.data('var-label');
             const bLabel = $bRow.data('var-label');
-            
-            let aType = $aRow.find('.se-manager-variable-meta').text().split('•')[1]?.trim() || '';
-            let bType = $bRow.find('.se-manager-variable-meta').text().split('•')[1]?.trim() || '';
-            let aCategory = $aRow.find('.se-manager-variable-meta').text().split('•')[0]?.trim() || '';
-            let bCategory = $bRow.find('.se-manager-variable-meta').text().split('•')[0]?.trim() || '';
 
             switch (sortMode) {
                 case 'name-asc':
                     return (aLabel || aName).localeCompare(bLabel || bName);
                 case 'name-desc':
                     return (bLabel || bName).localeCompare(aLabel || aName);
-                case 'type':
-                    return aType.localeCompare(bType);
-                case 'category':
-                    return aCategory.localeCompare(bCategory);
                 default:
                     return 0;
             }
@@ -637,10 +645,26 @@ function filterAndSortVariables() {
     // Show "no results" message if all hidden
     if ($list.find('.se-manager-variable-row:visible').length === 0) {
         if ($list.find('.se-empty').length === 0) {
-            $list.append('<div class="se-empty">No variables match your search.</div>');
+            $list.append('<div class="se-empty">No variables match your search or filter.</div>');
         }
     } else {
         $list.find('.se-empty').remove();
+    }
+}
+
+function updateMoveButtonStates() {
+    const sortMode = $('#se-manager-variable-sort').val() || 'order';
+    const isTrackerOrder = sortMode === 'tracker';
+    
+    // Enable/disable all move buttons based on sort mode
+    const $moveButtons = $('.se-manager-move-variable-up, .se-manager-move-variable-down');
+    $moveButtons.prop('disabled', !isTrackerOrder);
+    
+    // Add/remove class for visual feedback
+    if (isTrackerOrder) {
+        $moveButtons.removeClass('se-button-disabled');
+    } else {
+        $moveButtons.addClass('se-button-disabled');
     }
 }
 
@@ -805,10 +829,20 @@ export function wireManagerModalEvents() {
     });
 
     $overlay.on('click', '.se-manager-move-variable-up', function () {
+        const sortMode = $('#se-manager-variable-sort').val() || 'order';
+        if (sortMode !== 'tracker') {
+            managerApi.setStatus('Switch to "Tracker order" sort to reorder variables.');
+            return;
+        }
         moveVariable($(this).attr('data-preset-id'), $(this).attr('data-var-id'), -1);
     });
 
     $overlay.on('click', '.se-manager-move-variable-down', function () {
+        const sortMode = $('#se-manager-variable-sort').val() || 'order';
+        if (sortMode !== 'tracker') {
+            managerApi.setStatus('Switch to "Tracker order" sort to reorder variables.');
+            return;
+        }
         moveVariable($(this).attr('data-preset-id'), $(this).attr('data-var-id'), 1);
     });
 
