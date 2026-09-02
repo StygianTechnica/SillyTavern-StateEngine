@@ -83,6 +83,37 @@ function updateManagerButtonState() {
     $hint.toggle(!hasChat);
 }
 
+function ensureToolbarMenu() {
+    if ($('#se_toolbar_menu').length) return;
+
+    const $menu = $(
+        '<div id="se_toolbar_menu" class="se-toolbar-menu" style="display:none;">' +
+            '<button type="button" class="menu_button se-toolbar-menu-item" data-action="tracker">Tracker</button>' +
+            '<button type="button" class="menu_button se-toolbar-menu-item" data-action="manager">Manager</button>' +
+        '</div>'
+    );
+
+    $('body').append($menu);
+}
+
+function hideToolbarMenu() {
+    $('#se_toolbar_menu').hide();
+}
+
+function showToolbarMenu($anchor) {
+    ensureToolbarMenu();
+    const $menu = $('#se_toolbar_menu');
+    const offset = $anchor.offset();
+    if (!offset) return;
+
+    $menu.css({
+        position: 'absolute',
+        top: offset.top + $anchor.outerHeight(),
+        left: offset.left,
+        zIndex: 10000
+    }).show();
+}
+
 function refreshManagerButtonLater() {
     setTimeout(updateManagerButtonState, 0);
     setTimeout(updateManagerButtonState, 250);
@@ -106,6 +137,61 @@ function openManagerIfReady() {
         return;
     }
     buildManagerModal();
+}
+
+function openTrackerPanelIfReady() {
+    if (!getCurrentChatId()) {
+        updateManagerButtonState();
+        return;
+    }
+    setTrackerPanelVisible(true);
+}
+
+function ensureToolbarButton() {
+    if ($('#se_toolbar_button').length) return true;
+
+    const $target = $('#send_textarea, #send_textarea_container, #form_sheld, #form_sheld textarea, #send_textarea').first();
+    if (!$target.length) return false;
+
+    const $button = $(
+        '<button type="button" id="se_toolbar_button" class="menu_button se-toolbar-button" title="State Engine">' +
+            '<i class="fa-solid fa-wand-magic-sparkles"></i>' +
+        '</button>'
+    );
+
+    $button.on('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const $btn = $(this);
+        const $menu = $('#se_toolbar_menu');
+        if ($menu.is(':visible')) {
+            hideToolbarMenu();
+        } else {
+            showToolbarMenu($btn);
+        }
+    });
+
+    $target.first().after($button);
+    return true;
+}
+
+function registerChatTools() {
+    const context = SillyTavern.getContext?.() || {};
+    const registerChatTool = context.registerChatTool;
+    if (typeof registerChatTool !== 'function') return;
+
+    registerChatTool({
+        name: 'State Engine',
+        callback: () => {
+            ensureToolbarMenu();
+            const $button = $('#se_toolbar_button');
+            if ($button.length) {
+                showToolbarMenu($button);
+            } else {
+                ensureToolbarButton();
+            }
+        }
+    });
 }
 
 const DEFAULT_SETTINGS = Object.freeze({
@@ -2591,6 +2677,20 @@ function bindPanelEvents() {
     $('#se_run_now').on('click', () => runPromptedUpdates('manual-all'));
 
     $('#se_open_manager').on('click', () => openManagerIfReady());
+    $(document).on('click', '#se_toolbar_menu .se-toolbar-menu-item', function () {
+        const action = $(this).attr('data-action');
+        hideToolbarMenu();
+        if (action === 'tracker') {
+            openTrackerPanelIfReady();
+        } else if (action === 'manager') {
+            openManagerIfReady();
+        }
+    });
+    $(document).on('click', function (e) {
+        if (!$(e.target).closest('#se_toolbar_button, #se_toolbar_menu').length) {
+            hideToolbarMenu();
+        }
+    });
     updateManagerButtonState();
 
     $('#se_new_preset').on('click', () => {
@@ -2627,25 +2727,10 @@ function bindPanelEvents() {
     $('#se_f_category').on('change', toggleEditorSections);
     $('#se_f_counter_trigger').on('change', toggleEditorSections);
     $('#se_f_cycling_trigger').on('change', toggleEditorSections);
+}
 
-    $('#se_var_tbody').on('click', '.se-edit-btn', function () {
-       const id = $(this).closest('tr').attr('data-id');
-       if (!currentPresetId) return;
-       const preset = getSettings().presets[currentPresetId];
-       if (preset) {
-           const def = preset.variables[id];
-           if (def) openEditor(def);
-       }
-    });
-    $('#se_var_tbody').on('click', '.se-delete-btn', function () {
-       const id = $(this).closest('tr').attr('data-id');
-       deleteVariable(id);
-    });
-
-    // World Info Conditions UI event listeners
-    renderPresetList();
-    renderTrackerPresetList();
-    renderVarTable();
+function initializeExtension() {
+    registerChatTools();
 }
 
 function renderPresetList() {
@@ -2890,6 +2975,7 @@ jQuery(async () => {
         getSettings(); // ensure defaults exist / migrate
         await registerTemplates();
         await initPanel();
+        initializeExtension();
         registerEvents();
         registerSlashCommand();
         applyDefaultsForMissing();

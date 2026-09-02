@@ -1,64 +1,46 @@
 # State Engine
 
-A SillyTavern extension for local state tracking with reusable preset toolkits, strict typing, and automated updates.
+State Engine is a SillyTavern extension for local state tracking with reusable preset toolkits, strict typing, and automated updates.
 
-State Engine keeps variables in SillyTavern's native variable store (chat/global), exposes them through macros like `{{getvar::name}}`, and updates them via manual actions, counters, cycling sequences, or prompted AI decisions.
+Current branch version: `0.9.11`
 
-## Current version
+## What it does
 
-`0.5.0-dev` (local branch state)
+- Stores variables in SillyTavern's native variable store
+- Supports per-chat preset binding with activation order
+- Exposes values through macros like `{{getvar::name}}`
+- Updates values via manual actions, counters, cycling sequences, or prompted AI decisions
+- Shows a floating tracker panel for active variables
+- Provides a manager modal for presets, variables, triggers, and world-info conditions
 
-## Key features
+## Entry points
 
-- Presets system: create reusable variable toolkits and bind them per chat
-- Multi-preset tracker display: show multiple preset banks at once
-- Strict type validation: number, string, boolean, enum, array
-- Default values per variable
-- Variable categories:
-  - Manual
-  - Counter
-  - Prompted (AI-derived values)
-  - Cycling (advance through an ordered list)
-- Prompted increments: AI decides **when** to increment/advance
-- Batched LLM updates: relevant prompted variables are grouped into one request per trigger event
-- Preset-level triggers (reduces chat-time LLM noise)
-- Floating tracker panel with debug toggle
-- Seeded first-run example presets (5 starter packs)
-- In-progress world info condition integration (state-based lore activation controls)
+- **Extensions menu**: open State Engine from the main extensions/settings area
+- **Chat tool**: the `State Engine` chat tool opens a submenu with:
+  - `Tracker`
+  - `Manager`
+
+## Basic usage
+
+1. Enable State Engine.
+2. Create or restore presets.
+3. Bind presets to the current chat.
+4. Add or edit variables in the manager.
+5. Optionally show selected presets in the floating tracker.
 
 ## Seeded starter presets
 
-On first run (when no presets exist), State Engine seeds example presets:
+On first run, State Engine can seed example presets:
 
 1. Story Progression
 2. Location and Time
 3. Relationships
 4. Combat and Encounter
-5. Mixed Showcase (demonstrates extra type/category combinations)
-
-These are editable and removable, and intended as road-test baselines.
-
-## Install
-
-1. Install via SillyTavern's extension installer or place this repo as a third-party extension.
-2. Reload SillyTavern.
-3. Open Extensions → State Engine.
-
-## Basic usage
-
-1. Enable State Engine.
-2. Pick/create presets, then bind presets to the current chat.
-3. Add or edit variables in the selected preset tab.
-4. Optional: choose which presets appear in the floating tracker.
-5. Reference values with macros:
-
-```text
-{{getvar::variable_name}}
-```
+5. Mixed Showcase
 
 ## Triggers and automation
 
-Preset-level triggers control when prompted/counter-style logic runs, including:
+Preset-level triggers include:
 
 - startup
 - new_chat
@@ -68,13 +50,8 @@ Preset-level triggers control when prompted/counter-style logic runs, including:
 - ai
 - group_draft
 
-Prompted increments and prompted value updates are batched for efficiency.
-
-## World info status
-
-State Engine now includes foundation work for variable-driven world info filtering and condition editing. This is actively in progress and not yet considered final/stable behavior.
-
 ## Notes
 
-- Existing user presets are never overwritten by seeded examples.
-- Variables remain local to SillyTavern's variable storage model and do not spam visible chat.
+- Existing user presets are not overwritten by seeded examples.
+- Variables remain local to SillyTavern and do not add visible chat messages.
+- World info condition support is present but still evolving.
