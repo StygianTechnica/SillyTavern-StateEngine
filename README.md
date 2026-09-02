@@ -2,7 +2,7 @@
 
 State Engine is a SillyTavern extension for local state tracking with reusable preset toolkits, strict typing, and automated updates.
 
-Current branch version: `0.9.11`
+Current branch version: `0.9.12`
 
 ## What it does
 
@@ -12,6 +12,7 @@ Current branch version: `0.9.11`
 - Updates values via manual actions, counters, cycling sequences, or prompted AI decisions
 - Shows a floating tracker panel for active variables
 - Provides a manager modal for presets, variables, triggers, and world-info conditions
+- Prompted variables can be marked to skip refresh when needed
 
 ## Entry points
 

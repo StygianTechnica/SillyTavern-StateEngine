@@ -182,6 +182,7 @@ function registerChatTools() {
 
     registerChatTool({
         name: 'State Engine',
+        icon: 'fa-solid fa-wand-magic-sparkles',
         callback: () => {
             ensureToolbarMenu();
             const $button = $('#se_toolbar_button');
@@ -190,6 +191,34 @@ function registerChatTools() {
             } else {
                 ensureToolbarButton();
             }
+        },
+        children: [
+            {
+                name: 'Tracker',
+                callback: () => openTrackerPanelIfReady()
+            },
+            {
+                name: 'Manager',
+                callback: () => openManagerIfReady()
+            }
+        ]
+    });
+}
+
+function shouldSkipPromptedRefresh(def) {
+    return !!(def && def.skipPromptedRefresh);
+}
+
+function collectPromptedVariables(activePresetIds, settings) {
+    const variables = getAllVariablesFromPresets(activePresetIds);
+    return Object.values(variables).filter((def) => {
+        if (!def.name) return false;
+        if (def.category !== 'prompted') return false;
+        if (shouldSkipPromptedRefresh(def)) return false;
+        return true;
+    });
+}
+
         }
     });
 }
@@ -1617,7 +1646,7 @@ function applyDefaultsForMissing() {
     
     const variables = getAllVariablesFromPresets(activePresetIds);
     for (const def of Object.values(variables)) {
-        if (!def.name) continue;
+        if (!def.name || shouldSkipPromptedRefresh(def)) continue;
         const store = varStore(context, def);
         let exists = false;
         try {
@@ -1638,7 +1667,7 @@ function applyResetOnNewChat() {
     const variables = getAllVariablesFromPresets(activePresetIds);
     
     for (const def of Object.values(variables)) {
-        if (!def.name || !def.resetOnNewChat) continue;
+        if (!def.name || !def.resetOnNewChat || shouldSkipPromptedRefresh(def)) continue;
         setVarValue(context, def, getDefaultValue(def));
     }
 }
@@ -1910,7 +1939,7 @@ async function runPromptedUpdates(triggerType) {
     
     // Collect all prompted variables from presets that should update
     const variables = getAllVariablesFromPresets(presetsToUpdate);
-    const defs = Object.values(variables).filter((def) => def.category === 'prompted' && def.name);
+    const defs = Object.values(variables).filter((def) => def.category === 'prompted' && def.name && !shouldSkipPromptedRefresh(def));
 
     if (defs.length === 0) return;
     if (!Array.isArray(context.chat)) return;

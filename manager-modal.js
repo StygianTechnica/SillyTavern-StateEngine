@@ -400,6 +400,7 @@ function showInlineVariableEditor(varDef, $row) {
         description: '',
         resetOnNewChat: false,
         showInTracker: true,
+        skipPromptedRefresh: false,
         counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
         cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
         prompted: { triggers: [], instructions: '' }
@@ -502,6 +503,10 @@ function showVariableEditor(def) {
                     <option value="enum" ${d.type === 'enum' ? 'selected' : ''}>Enum</option>
                 </select>
                 <input class="text_pole se-manager-var-field" data-field="default" placeholder="Default value" value="${escapeHtml(d.default || '')}" />
+                <label class="se-manager-inline-checkbox">
+                    <input type="checkbox" class="se-manager-var-field" data-field="skipPromptedRefresh" ${d.skipPromptedRefresh ? 'checked' : ''} />
+                    <span>Skip prompted refresh</span>
+                </label>
             </div>
         </div>
     `).show().data('editing-id', d.id).data('editing-existing', !!def);
@@ -511,7 +516,9 @@ function collectVariableEditorValues() {
     const $editor = $('#se-manager-variable-editor');
     const values = { id: $editor.data('editing-id') };
     $editor.find('.se-manager-var-field').each(function () {
-        values[$(this).attr('data-field')] = $(this).val();
+        const $field = $(this);
+        const field = $field.attr('data-field');
+        values[field] = $field.is(':checkbox') ? $field.is(':checked') : $field.val();
     });
     values.showInTracker = true;
     return values;
