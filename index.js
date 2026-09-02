@@ -21,7 +21,8 @@ import {
     renderManagerVariablesTab,
     renderManagerWorldInfoTab,
     setManagerApi,
-    wireManagerModalEvents
+    wireManagerModalEvents,
+    setTrackerPanelVisible
 } from './manager-modal.js';
 
 const MODULE_NAME = 'state_engine';
@@ -69,7 +70,7 @@ setManagerApi({
 function getCurrentChatId() {
     try {
         const context = window.SillyTavern?.getContext?.();
-        return context?.chatId || context?.chat?.id || context?.groupId || context?.group?.id || null;
+        return context?.chatId || context?.chat?.id || context?.groupId || context?.group?.id || window.chat_id || null;
     } catch (e) {
         return null;
     }
@@ -116,25 +117,25 @@ function openTrackerPanelIfReady() {
     setTrackerPanelVisible(true);
 }
 
-function registerChatTools() {
-    const context = SillyTavern.getContext?.() || {};
-    const registerChatTool = context.registerChatTool;
-    if (typeof registerChatTool !== 'function') return;
+function getWandContainer() {
+    return $('#se_wand_container');
+}
 
-    registerChatTool({
-        name: 'State Engine',
-        icon: 'fa-solid fa-wand-magic-sparkles',
-        callback: () => openManagerIfReady(),
-        children: [
-            {
-                name: 'Tracker',
-                callback: () => openTrackerPanelIfReady()
-            },
-            {
-                name: 'Manager',
-                callback: () => openManagerIfReady()
-            }
-        ]
+async function addStateEngineWandUi() {
+    const container = getWandContainer();
+    if (!container.length) return;
+    if (document.getElementById('state-engine-wand-button')) return;
+
+    const buttonHtml = `
+        <div id="state-engine-wand-button" class="menu_button menu_button_icon">
+            <i class="fa-solid fa-wand-magic-sparkles"></i>
+            <span>State Engine</span>
+        </div>
+    `;
+    container.append(buttonHtml);
+
+    $('#state-engine-wand-button').on('click', () => {
+        openManagerIfReady();
     });
 }
 
@@ -2660,10 +2661,6 @@ function bindPanelEvents() {
     $('#se_f_cycling_trigger').on('change', toggleEditorSections);
 }
 
-function initializeExtension() {
-    registerChatTools();
-}
-
 function renderPresetList() {
     const settings = getSettings();
     const $list = $('#se_preset_list');
@@ -2906,7 +2903,7 @@ jQuery(async () => {
         getSettings(); // ensure defaults exist / migrate
         await registerTemplates();
         await initPanel();
-        initializeExtension();
+        addStateEngineWandUi();
         registerEvents();
         registerSlashCommand();
         applyDefaultsForMissing();
