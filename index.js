@@ -325,7 +325,7 @@ function getAvailableVariablesForConditions() {
     const settings = getSettings();
     
     const variables = [];
-    const activePresetIds = settings.chatPresetBindings[currentChatId] || [];
+    const activePresetIds = getPresetsForChat(currentChatId);
     const seenNames = new Set();
     
     for (const presetId of activePresetIds) {
@@ -1042,6 +1042,7 @@ function normalizeDefinition(def) {
     def.prompted.triggers = def.prompted.triggers.filter((t) => PROMPTED_TRIGGER_KEYS.includes(t));
     delete def.prompted.trigger;
     if (def.showInTracker === undefined) def.showInTracker = true;
+    if (def.skipPromptedRefresh === undefined) def.skipPromptedRefresh = false;
     if (!Array.isArray(def.enumValues)) def.enumValues = [];
     return def;
 }
