@@ -1046,35 +1046,94 @@ export function deletePreset(presetId) {
 
 export function getPresetsForChat(chatId) {
     const settings = getSettings();
-    if (!settings.chatPresetBindings[chatId]) {
-        settings.chatPresetBindings[chatId] = [];
+    // Support both old format (array) and new format (object with presetIds array)
+    const binding = settings.chatPresetBindings[chatId];
+    
+    if (!binding) {
+        settings.chatPresetBindings[chatId] = { presetIds: [], presetLoadOrder: [] };
+        return [];
     }
-    return settings.chatPresetBindings[chatId];
+    
+    // Legacy format: plain array
+    if (Array.isArray(binding)) {
+        settings.chatPresetBindings[chatId] = { presetIds: binding, presetLoadOrder: binding };
+        persistSettings();
+        return binding;
+    }
+    
+    // New format: object with presetIds and presetLoadOrder
+    return binding.presetIds || [];
+}
+
+export function getPresetLoadOrder(chatId) {
+    const settings = getSettings();
+    const binding = settings.chatPresetBindings[chatId];
+    
+    if (!binding) return [];
+    if (Array.isArray(binding)) return binding; // Legacy format
+    return binding.presetLoadOrder || binding.presetIds || [];
 }
 
 export function setPresetsForChat(chatId, presetIds) {
     const settings = getSettings();
-    settings.chatPresetBindings[chatId] = presetIds;
+    settings.chatPresetBindings[chatId] = { presetIds, presetLoadOrder: presetIds };
     persistSettings();
 }
 
 export function addPresetToChat(chatId, presetId) {
-    const bindings = getPresetsForChat(chatId);
-    if (!bindings.includes(presetId)) {
-        bindings.push(presetId);
-        setPresetsForChat(chatId, bindings);
-        debugLog(`Added preset ${presetId} to chat ${chatId}. Active presets:`, bindings);
+    const settings = getSettings();
+    
+    // Ensure binding structure exists
+    if (!settings.chatPresetBindings[chatId]) {
+        settings.chatPresetBindings[chatId] = { presetIds: [], presetLoadOrder: [] };
     }
+    
+    let binding = settings.chatPresetBindings[chatId];
+    
+    // Handle legacy array format
+    if (Array.isArray(binding)) {
+        binding = { presetIds: binding, presetLoadOrder: binding };
+        settings.chatPresetBindings[chatId] = binding;
+    }
+    
+    // Add to presetIds if not already there
+    if (!binding.presetIds.includes(presetId)) {
+        binding.presetIds.push(presetId);
+    }
+    
+    // Add to load order if not already there (at the end)
+    if (!binding.presetLoadOrder.includes(presetId)) {
+        binding.presetLoadOrder.push(presetId);
+    }
+    
+    persistSettings();
+    debugLog(`Added preset ${presetId} to chat ${chatId}. Load order:`, binding.presetLoadOrder);
 }
 
 export function removePresetFromChat(chatId, presetId) {
-    const bindings = getPresetsForChat(chatId);
-    const idx = bindings.indexOf(presetId);
-    if (idx !== -1) {
-        bindings.splice(idx, 1);
-        setPresetsForChat(chatId, bindings);
-        debugLog(`Removed preset ${presetId} from chat ${chatId}. Active presets:`, bindings);
+    const settings = getSettings();
+    
+    if (!settings.chatPresetBindings[chatId]) return;
+    
+    let binding = settings.chatPresetBindings[chatId];
+    
+    // Handle legacy array format
+    if (Array.isArray(binding)) {
+        const idx = binding.indexOf(presetId);
+        if (idx !== -1) {
+            binding.splice(idx, 1);
+            persistSettings();
+            debugLog(`Removed preset ${presetId} from chat ${chatId}`);
+        }
+        return;
     }
+    
+    // Remove from both arrays
+    binding.presetIds = binding.presetIds.filter(id => id !== presetId);
+    binding.presetLoadOrder = binding.presetLoadOrder.filter(id => id !== presetId);
+    
+    persistSettings();
+    debugLog(`Removed preset ${presetId} from chat ${chatId}. Load order:`, binding.presetLoadOrder);
 }
 
 function getTrackerPresets() {
@@ -1107,13 +1166,20 @@ function removePresetFromTracker(presetId) {
     }
 }
 
-function getAllVariablesFromPresets(presetIds) {
+function getAllVariablesFromPresets(presetIds, preserveOrder = true) {
     const settings = getSettings();
     const allVars = {};
+    // If preserveOrder is true, iterate in given order to maintain preset load order
+    // Variables are collected in order, so first preset's vars come first
     for (const presetId of presetIds) {
         const preset = settings.presets[presetId];
         if (preset && preset.variables) {
-            Object.assign(allVars, preset.variables);
+            // Only assign if not already present (earlier preset takes precedence)
+            for (const [varId, varDef] of Object.entries(preset.variables)) {
+                if (!allVars[varId]) {
+                    allVars[varId] = varDef;
+                }
+            }
         }
     }
     return allVars;
@@ -1957,16 +2023,16 @@ function renderTrackerPanel() {
         return;
     }
      
-    // Always use active presets for the current chat
-    const trackerPresetIds = getPresetsForChat(chatId);
-    debugLog('  activePresetIds:', trackerPresetIds);
+    // Use load order to display presets in activation order
+    const presetLoadOrder = getPresetLoadOrder(chatId);
+    debugLog('  presetLoadOrder:', presetLoadOrder);
     
-    const variables = getAllVariablesFromPresets(trackerPresetIds);
+    const variables = getAllVariablesFromPresets(presetLoadOrder);
     debugLog('  variables from presets:', variables);
 
+    // Filter without sorting to preserve insertion order (which is determined by preset load order)
     const defs = Object.values(variables)
-        .filter((def) => def.name && (def.showInTracker !== false || showHidden))
-        .sort((a, b) => (a.label || a.name).localeCompare(b.label || b.name));
+        .filter((def) => def.name && (def.showInTracker !== false || showHidden));
 
     debugLog('  filtered defs (after showInTracker check):', defs);
 
