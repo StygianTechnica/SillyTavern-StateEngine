@@ -430,7 +430,7 @@ function showInlineVariableEditor(varDef, $row) {
                 <button class="menu_button se-manager-cancel-variable-inline">Cancel</button>
             </div>
         </div>
-    `).data('editing-id', d.id).data('editing-existing', !!varDef).show();
+    `).data('editing-id', d.id).data('editing-existing', !d._isNew).show();
 
     // Disable other controls
     $('#se-manager-new-variable, #se-manager-variable-search, #se-manager-variable-sort').prop('disabled', true).css('opacity', '0.5');
@@ -909,31 +909,23 @@ export function wireManagerModalEvents() {
             cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
             prompted: { triggers: [], instructions: '' }
         };
+        
+        const settings = managerApi.getSettings();
+        const activePresetIds = managerApi.getPresetsForChat(managerApi.getCurrentChatId());
+        const allPresets = Object.keys(settings.presets || {});
+        const selectedPresetId = allPresets.includes(managerCurrentPresetId)
+            ? managerCurrentPresetId
+            : activePresetIds[0] || allPresets[0] || null;
+        const preset = settings.presets[selectedPresetId];
+        preset.variables[newVar.id] = newVar;//XXXXXXXX
+        renderManagerVariablesTab();
 
-        // 2. Add to preset/state
-        addVariableToPreset(newVar);
+        const varId = newVar.id;
+        managerCurrentPresetId = selectedPresetId;
+        
+        const $row = $(`#se-manager-variable-list .se-manager-variable-row[data-var-id="${newVar.id}"]`);
+        showInlineVariableEditor({... newVar, _isNew: true }, $row);
 
-        // 3. Render a new row
-        const $row = renderVariableRow(newVar);
-
-        // 4. Insert at top of list
-        $('#se-manager-variable-list').prepend($row);
-
-        // 5. Open inline editor
-        showInlineVariableEditor(newVar, $row);
-
-        // 6. Cancel → remove row + remove from preset
-        $row.find('.se-manager-cancel-variable-inline').on('click', () => {
-            removeVariableFromPreset(newVar);
-            $row.remove();
-            enableManagerControls();
-        });
-
-        // 7. Save → keep row
-        $row.find('.se-manager-save-variable-inline').on('click', () => {
-            saveInlineVariableChanges(newVar, $row);
-            enableManagerControls();
-        });
     });
 
     $overlay.on('click', '.se-manager-edit-variable', function () {
@@ -999,9 +991,35 @@ export function wireManagerModalEvents() {
     //     $('#se-manager-variable-editor').hide().empty();
     // });
 
+    // $overlay.on('click', '.se-manager-cancel-variable-inline', function () {
+    //     const $row = $(this).closest('.se-manager-variable-row');
+    //     const $editor = $row.find('.se-manager-variable-editor-inline');
+    //     const varId = $editor.data('editing-id');
+    //     const presetId = $(this).attr('data-preset-id');
+    //     const settings = managerApi.getSettings();
+    //     const preset = settings.presets[presetId];
+    //     if (!preset || !preset.variables[varId]) return;
+    //     delete preset.variables[varId];
+    //     managerApi.persistSettings(settings);
+    //     hideInlineVariableEditor($row);
+    // });
     $overlay.on('click', '.se-manager-cancel-variable-inline', function () {
         const $row = $(this).closest('.se-manager-variable-row');
-        hideInlineVariableEditor($row);
+        const $editor = $row.find('.se-manager-variable-editor-inline');
+
+        const isNew = !$editor.data('editing-existing');
+        const varId = $editor.data('editing-id');
+
+        if (isNew) {
+            const settings = managerApi.getSettings();
+            const preset = settings.presets[managerCurrentPresetId];
+
+            delete preset.variables[varId];
+            managerApi.persistSettings(settings);
+            $row.remove();
+        } else {
+            hideInlineVariableEditor($row);
+        }
     });
 
     $overlay.on('click', '.se-manager-save-variable-inline', function () {
@@ -1015,7 +1033,7 @@ export function wireManagerModalEvents() {
         if (!preset) return;
 
         const values = collectInlineVariableValues($row);
-        const isNew = !$editor.data('editing-existing');
+        // const isNew = !$editor.data('editing-existing');
 
         if (!values.name || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(values.name)) {
             alert('Variable name is required and must start with a letter or underscore.');
@@ -1028,10 +1046,10 @@ export function wireManagerModalEvents() {
             return;
         }
 
-        if (!preset.variables) preset.variables = {};
-        if (isNew && preset.variables[values.id]) {
-            values.id = generateUUID();
-        }
+        // if (!preset.variables) preset.variables = {};
+        // if (isNew && preset.variables[values.id]) {
+        //     values.id = generateUUID();
+        // }
 
         preset.variables[values.id] = {
             id: values.id,

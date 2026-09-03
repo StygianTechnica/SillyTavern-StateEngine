@@ -2004,6 +2004,48 @@ async function runPromptedUpdates(triggerType) {
     }
 }
 
+function runDeterministicIncrements(triggerType) {
+    const context = SillyTavern.getContext();
+    const settings = getSettings();
+    if (!settings.enabled) return;
+
+    const chatId = context.chatId;
+    const activePresetIds = getPresetsForChat(chatId);
+    const variables = getAllVariablesFromPresets(activePresetIds);
+
+    // Loop through all variables
+    for (const def of Object.values(variables)) {
+        if (!def.name) continue;
+
+        // Only deterministic increment variables
+        if (def.category !== 'increment') continue;
+        if (def.tick_mode !== 'per_message') continue;
+
+        // Check if this event should trigger it
+        const tickOn = def.tick_on || 'both';
+        if (tickOn !== 'both' && tickOn !== triggerType) continue;
+
+        // Increment the internal counter
+        const counter = Number(def._counter || 0) + 1;
+        def._counter = counter;
+
+        // If counter reaches threshold, apply delta
+        if (counter >= (def.tick_every || 1)) {
+            const current = Number(getVarValue(context, def)) || 0;
+            const delta = Number(def.delta || 1);
+            const next = current + delta;
+
+            setVarValue(context, def, next);
+
+            // Reset counter
+            def._counter = 0;
+        }
+    }
+
+    refreshPanelIfOpen();
+}
+
+
 // ---------------------------------------------------------------------------
 // Event wiring
 // ---------------------------------------------------------------------------
@@ -2043,12 +2085,14 @@ function registerEvents() {
         runCounters('user');
         runPromptedUpdates('user');
         runPromptedIncrements('user');
+        runDeterministicIncrements('user');
     });
 
     eventSource.on(eventTypes.CHARACTER_MESSAGE_RENDERED, () => {
         runCounters('ai');
         runPromptedUpdates('ai');
         runPromptedIncrements('ai');
+        runDeterministicIncrements('ai');
     });
 
     eventSource.on(eventTypes.GENERATION_AFTER_COMMANDS, () => {
