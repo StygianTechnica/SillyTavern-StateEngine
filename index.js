@@ -27,6 +27,17 @@ import {
 const MODULE_NAME = 'state_engine';
 const EXT_TEMPLATE_PATH = 'third-party/SillyTavern-StateEngine';
 const LOG_PREFIX = '[State Engine]';
+const DEFAULT_PROMPTED_HEADER = [
+            'You are a silent background state-tracking process for a roleplay chat application.',
+            'You are not a character in the roleplay and must not narrate, comment, or add anything besides the requested output.',
+            'You will be given a recent conversation excerpt and a list of state counters/flags that may need to increment/cycle based on story conditions.',
+            'Decide if each variable should increment/cycle based on the conversation and the per-variable conditions.',
+            '',
+            'Output rules:',
+            '- Reply with ONLY a single raw JSON object. No markdown code fences, no explanation, no extra text.',
+            '- The object maps variable names to increment instruction: true if should increment, false if should not.',
+            '- Example: {"rounds": true, "tournament_phase": false} means increment "rounds" but leave "tournament_phase" unchanged.',
+        ].join('\n');
 
 // Debug mode - session-only, not persisted
 window.seDebugMode = false;
@@ -180,6 +191,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     defaultPresetForNewChats: '',
     trackerPresets: [],
     wiConditions: {}, // Maps "worldbook.uid" -> array of {variable, operator, value}
+    promptedHeader: DEFAULT_PROMPTED_HEADER,
 });
 
 // All the moments a "prompted" variable can be told to re-evaluate at —
@@ -1731,6 +1743,9 @@ async function runPromptedIncrements(triggerType) {
             })
             .join('\n');
 
+        const systemPrompt = settings.promptedHeader || DEFAULT_PROMPTED_HEADER;
+
+        /*
         const systemPrompt = [
             'You are a silent background state-tracking process for a roleplay chat application.',
             'You are not a character in the roleplay and must not narrate, comment, or add anything besides the requested output.',
@@ -1745,6 +1760,7 @@ async function runPromptedIncrements(triggerType) {
             'Variables that may increment:',
             varLines,
         ].join('\n');
+        */
 
         const messages = [
             { role: 'system', content: systemPrompt },
@@ -1913,6 +1929,9 @@ async function runPromptedUpdates(triggerType) {
             })
             .join('\n');
 
+        const systemPrompt = settings.promptedHeader || DEFAULT_PROMPTED_HEADER;
+
+        /*
         const systemPrompt = [
             'You are a silent background state-tracking process for a roleplay chat application.',
             'You are not a character in the roleplay and must not narrate, comment, or add anything besides the requested output.',
@@ -1928,6 +1947,7 @@ async function runPromptedUpdates(triggerType) {
             'Tracked variables:',
             varLines,
         ].join('\n');
+        */
 
         const messages = [
             { role: 'system', content: systemPrompt },
@@ -2611,6 +2631,7 @@ function loadGeneralSettingsIntoForm() {
     $('#se_show_tracker_panel').prop('checked', !!settings.showTrackerPanel);
     $('#se_context_count').val(settings.contextMessageCount);
     $('#se_response_length').val(settings.responseLength);
+    $('#se_prompted_header').val(settings.promptedHeader)
     populateConnectionProfileDropdown();
 }
 
@@ -2695,6 +2716,20 @@ function bindPanelEvents() {
     $('#se_f_category').on('change', toggleEditorSections);
     $('#se_f_counter_trigger').on('change', toggleEditorSections);
     $('#se_f_cycling_trigger').on('change', toggleEditorSections);
+
+    $('#se_prompted_header').on('change', (e) => {
+        const settings = getSettings();
+        settings.promptedHeader = e.target.value;
+        persistSettings();
+    });
+
+    $('#se_prompted_header_reset').on('click', () => {
+        const settings = getSettings();
+        settings.promptedHeader = DEFAULT_PROMPTED_HEADER;
+        persistSettings();
+        $('#se_prompted_header').val(DEFAULT_PROMPTED_HEADER);
+    });
+
 }
 
 function renderPresetList() {
