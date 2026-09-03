@@ -459,7 +459,7 @@ function showInlineVariableEditor(varDef, $row) {
                 <div class="se-manager-toggle-row">
                     <div class="se-row">
                         <label class="checkbox_label">
-                            <input id="se-manager-var-field se-manager-prompted-toggle" type="checkbox" data-field="behaviors.prompted" ${d.behaviors.prompted ? 'checked' : ''}/>
+                            <input id="se-manager-prompted-toggle" type="checkbox" data-field="behaviors.prompted"/>
                             <span>Prompted Behavior</span>
                         </label>
                     </div>
@@ -472,14 +472,12 @@ function showInlineVariableEditor(varDef, $row) {
                         placeholder="Prompted variable instructions">${escapeHtml(d.prompted.instructions)}</textarea>
                 </div>
                 <div class="se-manager-toggle-row">
-                    <label class="switch">
-                        <input type="checkbox"
-                            class="se-manager-var-field se-manager-increment-toggle"
-                            data-field="behaviors.increment"
-                            ${d.behaviors.increment ? 'checked' : ''}>
-                        <span class="slider"></span>
-                    </label>
-                    <span class="switch-label">Increment behavior</span>
+                    <div class="se-row">
+                        <label class="checkbox_label">
+                            <input id="se-manager-increment-toggle" type="checkbox" data-field="behaviors.increment"/>
+                            <span>Incremented Behavior</span>
+                        </label>
+                    </div>
                 </div>
                 <!-- Increment section (hidden unless checkbox is checked) -->
                 <div class="se-manager-increment-settings"
