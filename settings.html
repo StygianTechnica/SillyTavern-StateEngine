@@ -37,22 +37,55 @@
             </div>
 
             <div class="se-row">
-            <div class="se-header-row">
-                <label for="se_prompted_header">Prompted update header prompt</label>
-                <button id="se_prompted_header_reset" class="menu_button menu_button_icon" type="button" title="Revert to default">
-                <i class="fa-solid fa-rotate-left"></i>
-                Revert to default
-                </button>
+                <div class="se-header-row">
+                    <label for="se_prompted_header">Prompted update header prompt</label>
+                    <button id="se_prompted_header_reset" class="menu_button menu_button_icon" type="button" title="Revert to default">
+                    <i class="fa-solid fa-rotate-left"></i>
+                    </button>
+                </div>
+
+                <textarea
+                    id="se_prompted_header"
+                    class="text_pole textarea_compact"
+                    rows="4"
+                    placeholder="Global instructions for prompted variable updates..."
+                ></textarea>
+
+                <small>Applied before preset and variable instructions.</small>
             </div>
 
-            <textarea
-                id="se_prompted_header"
-                class="text_pole textarea_compact"
-                rows="4"
-                placeholder="Global instructions for prompted variable updates..."
-            ></textarea>
+            <div class="se-row">
+                <div class="se-header-row">
+                    <label for="se_prompted_variable_rules_reset">Prompted variable rules prompt</label>
+                    <button id="se_prompted_variable_rules_reset" class="menu_button menu_button_icon" type="button" title="Revert to default">
+                    <i class="fa-solid fa-rotate-left"></i>
+                    </button>
+                </div>
 
-            <small>Applied before preset and variable instructions.</small>
+                <textarea
+                    id="se_prompted_variable_rules"
+                    class="text_pole textarea_compact"
+                    rows="4"
+                    placeholder="Prompted variable update rules..."
+                ></textarea>
+
+            </div>
+            
+            <div class="se-row">
+                <div class="se-header-row">
+                    <label for="se_prompted_increment_rules_reset">Prompted increment rules prompt</label>
+                    <button id="se_prompted_increment_rules_reset" class="menu_button menu_button_icon" type="button" title="Revert to default">
+                    <i class="fa-solid fa-rotate-left"></i>
+                    </button>
+                </div>
+
+                <textarea
+                    id="se_prompted_increment_rules"
+                    class="text_pole textarea_compact"
+                    rows="4"
+                    placeholder="Global instructions for prompted increment variable updates..."
+                ></textarea>
+
             </div>
 
         </div>

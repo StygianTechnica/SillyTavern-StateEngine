@@ -32,12 +32,24 @@ const DEFAULT_PROMPTED_HEADER = [
             'You are not a character in the roleplay and must not narrate, comment, or add anything besides the requested output.',
             'You will be given a recent conversation excerpt and a list of state counters/flags that may need to increment/cycle based on story conditions.',
             'Decide if each variable should increment/cycle based on the conversation and the per-variable conditions.',
+            ''
+        ].join('\n');
+const DEFAULT_INCREMENTED_VARIABLE_RULES = [
             '',
             'Output rules:',
             '- Reply with ONLY a single raw JSON object. No markdown code fences, no explanation, no extra text.',
             '- The object maps variable names to increment instruction: true if should increment, false if should not.',
-            '- Example: {"rounds": true, "tournament_phase": false} means increment "rounds" but leave "tournament_phase" unchanged.',
-        ].join('\n');
+            '- Example: {"rounds": true, "tournament_phase": false} means increment "rounds" but leave "tournament_phase" unchanged.'
+        ].join('/');
+
+const DEFAULT_PROMPTED_VARIABLE_RULES = [
+            '',
+            'Output rules:',
+            '- Reply with ONLY a single raw JSON object. No markdown code fences, no explanation, no extra text.',
+            '- The object must have exactly one key per listed variable, using the exact variable name given.',
+            '- If a variable should not change, repeat its current value unchanged.',
+            '- Respect each variable\'s type and constraints exactly.'
+        ].join('/');
 
 // Debug mode - session-only, not persisted
 window.seDebugMode = false;
@@ -1743,7 +1755,13 @@ async function runPromptedIncrements(triggerType) {
             })
             .join('\n');
 
-        const systemPrompt = settings.promptedHeader || DEFAULT_PROMPTED_HEADER;
+        const systemPrompt = [
+                settings.promptedHeader || DEFAULT_PROMPTED_HEADER,
+                settings.incrementedRules || DEFAULT_INCREMENTED_VARIABLE_RULES,
+                '',
+                'Variables that may increment',
+                varLines,
+        ].join('\n');
 
         /*
         const systemPrompt = [
@@ -1929,7 +1947,13 @@ async function runPromptedUpdates(triggerType) {
             })
             .join('\n');
 
-        const systemPrompt = settings.promptedHeader || DEFAULT_PROMPTED_HEADER;
+        const systemPrompt = [
+            settings.promptedHeader || DEFAULT_PROMPTED_HEADER,
+            settings.promptedRules || DEFAULT_PROMPTED_VARIABLE_RULES,
+            '',
+            'Tracked variables:',
+            varLines,
+        ].join('\n');
 
         /*
         const systemPrompt = [
@@ -2631,7 +2655,9 @@ function loadGeneralSettingsIntoForm() {
     $('#se_show_tracker_panel').prop('checked', !!settings.showTrackerPanel);
     $('#se_context_count').val(settings.contextMessageCount);
     $('#se_response_length').val(settings.responseLength);
-    $('#se_prompted_header').val(settings.promptedHeader)
+    $('#se_prompted_header').val(settings.promptedHeader || DEFAULT_PROMPTED_HEADER);
+    $('#se_prompted_variable_rules').val(settings.promptedRules || DEFAULT_PROMPTED_VARIABLE_RULES);
+    $('se_prompted_increment_rules').val(settings.incrementedRules || DEFAULT_INCREMENTED_VARIABLE_RULES);
     populateConnectionProfileDropdown();
 }
 
@@ -2730,6 +2756,31 @@ function bindPanelEvents() {
         $('#se_prompted_header').val(DEFAULT_PROMPTED_HEADER);
     });
 
+    $('#se_prompted_variable_rules').on('change', (e) => {
+        const settings = getSettings();
+        settings.promptedRules = e.target.value;
+        persistSettings();
+    });
+
+    $('#se_prompted_variable_rules_reset').on('click', () => {
+        const settings = getSettings();
+        settings.promptedRules = DEFAULT_PROMPTED_VARIABLE_RULES;
+        persistSettings();
+        $('#se_prompted_increment_rules').val(DEFAULT_PROMPTED_VARIABLE_RULES);
+    });
+
+    $('#se_prompted_increment_rules').on('change', (e) => {
+        const settings = getSettings();
+        settings.incrementedRules = e.target.value;
+        persistSettings();
+    });
+
+    $('#se_prompted_increment_rules_reset').on('click', () => {
+        const settings = getSettings();
+        settings.incrementedRules = DEFAULT_INCREMENTED_VARIABLE_RULES;
+        persistSettings();
+        $('#se_prompted_increment_rules').val(DEFAULT_INCREMENTED_VARIABLE_RULES);
+    });
 }
 
 function renderPresetList() {
