@@ -2766,7 +2766,7 @@ function bindPanelEvents() {
         const settings = getSettings();
         settings.promptedRules = DEFAULT_PROMPTED_VARIABLE_RULES;
         persistSettings();
-        $('#se_prompted_increment_rules').val(DEFAULT_PROMPTED_VARIABLE_RULES);
+        $('#se_prompted_variable_rules').val(DEFAULT_PROMPTED_VARIABLE_RULES);
     });
 
     $('#se_prompted_increment_rules').on('change', (e) => {
