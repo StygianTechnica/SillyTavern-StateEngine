@@ -457,14 +457,12 @@ function showInlineVariableEditor(varDef, $row) {
             <!-- Behavior toggles -->
             <div class="se-manager-variable-behaviors">
                 <div class="se-manager-toggle-row">
-                    <label class="switch">
-                        <input type="checkbox"
-                            class="se-manager-var-field se-manager-prompted-toggle"
-                            data-field="behaviors.prompted"
-                            ${d.behaviors.prompted ? 'checked' : ''}>
-                        <span class="slider"></span>
-                    </label>
-                    <span class="switch-label">Prompted behavior</span>
+                    <div class="se-row">
+                        <label class="checkbox_label">
+                            <input id="se-manager-var-field se-manager-prompted-toggle" type="checkbox" data-field="behaviors.prompted" ${d.behaviors.prompted ? 'checked' : ''}/>
+                            <span>Prompted Behavior</span>
+                        </label>
+                    </div>
                 </div>
                 <!-- Prompted section (hidden unless checkbox is checked) -->
                 <div class="se-manager-prompted-section"
@@ -486,9 +484,6 @@ function showInlineVariableEditor(varDef, $row) {
                 <!-- Increment section (hidden unless checkbox is checked) -->
                 <div class="se-manager-increment-settings"
                     style="display: ${d.behaviors.increment ? 'block' : 'none'};">
-
-                    <h4>Increment Settings</h4>
-
                     <!-- Heartbeat triggers (hidden if prompted is active) -->
                     ${!d.behaviors.prompted ? `
                         <label>Increment trigger:</label>
