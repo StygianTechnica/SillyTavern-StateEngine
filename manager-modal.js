@@ -431,6 +431,7 @@ function showInlineVariableEditor(varDef, $row) {
     d.behaviors = Object.assign({}, defaults.behaviors, varDef?.behaviors);
     d.increment = Object.assign({}, defaults.increment, varDef?.increment);
     d.prompted = Object.assign({}, defaults.prompted, varDef?.prompted);
+    const canIncrement = (d.type === 'number' || d.type === 'boolean' || d.type === 'enum');
 
     const $editor = $row.find('.se-manager-variable-editor-inline');
     
@@ -471,14 +472,16 @@ function showInlineVariableEditor(varDef, $row) {
                         data-field="prompted.instructions"
                         placeholder="Prompted variable instructions">${escapeHtml(d.prompted.instructions)}</textarea>
                 </div>
-                <div class="se-manager-toggle-row">
-                    <div class="se-row">
-                        <label class="checkbox_label">
-                            <input id="se-manager-increment-toggle" type="checkbox" data-field="behaviors.increment"/>
-                            <span>Incremented Behavior</span>
-                        </label>
+                ${canIncrement ? `
+                    <div class="se-manager-toggle-row">
+                        <div class="se-row">
+                            <label class="checkbox_label">
+                                <input id="se-manager-increment-toggle" type="checkbox" data-field="behaviors.increment"/>
+                                <span>Incremented Behavior</span>
+                            </label>
+                        </div>
                     </div>
-                </div>
+                ` : ''}
                 <!-- Increment section (hidden unless checkbox is checked) -->
                 <div class="se-manager-increment-settings"
                     style="display: ${d.behaviors.increment ? 'block' : 'none'};">
@@ -1378,7 +1381,20 @@ export function wireManagerModalEvents() {
         // Re-render the editor with updated working copy
         showInlineVariableEditor(values, $row);
     });
-    
+    $overlay.on('change', '[data-field="type"]', function () {
+        const $row = $(this).closest('.se-manager-variable-row');
+        const $editor = $row.find('.se-manager-variable-editor-inline');
+
+        const values = collectInlineVariableValues($row);
+        values.type = $(this).val();
+
+        // Disable increment for strings
+        if (values.type === 'string') {
+            values.behaviors.increment = false;
+        }
+
+        showInlineVariableEditor(values, $row);
+    });    
 }
 
 function escapeHtml(text) {
