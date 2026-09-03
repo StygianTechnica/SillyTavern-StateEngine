@@ -40,7 +40,7 @@ const DEFAULT_INCREMENTED_VARIABLE_RULES = [
             '- Reply with ONLY a single raw JSON object. No markdown code fences, no explanation, no extra text.',
             '- The object maps variable names to increment instruction: true if should increment, false if should not.',
             '- Example: {"rounds": true, "tournament_phase": false} means increment "rounds" but leave "tournament_phase" unchanged.'
-        ].join('/');
+        ].join('\n');
 
 const DEFAULT_PROMPTED_VARIABLE_RULES = [
             '',
@@ -49,7 +49,7 @@ const DEFAULT_PROMPTED_VARIABLE_RULES = [
             '- The object must have exactly one key per listed variable, using the exact variable name given.',
             '- If a variable should not change, repeat its current value unchanged.',
             '- Respect each variable\'s type and constraints exactly.'
-        ].join('/');
+        ].join('\n');
 
 // Debug mode - session-only, not persisted
 window.seDebugMode = false;
@@ -2657,7 +2657,7 @@ function loadGeneralSettingsIntoForm() {
     $('#se_response_length').val(settings.responseLength);
     $('#se_prompted_header').val(settings.promptedHeader || DEFAULT_PROMPTED_HEADER);
     $('#se_prompted_variable_rules').val(settings.promptedRules || DEFAULT_PROMPTED_VARIABLE_RULES);
-    $('se_prompted_increment_rules').val(settings.incrementedRules || DEFAULT_INCREMENTED_VARIABLE_RULES);
+    $('#se_prompted_increment_rules').val(settings.incrementedRules || DEFAULT_INCREMENTED_VARIABLE_RULES);
     populateConnectionProfileDropdown();
 }
 
