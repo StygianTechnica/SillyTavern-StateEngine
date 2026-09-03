@@ -457,14 +457,14 @@ function showInlineVariableEditor(varDef, $row) {
             <!-- Behavior toggles -->
             <div class="se-manager-variable-behaviors">
                 <label>
-                    <input type="checkbox" class="se-manager-var-field"
+                    <input type="checkbox" class="se-manager-var-field se-manager-prompted-toggle"
                         data-field="behaviors.prompted"
                         ${d.behaviors.prompted ? 'checked' : ''} />
                     Prompted behavior
                 </label>
 
                 <label>
-                    <input type="checkbox" class="se-manager-var-field"
+                    <input type="checkbox" class="se-manager-var-field se-manager-increment-toggle"
                         data-field="behaviors.increment"
                         ${d.behaviors.increment ? 'checked' : ''} />
                     Increment behavior
@@ -535,6 +535,39 @@ function showInlineVariableEditor(varDef, $row) {
     $('#se-manager-new-variable, #se-manager-variable-search, #se-manager-variable-sort').prop('disabled', true).css('opacity', '0.5');
     $row.siblings('.se-manager-variable-row').css('opacity', '0.5').find('button:not(.se-manager-edit-variable)').prop('disabled', true);
     $row.find('.se-manager-variable-row-header').css('opacity', '0.5').find('button').prop('disabled', true);
+}
+
+function generateExplanation(d) {
+    let text = `${d.name} is a ${d.type} variable`;
+
+    if (d.default)
+        text += ` with a default value of "${d.default}".`;
+    else
+        text += ` with no default value.`;
+
+    if (d.behaviors.prompted) {
+        text += ` It will update when the LLM determines the prompted instructions have been satisfied.`;
+    }
+
+    if (d.behaviors.increment) {
+        if (d.behaviors.prompted) {
+            text += ` Incrementing is triggered by the prompted condition.`;
+        } else {
+            text += ` It will increment when ${incrementTriggerText(d.increment.triggers)}.`;
+        }
+    }
+
+    return text;
+}
+
+function incrementTriggerText(triggers) {
+    if (triggers.includes('user')) return 'a new user chat is received';
+    if (triggers.includes('ai')) return 'the AI sends a message';
+    if (triggers.includes('either')) return 'either user or AI chat occurs';
+    if (triggers.includes('time')) return 'the time interval elapses';
+    if (triggers.includes('specificTime')) return 'the specific time is reached';
+    if (triggers.includes('random')) return 'a random interval passes';
+    return 'the increment condition is met';
 }
 
 function hideInlineVariableEditor($row) {
@@ -1305,6 +1338,25 @@ export function wireManagerModalEvents() {
         console.log('Full settings:', debugInfo.fullSettings);
         managerApi.setStatus('Debug info logged to console');
     });
+
+    $overlay.on('change', '.se-manager-prompted-toggle', function () {
+        const isOn = $(this).is(':checked');
+
+        // Show/hide prompted instructions
+        $overlay.find('.se-manager-prompted-section').toggle(isOn);
+
+        // Hide heartbeat if prompted is active
+        $overlay.find('.se-manager-increment-heartbeat').toggle(!isOn);
+    });
+
+    $overlay.on('change', '.se-manager-increment-toggle', function () {
+        const isOn = $(this).is(':checked');
+
+        // Show/hide increment settings
+        $overlay.find('.se-manager-increment-settings').toggle(isOn);
+    });
+
+    
 }
 
 function escapeHtml(text) {
