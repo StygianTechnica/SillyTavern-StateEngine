@@ -1352,6 +1352,8 @@ export function wireManagerModalEvents() {
     });
 
     $overlay.on('change', '#se-manager-prompted-toggle', function () {
+        const $row = $(this).closest('.se-manager-variable-row');
+        const values = collectInlineVariableValues($row);
         const isOn = $(this).is(':checked');
 
         // Show/hide prompted instructions
@@ -1359,13 +1361,16 @@ export function wireManagerModalEvents() {
 
         // Hide heartbeat if prompted is active
         $overlay.find('.se-manager-increment-heartbeat').toggle(!isOn);
+        showInlineVariableEditor(values, $row);
     });
 
     $overlay.on('change', '#se-manager-increment-toggle', function () {
+        const $row = $(this).closest('.se-manager-variable-row');
+        const values = collectInlineVariableValues($row);
         const isOn = $(this).is(':checked');
-
         // Show/hide increment settings
         $overlay.find('.se-manager-increment-settings').toggle(isOn);
+        showInlineVariableEditor(values, $row);
     });
 
     $overlay.on('change', '[data-field="type"]', function () {
