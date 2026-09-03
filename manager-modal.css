@@ -594,12 +594,6 @@
     }
 }
 
-/* Prevent checkboxes from stretching */
-.se-manager-variable-behaviors input[type="checkbox"],
-.se-manager-increment-settings input[type="checkbox"] {
-    width: auto !important;
-    display: inline-block;
-}
 
 /* Make behavior labels align nicely */
 .se-manager-variable-behaviors label,
@@ -622,4 +616,20 @@
     font-size: 0.85em;
     opacity: 0.8;
     line-height: 1.3em;
+}
+
+#state_engine_settings .checkbox_label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 0;
+}
+
+#state_engine_settings .checkbox_label input[type="checkbox"] {
+    margin: 0;
+    flex: 0 0 auto;
+}
+
+#state_engine_settings .checkbox_label span {
+    display: inline;
 }
