@@ -1033,7 +1033,7 @@ export function wireManagerModalEvents() {
         if (!preset) return;
 
         const values = collectInlineVariableValues($row);
-        // const isNew = !$editor.data('editing-existing');
+        const isNew = !$editor.data('editing-existing');
 
         if (!values.name || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(values.name)) {
             alert('Variable name is required and must start with a letter or underscore.');
