@@ -1362,7 +1362,11 @@ export function wireManagerModalEvents() {
         // Delay re-render so checkbox state commits
         setTimeout(() => {
             const values = collectInlineVariableValues($row);
+
+            // Ensure behaviors exists
+            values.behaviors = values.behaviors || {};
             values.behaviors.prompted = isOn;
+
             showInlineVariableEditor(values, $row);
         }, 0);
     });
@@ -1374,10 +1378,12 @@ export function wireManagerModalEvents() {
         // UI-only toggles
         $overlay.find('.se-manager-increment-settings').toggle(isOn);
 
-        // Delay re-render so checkbox state commits
         setTimeout(() => {
             const values = collectInlineVariableValues($row);
+
+            values.behaviors = values.behaviors || {};
             values.behaviors.increment = isOn;
+
             showInlineVariableEditor(values, $row);
         }, 0);
     });
