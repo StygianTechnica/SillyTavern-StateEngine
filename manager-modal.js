@@ -386,11 +386,12 @@ export function renderManagerWorldInfoTab() {
 }
 
 function showInlineVariableEditor(varDef, $row) {
-    const d = varDef || {
+    // Default structure for new variables
+    const defaults = {
         id: generateUUID(),
         name: '',
         label: '',
-        category: 'manual',
+        category: 'manual', // legacy
         scope: 'chat',
         type: 'string',
         default: '',
@@ -422,6 +423,14 @@ function showInlineVariableEditor(varDef, $row) {
             instructions: ''
         }
     };
+
+    // Merge defaults into existing varDef
+    const d = Object.assign({}, defaults, varDef);
+
+    // Deep merge nested objects so old presets don't crash
+    d.behaviors = Object.assign({}, defaults.behaviors, varDef?.behaviors);
+    d.increment = Object.assign({}, defaults.increment, varDef?.increment);
+    d.prompted = Object.assign({}, defaults.prompted, varDef?.prompted);
 
     const $editor = $row.find('.se-manager-variable-editor-inline');
     
