@@ -1351,6 +1351,19 @@ export function wireManagerModalEvents() {
         $overlay.find('.se-manager-increment-settings').toggle(isOn);
     });
 
+    $overlay.on('change', '[data-field="type"]', function () {
+        const $row = $(this).closest('.se-manager-variable-row');
+        const $editor = $row.find('.se-manager-variable-editor-inline');
+
+        // Pull current working values from the editor
+        const values = collectInlineVariableValues($row);
+
+        // Update only the type in the working copy
+        values.type = $(this).val();
+
+        // Re-render the editor with updated working copy
+        showInlineVariableEditor(values, $row);
+    });
     
 }
 
