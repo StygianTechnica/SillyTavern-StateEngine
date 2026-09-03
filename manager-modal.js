@@ -1334,7 +1334,7 @@ export function wireManagerModalEvents() {
         managerApi.setStatus('Debug info logged to console');
     });
 
-    $overlay.on('change', '.se-manager-prompted-toggle', function () {
+    $overlay.on('change', '#se-manager-prompted-toggle', function () {
         const isOn = $(this).is(':checked');
 
         // Show/hide prompted instructions
@@ -1344,7 +1344,7 @@ export function wireManagerModalEvents() {
         $overlay.find('.se-manager-increment-heartbeat').toggle(!isOn);
     });
 
-    $overlay.on('change', '.se-manager-increment-toggle', function () {
+    $overlay.on('change', '#se-manager-increment-toggle', function () {
         const isOn = $(this).is(':checked');
 
         // Show/hide increment settings
