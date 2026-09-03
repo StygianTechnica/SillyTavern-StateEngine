@@ -456,65 +456,67 @@ function showInlineVariableEditor(varDef, $row) {
 
             <!-- Behavior toggles -->
             <div class="se-manager-variable-behaviors">
-                <label>
-                    <input type="checkbox" class="se-manager-var-field se-manager-prompted-toggle"
-                        data-field="behaviors.prompted"
-                        ${d.behaviors.prompted ? 'checked' : ''} />
-                    Prompted behavior
-                </label>
+                <div class="se-manager-toggle-row">
+                    <label class="switch">
+                        <input type="checkbox"
+                            class="se-manager-var-field se-manager-prompted-toggle"
+                            data-field="behaviors.prompted"
+                            ${d.behaviors.prompted ? 'checked' : ''}>
+                        <span class="slider"></span>
+                    </label>
+                    <span class="switch-label">Prompted behavior</span>
+                </div>
+                <!-- Prompted section (hidden unless checkbox is checked) -->
+                <div class="se-manager-prompted-section"
+                    style="display: ${d.behaviors.prompted ? 'block' : 'none'};">
+                    <textarea class="text_pole se-manager-var-field"
+                        data-field="prompted.instructions"
+                        placeholder="Prompted variable instructions">${escapeHtml(d.prompted.instructions)}</textarea>
+                </div>
+                <div class="se-manager-toggle-row">
+                    <label class="switch">
+                        <input type="checkbox"
+                            class="se-manager-var-field se-manager-increment-toggle"
+                            data-field="behaviors.increment"
+                            ${d.behaviors.increment ? 'checked' : ''}>
+                        <span class="slider"></span>
+                    </label>
+                    <span class="switch-label">Increment behavior</span>
+                </div>
+                <!-- Increment section (hidden unless checkbox is checked) -->
+                <div class="se-manager-increment-settings"
+                    style="display: ${d.behaviors.increment ? 'block' : 'none'};">
 
-                <label>
-                    <input type="checkbox" class="se-manager-var-field se-manager-increment-toggle"
-                        data-field="behaviors.increment"
-                        ${d.behaviors.increment ? 'checked' : ''} />
-                    Increment behavior
-                </label>
-            </div>
+                    <h4>Increment Settings</h4>
 
-            <!-- Prompted section (hidden unless checkbox is checked) -->
-            <div class="se-manager-prompted-section"
-                style="display: ${d.behaviors.prompted ? 'block' : 'none'};">
-                <textarea class="text_pole se-manager-var-field"
-                    data-field="prompted.instructions"
-                    placeholder="Prompted variable instructions">${escapeHtml(d.prompted.instructions)}</textarea>
-            </div>
+                    <!-- Heartbeat triggers (hidden if prompted is active) -->
+                    ${!d.behaviors.prompted ? `
+                        <label>Increment trigger:</label>
+                        <select class="text_pole se-manager-var-field" data-field="increment.triggers">
+                            <option value="user" ${d.increment.triggers.includes('user') ? 'selected' : ''}>On user chats</option>
+                            <option value="ai" ${d.increment.triggers.includes('ai') ? 'selected' : ''}>On AI chats</option>
+                            <option value="both" ${d.increment.triggers.includes('both') ? 'selected' : ''}>Both AI and User Chats</option>
+                        </select>
+                    ` : `
+                        <p>Increment will occur when prompted instructions are satisfied.</p>
+                    `}
 
-            <!-- Increment section (hidden unless checkbox is checked) -->
-            <div class="se-manager-increment-settings"
-                style="display: ${d.behaviors.increment ? 'block' : 'none'};">
+                    <!-- Type-specific increment controls -->
+                    ${d.type === 'number' ? `
+                        <label>Increment amount:</label>
+                        <input class="text_pole se-manager-var-field"
+                            data-field="increment.delta"
+                            value="${escapeHtml(d.increment.delta)}" />
+                    ` : ''}
 
-                <h4>Increment Settings</h4>
+                    ${d.type === 'boolean' ? `
+                        <label>Toggle value on increment</label>
+                    ` : ''}
 
-                <!-- Heartbeat triggers (hidden if prompted is active) -->
-                ${!d.behaviors.prompted ? `
-                    <label>Increment trigger:</label>
-                    <select class="text_pole se-manager-var-field" data-field="increment.triggers">
-                        <option value="user" ${d.increment.triggers.includes('user') ? 'selected' : ''}>On user chat</option>
-                        <option value="ai" ${d.increment.triggers.includes('ai') ? 'selected' : ''}>On AI chat</option>
-                        <option value="either" ${d.increment.triggers.includes('either') ? 'selected' : ''}>On either</option>
-                        <option value="time" ${d.increment.triggers.includes('time') ? 'selected' : ''}>On time interval</option>
-                        <option value="specificTime" ${d.increment.triggers.includes('specificTime') ? 'selected' : ''}>At specific time</option>
-                        <option value="random" ${d.increment.triggers.includes('random') ? 'selected' : ''}>Random interval</option>
-                    </select>
-                ` : `
-                    <p>Increment will occur when prompted instructions are satisfied.</p>
-                `}
-
-                <!-- Type-specific increment controls -->
-                ${d.type === 'number' ? `
-                    <label>Increment amount:</label>
-                    <input class="text_pole se-manager-var-field"
-                        data-field="increment.delta"
-                        value="${escapeHtml(d.increment.delta)}" />
-                ` : ''}
-
-                ${d.type === 'boolean' ? `
-                    <label>Toggle value on increment</label>
-                ` : ''}
-
-                ${d.type === 'enum' ? `
-                    <label>Cycle through enum values</label>
-                ` : ''}
+                    ${d.type === 'enum' ? `
+                        <label>Cycle through enum values</label>
+                    ` : ''}
+                </div>
             </div>
 
             <!-- Explanation box -->
