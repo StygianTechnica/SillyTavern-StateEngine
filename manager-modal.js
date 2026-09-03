@@ -533,36 +533,50 @@ function showInlineVariableEditor(varDef, $row) {
 }
 
 function generateExplanation(d) {
-    let text = `${d.name} is a ${d.type} variable`;
+    let out = [];
 
-    if (d.default)
-        text += ` with a default value of "${d.default}".`;
-    else
-        text += ` with no default value.`;
-
-    if (d.behaviors.prompted) {
-        text += ` It will update when the LLM determines the prompted instructions have been satisfied.`;
+    // Type + default
+    const base = `${d.name || 'This variable'} is a ${d.type} variable`;
+    if (d.default !== '' && d.default !== undefined && d.default !== null) {
+        out.push(`${base} with a default value of "${d.default}".`);
+    } else {
+        out.push(`${base} with no default value.`);
     }
 
-    if (d.behaviors.increment) {
+    // Prompted behavior
+    if (d.behaviors?.prompted) {
+        out.push(`It updates when the prompted instructions are satisfied.`);
+    }
+
+    // Increment behavior
+    if (d.behaviors?.increment) {
+
+        // Trigger logic depends on prompted
         if (d.behaviors.prompted) {
-            text += ` Incrementing is triggered by the prompted condition.`;
+            out.push(`Its value increments when the prompted condition is met.`);
         } else {
-            text += ` It will increment when ${incrementTriggerText(d.increment.triggers)}.`;
+            const trigger = incrementTriggerText(d.increment?.triggers || []);
+            out.push(`Its value increments ${trigger}.`);
+        }
+
+        // Type-specific increment behavior
+        if (d.type === 'number') {
+            out.push(`Each increment changes the value by ${d.increment?.delta ?? 1}.`);
+        } else if (d.type === 'boolean') {
+            out.push(`Each increment toggles the boolean value.`);
+        } else if (d.type === 'enum') {
+            out.push(`Each increment cycles through the enum values.`);
         }
     }
 
-    return text;
+    return out.join(' ');
 }
 
 function incrementTriggerText(triggers) {
-    if (triggers.includes('user')) return 'a new user chat is received';
-    if (triggers.includes('ai')) return 'the AI sends a message';
-    if (triggers.includes('either')) return 'either user or AI chat occurs';
-    if (triggers.includes('time')) return 'the time interval elapses';
-    if (triggers.includes('specificTime')) return 'the specific time is reached';
-    if (triggers.includes('random')) return 'a random interval passes';
-    return 'the increment condition is met';
+    if (triggers.includes('user')) return 'when a user chat is received';
+    if (triggers.includes('ai')) return 'when an AI chat is received';
+    if (triggers.includes('both')) return 'when either user or AI chat is received';
+    return 'when the increment condition is met';
 }
 
 function hideInlineVariableEditor($row) {

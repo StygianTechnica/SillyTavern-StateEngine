@@ -633,3 +633,13 @@
 #state_engine_settings .checkbox_label span {
     display: inline;
 }
+
+.se-manager-variable-explanation {
+    border: 1px solid #444;
+    padding: 10px;
+    margin-top: 12px;
+    font-style: italic;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.05);
+    border-left: 3px solid #888;
+}
