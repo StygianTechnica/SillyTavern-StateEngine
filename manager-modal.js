@@ -436,65 +436,100 @@ function showInlineVariableEditor(varDef, $row) {
     
     $editor.html(`
         <div class="se-manager-variable-editor-fields">
-            <input class="text_pole se-manager-var-field" data-field="name" placeholder="Variable name" value="${escapeHtml(d.name || '')}" />
-            <input class="text_pole se-manager-var-field" data-field="label" placeholder="Label" value="${escapeHtml(d.label || '')}" />
+
+            <!-- Basic fields -->
+            <input class="text_pole se-manager-var-field" data-field="name"
+                placeholder="Variable name" value="${escapeHtml(d.name)}" />
+
+            <input class="text_pole se-manager-var-field" data-field="label"
+                placeholder="Label" value="${escapeHtml(d.label)}" />
+
             <select class="text_pole se-manager-var-field" data-field="type">
                 <option value="string" ${d.type === 'string' ? 'selected' : ''}>String</option>
                 <option value="number" ${d.type === 'number' ? 'selected' : ''}>Number</option>
                 <option value="boolean" ${d.type === 'boolean' ? 'selected' : ''}>Boolean</option>
                 <option value="enum" ${d.type === 'enum' ? 'selected' : ''}>Enum</option>
             </select>
-            <input class="text_pole se-manager-var-field" data-field="default" placeholder="Default value" value="${escapeHtml(d.default || '')}" />
-            <textarea class="text_pole se-manager-var-field se-manager-prompted-instructions" data-field="prompted.instructions" placeholder="Prompted variable instructions">${escapeHtml(d.prompted?.instructions || '')}</textarea>
+
+            <input class="text_pole se-manager-var-field" data-field="default"
+                placeholder="Default value" value="${escapeHtml(d.default)}" />
+
+            <!-- Behavior toggles -->
             <div class="se-manager-variable-behaviors">
                 <label>
-                    <input type="checkbox" class="se-manager-var-field" data-field="behaviors.increment"
-                        ${d.behaviors.increment ? 'checked' : ''} />
-                    Increment behavior
-                </label>
-
-                <label>
-                    <input type="checkbox" class="se-manager-var-field" data-field="behaviors.prompted"
+                    <input type="checkbox" class="se-manager-var-field"
+                        data-field="behaviors.prompted"
                         ${d.behaviors.prompted ? 'checked' : ''} />
                     Prompted behavior
                 </label>
+
+                <label>
+                    <input type="checkbox" class="se-manager-var-field"
+                        data-field="behaviors.increment"
+                        ${d.behaviors.increment ? 'checked' : ''} />
+                    Increment behavior
+                </label>
             </div>
-            ${d.behaviors.increment ? `
-            <div class="se-manager-increment-settings">
+
+            <!-- Prompted section (hidden unless checkbox is checked) -->
+            <div class="se-manager-prompted-section"
+                style="display: ${d.behaviors.prompted ? 'block' : 'none'};">
+                <textarea class="text_pole se-manager-var-field"
+                    data-field="prompted.instructions"
+                    placeholder="Prompted variable instructions">${escapeHtml(d.prompted.instructions)}</textarea>
+            </div>
+
+            <!-- Increment section (hidden unless checkbox is checked) -->
+            <div class="se-manager-increment-settings"
+                style="display: ${d.behaviors.increment ? 'block' : 'none'};">
+
                 <h4>Increment Settings</h4>
 
-                <label>Triggers:</label>
-                <select multiple class="text_pole se-manager-var-field" data-field="increment.triggers">
-                    <option value="user" ${d.increment.triggers.includes('user') ? 'selected' : ''}>On user chat</option>
-                    <option value="ai" ${d.increment.triggers.includes('ai') ? 'selected' : ''}>On AI chat</option>
-                    <option value="either" ${d.increment.triggers.includes('either') ? 'selected' : ''}>On either</option>
-                    <option value="time" ${d.increment.triggers.includes('time') ? 'selected' : ''}>On time interval</option>
-                    <option value="specificTime" ${d.increment.triggers.includes('specificTime') ? 'selected' : ''}>At specific time</option>
-                    <option value="random" ${d.increment.triggers.includes('random') ? 'selected' : ''}>Random interval</option>
-                    <option value="prompted" ${d.increment.triggers.includes('prompted') ? 'selected' : ''}>Prompted increment</option>
-                </select>
+                <!-- Heartbeat triggers (hidden if prompted is active) -->
+                ${!d.behaviors.prompted ? `
+                    <label>Increment trigger:</label>
+                    <select class="text_pole se-manager-var-field" data-field="increment.triggers">
+                        <option value="user" ${d.increment.triggers.includes('user') ? 'selected' : ''}>On user chat</option>
+                        <option value="ai" ${d.increment.triggers.includes('ai') ? 'selected' : ''}>On AI chat</option>
+                        <option value="either" ${d.increment.triggers.includes('either') ? 'selected' : ''}>On either</option>
+                        <option value="time" ${d.increment.triggers.includes('time') ? 'selected' : ''}>On time interval</option>
+                        <option value="specificTime" ${d.increment.triggers.includes('specificTime') ? 'selected' : ''}>At specific time</option>
+                        <option value="random" ${d.increment.triggers.includes('random') ? 'selected' : ''}>Random interval</option>
+                    </select>
+                ` : `
+                    <p>Increment will occur when prompted instructions are satisfied.</p>
+                `}
 
+                <!-- Type-specific increment controls -->
                 ${d.type === 'number' ? `
-                    <label>Delta:</label>
-                    <input class="text_pole se-manager-var-field" data-field="increment.delta" value="${escapeHtml(d.increment.delta)}" />
+                    <label>Increment amount:</label>
+                    <input class="text_pole se-manager-var-field"
+                        data-field="increment.delta"
+                        value="${escapeHtml(d.increment.delta)}" />
                 ` : ''}
 
                 ${d.type === 'boolean' ? `
-                    <label>Toggle on increment</label>
+                    <label>Toggle value on increment</label>
                 ` : ''}
 
                 ${d.type === 'enum' ? `
                     <label>Cycle through enum values</label>
                 ` : ''}
             </div>
-            ` : ''}
 
+            <!-- Explanation box -->
+            <div class="se-manager-variable-explanation">
+                ${generateExplanation(d)}
+            </div>
+
+            <!-- Actions -->
             <div class="se-manager-variable-editor-actions">
-                <button class="menu_button se-manager-save-variable-inline">${!d._isNew ? 'Save' : 'Create'}</button>
+                <button class="menu_button se-manager-save-variable-inline">${d._isNew ? 'Create' : 'Save'}</button>
                 <button class="menu_button se-manager-cancel-variable-inline">Cancel</button>
             </div>
         </div>
     `).data('editing-id', d.id).data('editing-existing', !d._isNew).show();
+
 
     // Disable other controls
     $('#se-manager-new-variable, #se-manager-variable-search, #se-manager-variable-sort').prop('disabled', true).css('opacity', '0.5');

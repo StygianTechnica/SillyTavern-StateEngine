@@ -593,3 +593,33 @@
         justify-content: flex-end;
     }
 }
+
+/* Prevent checkboxes from stretching */
+.se-manager-variable-behaviors input[type="checkbox"],
+.se-manager-increment-settings input[type="checkbox"] {
+    width: auto !important;
+    display: inline-block;
+}
+
+/* Make behavior labels align nicely */
+.se-manager-variable-behaviors label,
+.se-manager-increment-settings label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 4px 0;
+}
+
+/* Hide sections by default */
+.se-manager-prompted-section,
+.se-manager-increment-settings {
+    margin-top: 10px;
+}
+
+/* Explanation box */
+.se-manager-variable-explanation {
+    margin-top: 12px;
+    font-size: 0.85em;
+    opacity: 0.8;
+    line-height: 1.3em;
+}
