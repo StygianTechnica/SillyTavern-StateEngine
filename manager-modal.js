@@ -401,9 +401,26 @@ function showInlineVariableEditor(varDef, $row) {
         resetOnNewChat: false,
         showInTracker: true,
         skipPromptedRefresh: false,
-        counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
-        cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
-        prompted: { triggers: [], instructions: '' }
+
+        behaviors: {
+            increment: false,
+            prompted: false
+        },
+
+        increment: {
+            triggers: [],
+            delta: 1,
+            toggle: true,
+            cycle: [],
+            timeInterval: '',
+            specificTime: '',
+            randomInterval: ''
+        },
+
+        prompted: {
+            triggers: [],
+            instructions: ''
+        }
     };
 
     const $editor = $row.find('.se-manager-variable-editor-inline');
@@ -412,11 +429,6 @@ function showInlineVariableEditor(varDef, $row) {
         <div class="se-manager-variable-editor-fields">
             <input class="text_pole se-manager-var-field" data-field="name" placeholder="Variable name" value="${escapeHtml(d.name || '')}" />
             <input class="text_pole se-manager-var-field" data-field="label" placeholder="Label" value="${escapeHtml(d.label || '')}" />
-            <select class="text_pole se-manager-var-field" data-field="category">
-                <option value="manual" ${d.category === 'manual' ? 'selected' : ''}>Manual</option>
-                <option value="cycling" ${d.category === 'cycling' ? 'selected' : ''}>Cycling</option>
-                <option value="prompted" ${d.category === 'prompted' ? 'selected' : ''}>Prompted</option>
-            </select>
             <select class="text_pole se-manager-var-field" data-field="type">
                 <option value="string" ${d.type === 'string' ? 'selected' : ''}>String</option>
                 <option value="number" ${d.type === 'number' ? 'selected' : ''}>Number</option>
@@ -425,8 +437,51 @@ function showInlineVariableEditor(varDef, $row) {
             </select>
             <input class="text_pole se-manager-var-field" data-field="default" placeholder="Default value" value="${escapeHtml(d.default || '')}" />
             <textarea class="text_pole se-manager-var-field se-manager-prompted-instructions" data-field="prompted.instructions" placeholder="Prompted variable instructions">${escapeHtml(d.prompted?.instructions || '')}</textarea>
+            <div class="se-manager-variable-behaviors">
+                <label>
+                    <input type="checkbox" class="se-manager-var-field" data-field="behaviors.increment"
+                        ${d.behaviors.increment ? 'checked' : ''} />
+                    Increment behavior
+                </label>
+
+                <label>
+                    <input type="checkbox" class="se-manager-var-field" data-field="behaviors.prompted"
+                        ${d.behaviors.prompted ? 'checked' : ''} />
+                    Prompted behavior
+                </label>
+            </div>
+            ${d.behaviors.increment ? `
+            <div class="se-manager-increment-settings">
+                <h4>Increment Settings</h4>
+
+                <label>Triggers:</label>
+                <select multiple class="text_pole se-manager-var-field" data-field="increment.triggers">
+                    <option value="user" ${d.increment.triggers.includes('user') ? 'selected' : ''}>On user chat</option>
+                    <option value="ai" ${d.increment.triggers.includes('ai') ? 'selected' : ''}>On AI chat</option>
+                    <option value="either" ${d.increment.triggers.includes('either') ? 'selected' : ''}>On either</option>
+                    <option value="time" ${d.increment.triggers.includes('time') ? 'selected' : ''}>On time interval</option>
+                    <option value="specificTime" ${d.increment.triggers.includes('specificTime') ? 'selected' : ''}>At specific time</option>
+                    <option value="random" ${d.increment.triggers.includes('random') ? 'selected' : ''}>Random interval</option>
+                    <option value="prompted" ${d.increment.triggers.includes('prompted') ? 'selected' : ''}>Prompted increment</option>
+                </select>
+
+                ${d.type === 'number' ? `
+                    <label>Delta:</label>
+                    <input class="text_pole se-manager-var-field" data-field="increment.delta" value="${escapeHtml(d.increment.delta)}" />
+                ` : ''}
+
+                ${d.type === 'boolean' ? `
+                    <label>Toggle on increment</label>
+                ` : ''}
+
+                ${d.type === 'enum' ? `
+                    <label>Cycle through enum values</label>
+                ` : ''}
+            </div>
+            ` : ''}
+
             <div class="se-manager-variable-editor-actions">
-                <button class="menu_button se-manager-save-variable-inline">${varDef ? 'Save' : 'Create'}</button>
+                <button class="menu_button se-manager-save-variable-inline">${!d._isNew ? 'Save' : 'Create'}</button>
                 <button class="menu_button se-manager-cancel-variable-inline">Cancel</button>
             </div>
         </div>
@@ -889,7 +944,6 @@ export function wireManagerModalEvents() {
             return;
         }
 
-        // 1. Create empty variable definition
         const newVar = {
             id: generateUUID(),
             name: '',
@@ -905,10 +959,28 @@ export function wireManagerModalEvents() {
             resetOnNewChat: false,
             showInTracker: true,
             skipPromptedRefresh: false,
-            counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
-            cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
-            prompted: { triggers: [], instructions: '' }
+
+            behaviors: {
+                increment: false,
+                prompted: false
+            },
+
+            increment: {
+                triggers: [],
+                delta: 1,
+                toggle: true,
+                cycle: [],
+                timeInterval: '',
+                specificTime: '',
+                randomInterval: ''
+            },
+
+            prompted: {
+                triggers: [],
+                instructions: ''
+            }
         };
+
         
         const settings = managerApi.getSettings();
         const activePresetIds = managerApi.getPresetsForChat(managerApi.getCurrentChatId());
