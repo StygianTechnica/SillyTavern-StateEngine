@@ -460,62 +460,62 @@ function collectInlineVariableValues($row) {
     return values;
 }
 
-function showVariableEditor(def) {
-    const d = def || {
-        id: generateUUID(),
-        name: '',
-        label: '',
-        category: 'manual',
-        scope: 'chat',
-        type: 'string',
-        default: '',
-        enumValues: [],
-        min: '',
-        max: '',
-        description: '',
-        resetOnNewChat: false,
-        showInTracker: true,
-        counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
-        cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
-        prompted: { triggers: [], instructions: '' }
-    };
+// function showVariableEditor(def) {
+//     const d = def || {
+//         id: generateUUID(),
+//         name: '',
+//         label: '',
+//         category: 'manual',
+//         scope: 'chat',
+//         type: 'string',
+//         default: '',
+//         enumValues: [],
+//         min: '',
+//         max: '',
+//         description: '',
+//         resetOnNewChat: false,
+//         showInTracker: true,
+//         counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
+//         cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
+//         prompted: { triggers: [], instructions: '' }
+//     };
 
-    const $editor = $('#se-manager-variable-editor');
-    if (!$editor.length) return;
+//     const $editor = $('#se-manager-variable-editor');
+//     if (!$editor.length) return;
 
-    $editor.html(`
-        <div class="se-manager-section">
-            <div class="se-manager-section-header">
-                <h3>${def ? 'Edit variable' : 'New variable'}</h3>
-                <div class="se-manager-variable-editor-actions">
-                    <button class="menu_button se-manager-save-variable">${def ? 'Save' : 'Create'}</button>
-                    <button class="menu_button se-manager-cancel-variable">Cancel</button>
-                </div>
-            </div>
-            <div class="se-manager-variable-editor-grid">
-                <input class="text_pole se-manager-var-field" data-field="name" placeholder="Variable name" value="${escapeHtml(d.name || '')}" />
-                <input class="text_pole se-manager-var-field" data-field="label" placeholder="Label" value="${escapeHtml(d.label || '')}" />
-                <select class="text_pole se-manager-var-field" data-field="category">
-                    <option value="manual" ${d.category === 'manual' ? 'selected' : ''}>Manual</option>
-                    <option value="cycling" ${d.category === 'cycling' ? 'selected' : ''}>Cycling</option>
-                    <option value="prompted" ${d.category === 'prompted' ? 'selected' : ''}>Prompted</option>
-                </select>
-                <select class="text_pole se-manager-var-field" data-field="type">
-                    <option value="string" ${d.type === 'string' ? 'selected' : ''}>String</option>
-                    <option value="number" ${d.type === 'number' ? 'selected' : ''}>Number</option>
-                    <option value="boolean" ${d.type === 'boolean' ? 'selected' : ''}>Boolean</option>
-                    <option value="enum" ${d.type === 'enum' ? 'selected' : ''}>Enum</option>
-                </select>
-                <input class="text_pole se-manager-var-field" data-field="default" placeholder="Default value" value="${escapeHtml(d.default || '')}" />
-                <label class="se-manager-inline-checkbox">
-                    <input type="checkbox" class="se-manager-var-field" data-field="skipPromptedRefresh" ${d.skipPromptedRefresh ? 'checked' : ''} />
-                    <span>Skip prompted refresh</span>
-                </label>
-                <textarea class="text_pole se-manager-var-field se-manager-prompted-instructions" data-field="prompted?.instructions" placeholder="Prompted variable instructions">${escapeHtml(d.prompted?.instructions || '')}</textarea>
-            </div>
-        </div>
-    `).show().data('editing-id', d.id).data('editing-existing', !!def);
-}
+//     $editor.html(`
+//         <div class="se-manager-section">
+//             <div class="se-manager-section-header">
+//                 <h3>${def ? 'Edit variable' : 'New variable'}</h3>
+//                 <div class="se-manager-variable-editor-actions">
+//                     <button class="menu_button se-manager-save-variable">${def ? 'Save' : 'Create'}</button>
+//                     <button class="menu_button se-manager-cancel-variable">Cancel</button>
+//                 </div>
+//             </div>
+//             <div class="se-manager-variable-editor-grid">
+//                 <input class="text_pole se-manager-var-field" data-field="name" placeholder="Variable name" value="${escapeHtml(d.name || '')}" />
+//                 <input class="text_pole se-manager-var-field" data-field="label" placeholder="Label" value="${escapeHtml(d.label || '')}" />
+//                 <select class="text_pole se-manager-var-field" data-field="category">
+//                     <option value="manual" ${d.category === 'manual' ? 'selected' : ''}>Manual</option>
+//                     <option value="cycling" ${d.category === 'cycling' ? 'selected' : ''}>Cycling</option>
+//                     <option value="prompted" ${d.category === 'prompted' ? 'selected' : ''}>Prompted</option>
+//                 </select>
+//                 <select class="text_pole se-manager-var-field" data-field="type">
+//                     <option value="string" ${d.type === 'string' ? 'selected' : ''}>String</option>
+//                     <option value="number" ${d.type === 'number' ? 'selected' : ''}>Number</option>
+//                     <option value="boolean" ${d.type === 'boolean' ? 'selected' : ''}>Boolean</option>
+//                     <option value="enum" ${d.type === 'enum' ? 'selected' : ''}>Enum</option>
+//                 </select>
+//                 <input class="text_pole se-manager-var-field" data-field="default" placeholder="Default value" value="${escapeHtml(d.default || '')}" />
+//                 <label class="se-manager-inline-checkbox">
+//                     <input type="checkbox" class="se-manager-var-field" data-field="skipPromptedRefresh" ${d.skipPromptedRefresh ? 'checked' : ''} />
+//                     <span>Skip prompted refresh</span>
+//                 </label>
+//                 <textarea class="text_pole se-manager-var-field se-manager-prompted-instructions" data-field="prompted?.instructions" placeholder="Prompted variable instructions">${escapeHtml(d.prompted?.instructions || '')}</textarea>
+//             </div>
+//         </div>
+//     `).show().data('editing-id', d.id).data('editing-existing', !!def);
+// }
 
 function collectVariableEditorValues() {
     const $editor = $('#se-manager-variable-editor');
@@ -888,7 +888,52 @@ export function wireManagerModalEvents() {
             alert('Select a preset first.');
             return;
         }
-        showVariableEditor(null);
+
+        // 1. Create empty variable definition
+        const newVar = {
+            id: generateUUID(),
+            name: '',
+            label: '',
+            category: 'manual',
+            scope: 'chat',
+            type: 'string',
+            default: '',
+            enumValues: [],
+            min: '',
+            max: '',
+            description: '',
+            resetOnNewChat: false,
+            showInTracker: true,
+            skipPromptedRefresh: false,
+            counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
+            cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
+            prompted: { triggers: [], instructions: '' }
+        };
+
+        // 2. Add to preset/state
+        addVariableToPreset(newVar);
+
+        // 3. Render a new row
+        const $row = renderVariableRow(newVar);
+
+        // 4. Insert at top of list
+        $('#se-manager-variable-list').prepend($row);
+
+        // 5. Open inline editor
+        showInlineVariableEditor(newVar, $row);
+
+        // 6. Cancel → remove row + remove from preset
+        $row.find('.se-manager-cancel-variable-inline').on('click', () => {
+            removeVariableFromPreset(newVar);
+            $row.remove();
+            enableManagerControls();
+        });
+
+        // 7. Save → keep row
+        $row.find('.se-manager-save-variable-inline').on('click', () => {
+            saveInlineVariableChanges(newVar, $row);
+            enableManagerControls();
+        });
     });
 
     $overlay.on('click', '.se-manager-edit-variable', function () {
@@ -950,9 +995,9 @@ export function wireManagerModalEvents() {
         }
     });
 
-    $overlay.on('click', '.se-manager-cancel-variable', function () {
-        $('#se-manager-variable-editor').hide().empty();
-    });
+    // $overlay.on('click', '.se-manager-cancel-variable', function () {
+    //     $('#se-manager-variable-editor').hide().empty();
+    // });
 
     $overlay.on('click', '.se-manager-cancel-variable-inline', function () {
         const $row = $(this).closest('.se-manager-variable-row');
@@ -1009,54 +1054,54 @@ export function wireManagerModalEvents() {
         managerApi.setStatus(isNew ? 'Variable created.' : 'Variable updated.');
     });
 
-    $overlay.on('click', '.se-manager-save-variable', function () {
-        const editor = $('#se-manager-variable-editor');
-        if (!editor.length) return;
+    // $overlay.on('click', '.se-manager-save-variable', function () {
+    //     const editor = $('#se-manager-variable-editor');
+    //     if (!editor.length) return;
 
-        const settings = managerApi.getSettings();
-        const presetId = managerCurrentPresetId;
-        const preset = settings.presets[presetId];
-        if (!preset) return;
+    //     const settings = managerApi.getSettings();
+    //     const presetId = managerCurrentPresetId;
+    //     const preset = settings.presets[presetId];
+    //     if (!preset) return;
 
-        const values = collectVariableEditorValues();
-        const isNew = !editor.data('editing-existing');
+    //     const values = collectVariableEditorValues();
+    //     const isNew = !editor.data('editing-existing');
 
-        if (!values.name || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(values.name)) {
-            alert('Variable name is required and must start with a letter or underscore.');
-            return;
-        }
+    //     if (!values.name || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(values.name)) {
+    //         alert('Variable name is required and must start with a letter or underscore.');
+    //         return;
+    //     }
 
-        // Check for reserved SillyTavern variable names
-        if (managerApi.isReservedVariable(values.name)) {
-            alert(`Cannot create variable: "${values.name}" is a reserved SillyTavern macro name.\n\nReserved names include: charname, user, bot, time, date, random, counter, and others.\n\nPlease choose a different name.`);
-            return;
-        }
+    //     // Check for reserved SillyTavern variable names
+    //     if (managerApi.isReservedVariable(values.name)) {
+    //         alert(`Cannot create variable: "${values.name}" is a reserved SillyTavern macro name.\n\nReserved names include: charname, user, bot, time, date, random, counter, and others.\n\nPlease choose a different name.`);
+    //         return;
+    //     }
 
-        if (!preset.variables) preset.variables = {};
-        if (isNew && preset.variables[values.id]) {
-            values.id = generateUUID();
-        }
+    //     if (!preset.variables) preset.variables = {};
+    //     if (isNew && preset.variables[values.id]) {
+    //         values.id = generateUUID();
+    //     }
 
-        preset.variables[values.id] = {
-            id: values.id,
-            name: values.name.trim(),
-            label: String(values.label || '').trim(),
-            category: values.category || 'manual',
-            scope: 'chat',
-            type: values.type || 'string',
-            default: values.default || '',
-            showInTracker: true,
-            description: '',
-            counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
-            cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
-            prompted: { triggers: [], instructions: '' }
-        };
+    //     preset.variables[values.id] = {
+    //         id: values.id,
+    //         name: values.name.trim(),
+    //         label: String(values.label || '').trim(),
+    //         category: values.category || 'manual',
+    //         scope: 'chat',
+    //         type: values.type || 'string',
+    //         default: values.default || '',
+    //         showInTracker: true,
+    //         description: '',
+    //         counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
+    //         cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
+    //         prompted: { triggers: [], instructions: '' }
+    //     };
 
-        managerApi.persistSettings(settings);
-        editor.hide().empty();
-        renderManagerVariablesTab();
-        managerApi.setStatus(isNew ? 'Variable created.' : 'Variable updated.');
-    });
+    //     managerApi.persistSettings(settings);
+    //     editor.hide().empty();
+    //     renderManagerVariablesTab();
+    //     managerApi.setStatus(isNew ? 'Variable created.' : 'Variable updated.');
+    // });
 
     // Triggers in accordion
     $overlay.on('change', '.se-preset-trigger-checkbox', function () {
