@@ -1353,24 +1353,33 @@ export function wireManagerModalEvents() {
 
     $overlay.on('change', '#se-manager-prompted-toggle', function () {
         const $row = $(this).closest('.se-manager-variable-row');
-        const values = collectInlineVariableValues($row);
         const isOn = $(this).is(':checked');
 
-        // Show/hide prompted instructions
+        // UI-only toggles
         $overlay.find('.se-manager-prompted-section').toggle(isOn);
-
-        // Hide heartbeat if prompted is active
         $overlay.find('.se-manager-increment-heartbeat').toggle(!isOn);
-        showInlineVariableEditor(values, $row);
+
+        // Delay re-render so checkbox state commits
+        setTimeout(() => {
+            const values = collectInlineVariableValues($row);
+            values.behaviors.prompted = isOn;
+            showInlineVariableEditor(values, $row);
+        }, 0);
     });
 
     $overlay.on('change', '#se-manager-increment-toggle', function () {
         const $row = $(this).closest('.se-manager-variable-row');
-        const values = collectInlineVariableValues($row);
         const isOn = $(this).is(':checked');
-        // Show/hide increment settings
+
+        // UI-only toggles
         $overlay.find('.se-manager-increment-settings').toggle(isOn);
-        showInlineVariableEditor(values, $row);
+
+        // Delay re-render so checkbox state commits
+        setTimeout(() => {
+            const values = collectInlineVariableValues($row);
+            values.behaviors.increment = isOn;
+            showInlineVariableEditor(values, $row);
+        }, 0);
     });
 
     $overlay.on('change', '[data-field="type"]', function () {
@@ -1386,6 +1395,7 @@ export function wireManagerModalEvents() {
         // Re-render the editor with updated working copy
         showInlineVariableEditor(values, $row);
     });
+
     $overlay.on('change', '[data-field="type"]', function () {
         const $row = $(this).closest('.se-manager-variable-row');
         const $editor = $row.find('.se-manager-variable-editor-inline');
