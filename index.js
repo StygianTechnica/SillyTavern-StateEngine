@@ -2069,14 +2069,14 @@ function registerEvents() {
     });
 
     eventSource.on(eventTypes.USER_MESSAGE_RENDERED, () => {
-        runCounters('user');
+        //runCounters('user');
         runPromptedUpdates('user');
         runPromptedIncrements('user');
         runDeterministicIncrements('user');
     });
 
     eventSource.on(eventTypes.CHARACTER_MESSAGE_RENDERED, () => {
-        runCounters('ai');
+        //runCounters('ai');
         runPromptedUpdates('ai');
         runPromptedIncrements('ai');
         runDeterministicIncrements('ai');
