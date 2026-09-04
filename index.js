@@ -2952,42 +2952,42 @@ function renderTrackerPresetList() {
 //     renderVarTable(); // Refresh in case prompt variables are shown
 // }
 
-// async function initPanel() {
-//     const context = SillyTavern.getContext();
-//     let html;
-//     try {
-//         html = await context.renderExtensionTemplateAsync(EXT_TEMPLATE_PATH, 'settings');
-//     } catch (err) {
-//         console.error(LOG_PREFIX, 'failed to load settings.html template', err);
-//         return;
-//     }
-//     const $html = $(html);
-//     $html.find('#se_macro_example, #se_macro_example2').text('{{getvar::name}}');
-//     $('#extensions_settings2').append($html);
+async function initPanel() {
+    const context = SillyTavern.getContext();
+    let html;
+    try {
+        html = await context.renderExtensionTemplateAsync(EXT_TEMPLATE_PATH, 'settings');
+    } catch (err) {
+        console.error(LOG_PREFIX, 'failed to load settings.html template', err);
+        return;
+    }
+    const $html = $(html);
+    $html.find('#se_macro_example, #se_macro_example2').text('{{getvar::name}}');
+    $('#extensions_settings2').append($html);
 
-//     bindPanelEvents();
-//     loadGeneralSettingsIntoForm();
+    bindPanelEvents();
+    loadGeneralSettingsIntoForm();
      
-//     const chatId = getCurrentChatId();
-//     if (chatId) {
-//         const activePresetIds = getPresetsForChat(chatId);
-//         if (activePresetIds.length > 0) {
-//             currentPresetId = activePresetIds[0];
-//         }
-//         renderVarTable();
-//     } else {
-//         const $tabContainer = $('#se_preset_tabs');
-//         const $tbody = $('#se_var_tbody');
-//         const $empty = $('#se_var_empty');
-//         if ($tabContainer.length) $tabContainer.empty();
-//         if ($tbody.length) $tbody.empty();
-//         if ($empty.length) $empty.show().text('Select a chat to view state variables.');
-//     }
+    const chatId = getCurrentChatId();
+    if (chatId) {
+        const activePresetIds = getPresetsForChat(chatId);
+        if (activePresetIds.length > 0) {
+            currentPresetId = activePresetIds[0];
+        }
+        renderVarTable();
+    } else {
+        const $tabContainer = $('#se_preset_tabs');
+        const $tbody = $('#se_var_tbody');
+        const $empty = $('#se_var_empty');
+        if ($tabContainer.length) $tabContainer.empty();
+        if ($tbody.length) $tbody.empty();
+        if ($empty.length) $empty.show().text('Select a chat to view state variables.');
+    }
 
-//     if (getSettings().showTrackerPanel) {
-//         setTrackerPanelVisible(true);
-//     }
-// }
+    if (getSettings().showTrackerPanel) {
+        setTrackerPanelVisible(true);
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Stylesheet loader
