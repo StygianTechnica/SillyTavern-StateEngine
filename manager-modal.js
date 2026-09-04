@@ -387,42 +387,8 @@ export function renderManagerWorldInfoTab() {
 
 function showInlineVariableEditor(varDef, $row) {
     // Default structure for new variables
-    const defaults = {
-        id: generateUUID(),
-        name: '',
-        label: '',
-        category: 'manual', // legacy
-        scope: 'chat',
-        type: 'string',
-        default: '',
-        enumValues: [],
-        min: '',
-        max: '',
-        description: '',
-        resetOnNewChat: false,
-        showInTracker: true,
-        skipPromptedRefresh: false,
-
-        behaviors: {
-            increment: false,
-            prompted: false
-        },
-
-        increment: {
-            triggers: [],
-            delta: 1,
-            toggle: true,
-            cycle: [],
-            timeInterval: '',
-            specificTime: '',
-            randomInterval: ''
-        },
-
-        prompted: {
-            triggers: [],
-            instructions: ''
-        }
-    };
+    const defaults = managerApi.blankDefinition();
+        defaults.id = generateUUID();
 
     // Merge defaults into existing varDef
     const d = Object.assign({}, defaults, varDef);
@@ -1062,67 +1028,68 @@ export function wireManagerModalEvents() {
         renderManagerVariablesTab();
     });
 
-    $overlay.on('click', '#se-manager-new-variable', function () {
-        if (!managerCurrentPresetId) {
-            alert('Select a preset first.');
-            return;
-        }
+    // $overlay.on('click', '#se-manager-new-variable', function () {
+    //     if (!managerCurrentPresetId) {
+    //         alert('Select a preset first.');
+    //         return;
+    //     }
 
-        const newVar = {
-            id: generateUUID(),
-            name: '',
-            label: '',
-            category: 'manual',
-            scope: 'chat',
-            type: 'string',
-            default: '',
-            enumValues: [],
-            min: '',
-            max: '',
-            description: '',
-            resetOnNewChat: false,
-            showInTracker: true,
-            skipPromptedRefresh: false,
 
-            behaviors: {
-                increment: false,
-                prompted: false
-            },
+    //     const newVar = {
+    //         id: generateUUID(),
+    //         name: '',
+    //         label: '',
+    //         category: 'manual',
+    //         scope: 'chat',
+    //         type: 'string',
+    //         default: '',
+    //         enumValues: [],
+    //         min: '',
+    //         max: '',
+    //         description: '',
+    //         resetOnNewChat: false,
+    //         showInTracker: true,
+    //         skipPromptedRefresh: false,
 
-            increment: {
-                triggers: [],
-                delta: 1,
-                toggle: true,
-                cycle: [],
-                timeInterval: '',
-                specificTime: '',
-                randomInterval: ''
-            },
+    //         behaviors: {
+    //             increment: false,
+    //             prompted: false
+    //         },
 
-            prompted: {
-                triggers: [],
-                instructions: ''
-            }
-        };
+    //         increment: {
+    //             triggers: [],
+    //             delta: 1,
+    //             toggle: true,
+    //             cycle: [],
+    //             timeInterval: '',
+    //             specificTime: '',
+    //             randomInterval: ''
+    //         },
+
+    //         prompted: {
+    //             triggers: [],
+    //             instructions: ''
+    //         }
+    //     };
 
         
-        const settings = managerApi.getSettings();
-        const activePresetIds = managerApi.getPresetsForChat(managerApi.getCurrentChatId());
-        const allPresets = Object.keys(settings.presets || {});
-        const selectedPresetId = allPresets.includes(managerCurrentPresetId)
-            ? managerCurrentPresetId
-            : activePresetIds[0] || allPresets[0] || null;
-        const preset = settings.presets[selectedPresetId];
-        preset.variables[newVar.id] = newVar;//XXXXXXXX
-        renderManagerVariablesTab();
+    //     const settings = managerApi.getSettings();
+    //     const activePresetIds = managerApi.getPresetsForChat(managerApi.getCurrentChatId());
+    //     const allPresets = Object.keys(settings.presets || {});
+    //     const selectedPresetId = allPresets.includes(managerCurrentPresetId)
+    //         ? managerCurrentPresetId
+    //         : activePresetIds[0] || allPresets[0] || null;
+    //     const preset = settings.presets[selectedPresetId];
+    //     preset.variables[newVar.id] = newVar;//XXXXXXXX
+    //     renderManagerVariablesTab();
 
-        const varId = newVar.id;
-        managerCurrentPresetId = selectedPresetId;
+    //     const varId = newVar.id;
+    //     managerCurrentPresetId = selectedPresetId;
         
-        const $row = $(`#se-manager-variable-list .se-manager-variable-row[data-var-id="${newVar.id}"]`);
-        showInlineVariableEditor({... newVar, _isNew: true }, $row);
+    //     const $row = $(`#se-manager-variable-list .se-manager-variable-row[data-var-id="${newVar.id}"]`);
+    //     showInlineVariableEditor({... newVar, _isNew: true }, $row);
 
-    });
+    // });
 
     $overlay.on('click', '.se-manager-edit-variable', function () {
         const varId = $(this).attr('data-var-id');
@@ -1244,23 +1211,18 @@ export function wireManagerModalEvents() {
 
         console.log("VALUES BEFORE SAVE:", values);
 
-        // Build new variable definition using the updated schema
-        preset.variables[values.id] = {
+        const newVariable = {
+            ...managerApi.blankDefinition(),
+            ...values,
             id: values.id,
             name: values.name.trim(),
             label: String(values.label || '').trim(),
             description: values.description || '',
-            scope: values.scope || 'chat',
-
-            type: values.type || 'string',
             enumValues: values.enumValues || [],
-
             defaultValue: values.defaultValue ?? '',
-
             min: values.min ?? null,
             max: values.max ?? null,
-
-            resetOnNewChat: values.resetOnNewChat || false,
+            resetOnNewChat: !!values.resetOnNewChat,
             showInTracker: values.showInTracker !== false,
 
             behaviors: {
@@ -1279,7 +1241,9 @@ export function wireManagerModalEvents() {
             prompted: {
                 instructions: values.prompted?.instructions || '',
             },
+
         };
+
 
         managerApi.persistSettings(settings);
         hideInlineVariableEditor($row);

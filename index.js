@@ -24,6 +24,8 @@ import {
     wireManagerModalEvents
 } from './manager-modal.js';
 
+const CURRENT_SCHEMA_VERSION = 1;
+
 const MODULE_NAME = 'state_engine';
 const EXT_TEMPLATE_PATH = 'third-party/SillyTavern-StateEngine';
 const LOG_PREFIX = '[State Engine]';
@@ -46,6 +48,32 @@ const DEFAULT_UNIFIED_VARIABLE_RULES = [
 
 // Debug mode - session-only, not persisted
 window.seDebugMode = false;
+
+function migrateAllSettings(settings) {
+    for (const preset of Object.values(settings.presets)) {
+        for (const def of Object.values(preset.vars)) {
+            migrateVariableDefinition(def);
+        }
+    }
+
+    // Also sanitize chatPresetBindings
+    for (const chatId of Object.keys(settings.chatPresetBindings)) {
+        if (!Array.isArray(settings.chatPresetBindings[chatId])) {
+            settings.chatPresetBindings[chatId] = [];
+        }
+    }
+}
+
+function migrateVariableDefinition(def) {
+    const v = def.version || 0;
+
+    if (v < CURRENT_SCHEMA_VERSION) {
+        // Future migrations go here
+        def.version = CURRENT_SCHEMA_VERSION;
+    }
+
+    return def;
+}
 
 export function toggleDebugMode() {
     window.seDebugMode = !window.seDebugMode;
@@ -79,7 +107,8 @@ setManagerApi({
     toggleDebugMode,
     debugLog,
     getDebugInfo,
-    isReservedVariable
+    isReservedVariable,
+    blankDefinition
 });
 
 function getCurrentChatId() {
@@ -852,9 +881,7 @@ export function getSettings() {
     if (!settings.trackerPanelPos || typeof settings.trackerPanelPos !== 'object') settings.trackerPanelPos = { top: 100, left: 100 };
     if (settings.trackerPanelCollapsed === undefined) settings.trackerPanelCollapsed = false;
     if (settings.trackerShowHidden === undefined) settings.trackerShowHidden = false;
-    
-    // Migrate old flat variables to presets
-    //migrateToPresets(settings);
+
     
     if (!settings.presets || typeof settings.presets !== 'object') settings.presets = {};
     if (!settings.chatPresetBindings || typeof settings.chatPresetBindings !== 'object') settings.chatPresetBindings = {};
@@ -884,32 +911,7 @@ export function getSettings() {
     return settings;
 }
 
-// function migrateToPresets(settings) {
-//     // If using old flat variables format and no presets yet, create default preset
-//     if (settings.variables && Object.keys(settings.variables).length > 0 && Object.keys(settings.presets || {}).length === 0) {
-//         const defaultPresetId = genId();
-//         const defaultPreset = {
-//             id: defaultPresetId,
-//             name: 'Default',
-//             variables: settings.variables,
-//             triggers: ['ai'],  // Default trigger for prompted variables
-//             showInTracker: false,  // Default tracker visibility
-//         };
-//         settings.presets = { [defaultPresetId]: defaultPreset };
-//         settings.defaultPresetForNewChats = defaultPresetId;
-//         settings.chatPresetBindings = {}; // Will be populated on chat switch
-//         delete settings.variables; // Remove old flat structure
-//         console.log(LOG_PREFIX, 'migrated old variables to default preset');
-//     }
-    
-//     // Normalize existing presets
-//     for (const preset of Object.values(settings.presets || {})) {
-//         if (!Array.isArray(preset.triggers)) preset.triggers = ['ai'];
-//         if (preset.showInTracker === undefined) preset.showInTracker = false;
-//     }
 
-//     seedExamplePresets(settings, false);
-// }
 
 function getStarterPresetBlueprints() {
     const makeVar = (overrides) => normalizeDefinition({
@@ -1604,6 +1606,7 @@ function blankDefinition() {
         prompted: {
             instructions: '',   // LLM instructions
         },
+        version: 1
     };
 }
 
@@ -1976,7 +1979,7 @@ function applyResetOnNewChat() {
 function applyIncrement(context, def, delta) {
     const current = getVarValue(context, def);
     let next;
-    console.log("Incrementing Variable: ", def.name, " by ", delta);
+    console.log(LOG_PREFIX, "Incrementing Variable: ", def.name, " by ", delta);
     switch (def.type) {
         case 'number':
             next = current + delta;
@@ -2217,6 +2220,7 @@ function runDeterministicIncrements(triggerType) {
         // Only deterministic increment variables
         if(def.behaviors?.prompted) continue;
         if (!def.behaviors?.increment) continue;
+        console.log(LOG_PREFIX, "Checking to increment variable", def);
         if(!def.increment) continue;
         if(def.increment?.tick_on != triggerType || 
             (def.increment?.tick_on == "both" && (triggerType != "ai" && triggerType != "user" )))continue;
@@ -2248,6 +2252,8 @@ let startupRan = false;
 function runStartupOnce() {
     if (startupRan) return;
     startupRan = true;
+    const settings = getSettings();
+    migrateAllSettings(settings);
     runPromptedStateUpdate('startup');
 }
 
