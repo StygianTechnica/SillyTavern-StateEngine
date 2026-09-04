@@ -50,6 +50,8 @@ const DEFAULT_UNIFIED_VARIABLE_RULES = [
 window.seDebugMode = false;
 
 function migrateAllSettings(settings) {
+    if(!settings)return;
+    console.log(LOG_PREFIX, "Updating Settings", settings)
     for (const preset of Object.values(settings.presets)) {
         for (const def of Object.values(preset.vars)) {
             migrateVariableDefinition(def);
