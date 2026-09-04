@@ -2152,7 +2152,7 @@ async function runPromptedStateUpdate(triggerType) {
 
         const promptSections = [
             settings.promptedHeader || DEFAULT_PROMPTED_HEADER,
-            DEFAULT_UNIFIED_VARIABLE_RULES,
+            settings.promptedRules || DEFAULT_UNIFIED_VARIABLE_RULES,
             '',
             transcript ? `Recent conversation:\n${transcript}` : 'No conversation yet.',
         ];
@@ -2698,7 +2698,7 @@ function renderVarTable() {
     
 //     // Counter fields
 //     $('#se_f_counter_trigger').val(d.counter?.trigger || 'ai');
-//     $('#se_f_counter_direction').val(d.counter?.direction || 'increment');
+//     $('#se_f_counter_direction').val(d.counter?.direction || 'increment');se_prompted_variable_rules
 //     $('#se_f_counter_step').val(d.counter?.step ?? 1);
 //     $('#se_f_counter_prompted_instructions').val(d.counter?.promptedInstructions || '');
     
@@ -2897,8 +2897,7 @@ function loadGeneralSettingsIntoForm() {
     $('#se_context_count').val(settings.contextMessageCount);
     $('#se_response_length').val(settings.responseLength);
     $('#se_prompted_header').val(settings.promptedHeader || DEFAULT_PROMPTED_HEADER);
-    $('#se_prompted_variable_rules').val(settings.promptedRules || DEFAULT_PROMPTED_VARIABLE_RULES);
-    $('#se_prompted_increment_rules').val(settings.incrementedRules || DEFAULT_INCREMENTED_VARIABLE_RULES);
+    $('#se_prompted_variable_rules').val(settings.promptedRules || DEFAULT_UNIFIED_VARIABLE_RULES);
     populateConnectionProfileDropdown();
 }
 
@@ -3005,9 +3004,9 @@ function bindPanelEvents() {
 
     $('#se_prompted_variable_rules_reset').on('click', () => {
         const settings = getSettings();
-        settings.promptedRules = DEFAULT_PROMPTED_VARIABLE_RULES;
+        settings.promptedRules = DEFAULT_UNIFIED_VARIABLE_RULES;
         persistSettings();
-        $('#se_prompted_variable_rules').val(DEFAULT_PROMPTED_VARIABLE_RULES);
+        $('#se_prompted_variable_rules').val(DEFAULT_UNIFIED_VARIABLE_RULES);
     });
 
     $('#se_prompted_increment_rules').on('change', (e) => {
@@ -3016,12 +3015,12 @@ function bindPanelEvents() {
         persistSettings();
     });
 
-    $('#se_prompted_increment_rules_reset').on('click', () => {
-        const settings = getSettings();
-        settings.incrementedRules = DEFAULT_INCREMENTED_VARIABLE_RULES;
-        persistSettings();
-        $('#se_prompted_increment_rules').val(DEFAULT_INCREMENTED_VARIABLE_RULES);
-    });
+    // $('#se_prompted_increment_rules_reset').on('click', () => {
+    //     const settings = getSettings();
+    //     settings.incrementedRules = DEFAULT_INCREMENTED_VARIABLE_RULES;
+    //     persistSettings();
+    //     $('#se_prompted_increment_rules').val(DEFAULT_INCREMENTED_VARIABLE_RULES);
+    // });
 }
 
 // function renderPresetList() {
