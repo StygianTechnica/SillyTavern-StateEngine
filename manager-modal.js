@@ -1235,7 +1235,7 @@ export function wireManagerModalEvents() {
         // Build new variable definition using the updated schema
         preset.variables[values.id] = {
             id: values.id,
-            name: values.name.trim(),collectInlineVariableValues
+            name: values.name.trim(),collectInlineVariableValues,
             label: String(values.label || '').trim(),
             description: values.description || '',
             scope: values.scope || 'chat',
