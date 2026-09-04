@@ -611,15 +611,38 @@ function hideInlineVariableEditor($row) {
 function collectInlineVariableValues($row) {
     const $editor = $row.find('.se-manager-variable-editor-inline');
     const values = { id: $editor.data('editing-id') };
+
+    // Helper: assign nested fields from dotted paths
+    function assignNested(obj, path, value) {
+        const parts = path.split('.');
+        let current = obj;
+
+        for (let i = 0; i < parts.length - 1; i++) {
+            const key = parts[i];
+            if (!current[key]) current[key] = {};
+            current = current[key];
+        }
+
+        current[parts[parts.length - 1]] = value;
+    }
+
+    // Collect all fields
     $editor.find('.se-manager-var-field').each(function () {
         const $field = $(this);
         const field = $field.attr('data-field');
-        values[field] = $field.is(':checkbox') ? $field.is(':checked') : $field.val();
+        const value = $field.is(':checkbox') ? $field.is(':checked') : $field.val();
+        assignNested(values, field, value);
     });
+
+    // Prompted instructions (already nested)
+    assignNested(values, "prompted.instructions",
+        String($editor.find('.se-manager-prompted-instructions').val() || '')
+    );
+
     values.showInTracker = true;
-    values.prompted = { instructions: String($editor.find('.se-manager-prompted-instructions').val() || '') };
     return values;
 }
+
 
 // function showVariableEditor(def) {
 //     const d = def || {
