@@ -5,6 +5,7 @@
 import * as presetManager from './preset-manager.js';
 import * as variableSchema from './variable-schema.js';
 import * as uiTemplates from './ui-templates.js';
+import * as uiRender from './ui-render.js';
 import { escapeHtml, generateUUID } from './utils.js';
 
 let managerCurrentPresetId = null;
@@ -74,9 +75,9 @@ export function buildManagerModal() {
     $('body').append($overlay);
 
     // Initial tab rendering
-    renderManagerPresetsTab();
-    renderManagerVariablesTab();
-    renderManagerWorldInfoTab();
+    uiRender.renderPresetsTab(managerApi, managerCurrentPresetId);
+    managerCurrentPresetId = uiRender.renderVariablesTab(managerApi, managerCurrentPresetId);
+    uiRender.renderWorldInfoTab(managerApi);
 
     // Wire events
     wireManagerModalEvents();
@@ -96,190 +97,6 @@ export function hideManagerModal() {
     if ($overlay.length) {
         $overlay.fadeOut(200);
     }
-}
-
-export function renderManagerPresetsTab() {
-    const settings = managerApi.getSettings();
-    const $tab = $('#se-manager-presets-tab');
-    if (!$tab.length) return;
-
-    $tab.empty();
-
-    // Get current chat ID
-    const currentChatId = managerApi.getCurrentChatId();
-
-    const chatPresets = managerApi.getPresetsForChat(currentChatId);
-    const allPresets = settings.presets || {};
-    
-    const TRIGGER_KEYS = [
-        { key: 'startup', label: 'Execute on startup', icon: 'fa-rocket' },
-        { key: 'user', label: 'Execute on user message', icon: 'fa-user' },
-        { key: 'ai', label: 'Execute on AI message', icon: 'fa-robot' },
-        { key: 'chat_change', label: 'Execute on chat change', icon: 'fa-comment' },
-        { key: 'new_chat', label: 'Execute on new chat', icon: 'fa-comments' },
-        { key: 'group_draft', label: 'Execute on group member draft', icon: 'fa-users' },
-        { key: 'pre_generation', label: 'Execute before message generation', icon: 'fa-paper-plane' }
-    ];
-
-    const presetRows = Object.entries(allPresets)
-        .sort(([aId], [bId]) => {
-            const aActive = chatPresets.includes(aId) ? 1 : 0;
-            const bActive = chatPresets.includes(bId) ? 1 : 0;
-            return bActive - aActive;
-        })
-        .map(([presetId, preset]) => uiTemplates.buildPresetRow(presetId, preset, chatPresets, TRIGGER_KEYS, currentChatId))
-        .join('');
-
-    const html = `
-        <div class="se-manager-section">
-            <div class="se-manager-section-header">
-                <h3>Presets</h3>
-                <div class="se-manager-section-buttons">
-                    <button id="se-manager-restore-presets" class="menu_button" title="Restore default presets">
-                        <i class="fa-solid fa-redo"></i> Restore Defaults
-                    </button>
-                    <button id="se-manager-new-preset" class="menu_button" title="Create a new preset">
-                        <i class="fa-solid fa-plus"></i> New
-                    </button>
-                </div>
-            </div>
-            <div class="se-manager-preset-list">
-                ${presetRows || '<div class="se-empty">No presets yet. Click New to create one.</div>'}
-            </div>
-        </div>
-    `;
-
-    $tab.html(html);
-}
-
-export function renderManagerVariablesTab() {
-    const settings = managerApi.getSettings();
-    const $tab = $('#se-manager-variables-tab');
-    if (!$tab.length) return;
-
-    $tab.empty();
-
-    // Preset selector
-    const activePresetIds = managerApi.getPresetsForChat(managerApi.getCurrentChatId());
-    const allPresets = Object.keys(settings.presets || {});
-    const selectedPresetId = allPresets.includes(managerCurrentPresetId)
-        ? managerCurrentPresetId
-        : activePresetIds[0] || allPresets[0] || null;
-
-    managerCurrentPresetId = selectedPresetId;
-
-    const showActiveOnly = window.managerShowActiveOnly || false;
-    const presetsToShow = showActiveOnly
-        ? allPresets.filter(id => activePresetIds.includes(id))
-        : allPresets;
-
-    const presetOptions = presetsToShow
-        .map(id => {
-            const preset = settings.presets[id];
-            const isActive = activePresetIds.includes(id);
-            const indicator = isActive ? ' ✓' : '';
-            return `<option value="${id}">${escapeHtml(preset.name)}${indicator}</option>`;
-        })
-        .join('');
-
-    let variablesList = '';
-    if (selectedPresetId && settings.presets[selectedPresetId]) {
-        const preset = settings.presets[selectedPresetId];
-        const variableEntries = Object.entries(preset.variables || {});
-        variablesList = variableEntries
-            .map(([varId, varDef], index) => uiTemplates.buildVariablesListRow(varId, varDef, index, variableEntries.length, selectedPresetId))
-            .join('');
-    }
-
-    const html = `
-        <div class="se-manager-section">
-            <div class="se-manager-section-header">
-                <div style="display: flex; align-items: center; gap: 12px; flex: 1;">
-                    <h3 style="margin: 0;">Variables for Preset:</h3>
-                    <select id="se-manager-preset-selector" class="text_pole">
-                        <option value="">-- Select preset --</option>
-                        ${presetOptions}
-                    </select>
-                    <label style="margin: 0; white-space: nowrap; display: flex; align-items: center; gap: 4px;">
-                        <input type="checkbox" id="se-manager-filter-active" ${showActiveOnly ? 'checked' : ''} />
-                        <span style="font-size: 0.9em;">Show active only</span>
-                    </label>
-                </div>
-            </div>
-             
-            <div class="se-manager-section-header">
-                <button id="se-manager-new-variable" class="menu_button" title="Create a new variable">
-                    <i class="fa-solid fa-plus"></i> New Variable
-                </button>
-                <div style="flex: 1;"></div>
-                <div style="display: flex; gap: 8px; align-items: center;">
-                    <input 
-                        type="text" 
-                        id="se-manager-variable-search" 
-                        class="text_pole" 
-                        placeholder="Search variables..." 
-                        style="width: 200px; padding: 4px 8px; font-size: 0.9em;" 
-                    />
-                    <select id="se-manager-variable-sort" class="text_pole" style="width: 120px; padding: 4px 8px; font-size: 0.9em;">
-                        <option value="tracker">Tracker order</option>
-                        <option value="name-asc">Name (A-Z)</option>
-                        <option value="name-desc">Name (Z-A)</option>
-                    </select>
-                </div>
-            </div>
-
-            <div class="se-manager-variable-list" id="se-manager-variable-list">
-                ${variablesList || '<div class="se-empty">No variables in this preset yet.</div>'}
-            </div>
-        </div>
-    `;
-
-    $tab.html(html);
-
-    // Set selected preset
-    if (selectedPresetId) {
-        $('#se-manager-preset-selector').val(selectedPresetId);
-    }
-
-    // Wire up search and sort handlers
-    $('#se-manager-variable-search').on('input', filterAndSortVariables);
-    $('#se-manager-variable-sort').on('change', function () {
-        filterAndSortVariables();
-        updateMoveButtonStates();
-    });
-
-    // Set initial button states
-    updateMoveButtonStates();
-}
-
-export function renderManagerWorldInfoTab() {
-    const settings = managerApi.getSettings();
-    const $tab = $('#se-manager-worldinfo-tab');
-    if (!$tab.length) return;
-
-    $tab.empty();
-
-    const conditions = settings.wiConditions || {};
-    const conditionCount = Object.keys(conditions).length;
-    const conditionRows = Object.entries(conditions)
-        .slice(0, 50) // Limit to 50 for display
-        .map(([key, conds]) => {
-            const condList = Array.isArray(conds) ? conds : [];
-            return uiTemplates.buildWorldInfoRow(key, condList);
-        })
-        .join('');
-
-    const html = `
-        <div class="se-manager-section">
-            <h3>World Info Conditions</h3>
-            <small>Displays conditions set on World Info entries. Total entries: ${conditionCount}</small>
-            <div class="se-manager-worldinfo-list">
-                ${conditionRows || '<div class="se-empty">No World Info conditions set yet.</div>'}
-            </div>
-        </div>
-    `;
-
-    $tab.html(html);
 }
 
 function showInlineVariableEditor(varDef, $row) {
@@ -355,158 +172,6 @@ function collectVariableEditorValues() {
     return values;
 }
 
-export function renderManagerDebugTab() {
-    const $tab = $('#se-manager-debug-tab');
-    if (!$tab.length) return;
-
-    const debugInfo = managerApi.getDebugInfo();
-    const isEnabled = debugInfo.debugEnabled;
-
-    const activePresetsHtml = uiTemplates.buildDebugActivePresets(debugInfo);
-
-    const variablesHtml = uiTemplates.buildDebugVariablesTable(debugInfo);
-
-    const html = `
-        <div class="se-manager-section">
-            <div class="se-manager-section-header">
-                <h3 style="margin: 0;">Debug Mode</h3>
-                <div class="se-manager-section-buttons">
-                    <button id="se-manager-debug-toggle" class="menu_button" title="Toggle debug logging">
-                        <i class="fa-solid ${isEnabled ? 'fa-check-circle' : 'fa-circle'}"></i> 
-                        ${isEnabled ? 'Disable' : 'Enable'}
-                    </button>
-                </div>
-            </div>
-            <div style="margin-bottom: 12px; padding: 8px; background: #1a1a1a; border-left: 2px solid ${isEnabled ? '#7ec699' : '#666'}; border-radius: 2px;">
-                <div><strong>Status:</strong> <span style="color: ${isEnabled ? '#7ec699' : '#999'};">${isEnabled ? 'ENABLED' : 'DISABLED'}</span></div>
-                <small style="color: #aaa;">Debug mode logs additional info to console and displays diagnostic data below.</small>
-            </div>
-        </div>
-
-        <div class="se-manager-section">
-            <h3 style="margin-top: 0;">Chat Information</h3>
-            <div style="font-family: monospace; font-size: 0.9em; background: #1a1a1a; padding: 8px; border-radius: 4px;">
-                <div><strong>Chat ID:</strong> <code>${debugInfo.chatId ? escapeHtml(debugInfo.chatId) : '(no chat selected)'}</code></div>
-                <div><strong>Timestamp:</strong> <code>${debugInfo.currentTimestamp}</code></div>
-                <div><strong>Total Presets:</strong> ${debugInfo.totalPresets}</div>
-            </div>
-        </div>
-
-        <div class="se-manager-section">
-            <h3>Active Presets</h3>
-            ${activePresetsHtml}
-        </div>
-
-        <div class="se-manager-section">
-            <h3>Variables in Active Presets</h3>
-            ${variablesHtml}
-        </div>
-
-        <div class="se-manager-section">
-            <h3>Export & Inspect</h3>
-            <div class="se-manager-section-buttons">
-                <button id="se-manager-debug-copy-json" class="menu_button" title="Copy debug info as JSON">
-                    <i class="fa-solid fa-copy"></i> Copy JSON
-                </button>
-                <button id="se-manager-debug-log-console" class="menu_button" title="Log debug info to console">
-                    <i class="fa-solid fa-terminal"></i> Log to Console
-                </button>
-            </div>
-            <small style="color: #999; display: block; margin-top: 8px;">
-                Click "Copy JSON" to copy all debug data to clipboard, or "Log to Console" to inspect in the browser developer tools.
-            </small>
-        </div>
-    `;
-
-    $tab.html(html);
-}
-
-function filterAndSortVariables() {
-    const $list = $('#se-manager-variable-list');
-    if (!$list.length) return;
-
-    const searchTerm = $('#se-manager-variable-search').val().toLowerCase();
-    const sortMode = $('#se-manager-variable-sort').val() || 'tracker';
-    let $rows = $list.find('.se-manager-variable-row');
-
-    // Filter based on search (partial match on both name and label)
-    $rows.each(function () {
-        const $row = $(this);
-        const varName = $row.data('var-name') || '';
-        const varLabel = $row.data('var-label') || '';
-        
-        // Show if: no search term, OR name contains term, OR label contains term
-        if (searchTerm === '' || varName.includes(searchTerm) || varLabel.includes(searchTerm)) {
-            $row.show();
-        } else {
-            $row.hide();
-        }
-    });
-
-    // Get visible rows for sorting
-    $rows = $list.find('.se-manager-variable-row:visible');
-    const visibleRows = Array.from($rows);
-
-    // Sort based on selected mode
-    if (sortMode === 'tracker') {
-        // Tracker order: show only variables that appear in tracker (showInTracker !== false), keep original order
-        visibleRows.forEach(row => {
-            const $row = $(row);
-            const showInTracker = $row.data('show-in-tracker') === 'true' || $row.data('show-in-tracker') === true;
-            if (showInTracker) {
-                $row.show();
-            } else {
-                $row.hide();
-            }
-        });
-    } else if (sortMode === 'name-asc' || sortMode === 'name-desc') {
-        visibleRows.sort((a, b) => {
-            const $aRow = $(a);
-            const $bRow = $(b);
-            const aName = $aRow.data('var-name');
-            const bName = $bRow.data('var-name');
-            const aLabel = $aRow.data('var-label');
-            const bLabel = $bRow.data('var-label');
-
-            if (sortMode === 'name-asc') {
-                return (aLabel || aName).localeCompare(bLabel || bName);
-            } else {
-                return (bLabel || bName).localeCompare(aLabel || aName);
-            }
-        });
-
-        // Re-append sorted rows
-        visibleRows.forEach(row => {
-            $list.append(row);
-        });
-    }
-
-    // Show "no results" message if all hidden
-    if ($list.find('.se-manager-variable-row:visible').length === 0) {
-        if ($list.find('.se-empty').length === 0) {
-            $list.append('<div class="se-empty">No variables match your search or filter.</div>');
-        }
-    } else {
-        $list.find('.se-empty').remove();
-    }
-}
-
-function updateMoveButtonStates() {
-    const sortMode = $('#se-manager-variable-sort').val() || 'order';
-    const isTrackerOrder = sortMode === 'tracker';
-    
-    // Enable/disable all move buttons based on sort mode
-    const $moveButtons = $('.se-manager-move-variable-up, .se-manager-move-variable-down');
-    $moveButtons.prop('disabled', !isTrackerOrder);
-    
-    // Add/remove class for visual feedback
-    if (isTrackerOrder) {
-        $moveButtons.removeClass('se-button-disabled');
-    } else {
-        $moveButtons.addClass('se-button-disabled');
-    }
-}
-
 export function wireManagerModalEvents() {
     const $overlay = $('#se-manager-overlay');
     if (!$overlay.length) return;
@@ -532,10 +197,10 @@ export function wireManagerModalEvents() {
         $(`.se-manager-tab-pane[data-tab="${tab}"]`).addClass('se-manager-tab-active');
 
         // Re-render the tab content
-        if (tab === 'presets') renderManagerPresetsTab();
-        else if (tab === 'variables') renderManagerVariablesTab();
-        else if (tab === 'worldinfo') renderManagerWorldInfoTab();
-        else if (tab === 'debug') renderManagerDebugTab();
+        if (tab === 'presets') uiRender.renderPresetsTab(managerApi, managerCurrentPresetId);
+        else if (tab === 'variables') managerCurrentPresetId = uiRender.renderVariablesTab(managerApi, managerCurrentPresetId);
+        else if (tab === 'worldinfo') uiRender.renderWorldInfoTab(managerApi);
+        else if (tab === 'debug') uiRender.renderDebugTab(managerApi);
     });
 
     // Accordion: Toggle preset expansion
@@ -557,7 +222,7 @@ export function wireManagerModalEvents() {
     $overlay.on('click', '#se-manager-restore-presets', function () {
         if (window.confirm('Restore default presets? This will delete any custom changes to the default presets.')) {
             managerApi.restoreDefaultPresets();
-            renderManagerPresetsTab();
+            uiRender.renderPresetsTab(managerApi, managerCurrentPresetId);
             managerApi.renderVarTable();
             managerApi.setStatus('Restored default presets.');
         }
@@ -567,7 +232,7 @@ export function wireManagerModalEvents() {
         const name = prompt('New preset name:');
         if (name && name.trim()) {
             managerApi.createPreset(name.trim());
-            renderManagerPresetsTab();
+            uiRender.renderPresetsTab(managerApi, managerCurrentPresetId);
             managerApi.setStatus(`Created preset "${name}".`);
         }
     });
@@ -584,7 +249,7 @@ export function wireManagerModalEvents() {
         } else {
             managerApi.addPresetToChat(chatId, presetId);
         }
-        renderManagerPresetsTab();
+        uiRender.renderPresetsTab(managerApi, managerCurrentPresetId);
         managerApi.renderVarTable();
         managerApi.renderTrackerPanel();
         managerApi.setStatus(`${managerApi.getPresetsForChat(chatId).includes(presetId) ? 'Activated' : 'Deactivated'} "${preset.name}" for this chat.`);
@@ -599,7 +264,7 @@ export function wireManagerModalEvents() {
         const newName = prompt('Clone name:', preset.name + ' (copy)');
         if (newName && newName.trim()) {
             presetManager.clonePreset(presetId, newName.trim());
-            renderManagerPresetsTab();
+            uiRender.renderPresetsTab(managerApi, managerCurrentPresetId);
             managerApi.setStatus(`Cloned preset "${preset.name}".`);
         }
     });
@@ -613,7 +278,7 @@ export function wireManagerModalEvents() {
         const newName = prompt('New name:', preset.name);
         if (newName && newName.trim()) {
             managerApi.renamePreset(presetId, newName.trim());
-            renderManagerPresetsTab();
+            uiRender.renderPresetsTab(managerApi, managerCurrentPresetId);
             managerApi.setStatus(`Renamed to "${newName}".`);
         }
     });
@@ -627,8 +292,8 @@ export function wireManagerModalEvents() {
         if (window.confirm(`Delete preset "${preset.name}"? This will also delete all variables in this preset.`)) {
             managerApi.deletePreset(presetId);
             if (managerCurrentPresetId === presetId) managerCurrentPresetId = null;
-            renderManagerPresetsTab();
-            renderManagerVariablesTab();
+            uiRender.renderPresetsTab(managerApi, managerCurrentPresetId);
+            managerCurrentPresetId = uiRender.renderVariablesTab(managerApi, managerCurrentPresetId);
             managerApi.setStatus(`Deleted "${preset.name}" and all its variables.`);
         }
     });
@@ -637,12 +302,12 @@ export function wireManagerModalEvents() {
     $overlay.on('change', '#se-manager-preset-selector', function () {
         const presetId = $(this).val();
         managerCurrentPresetId = presetId;
-        renderManagerVariablesTab();
+        managerCurrentPresetId = uiRender.renderVariablesTab(managerApi, managerCurrentPresetId);
     });
 
     $overlay.on('change', '#se-manager-filter-active', function () {
         window.managerShowActiveOnly = $(this).prop('checked');
-        renderManagerVariablesTab();
+        managerCurrentPresetId = uiRender.renderVariablesTab(managerApi, managerCurrentPresetId);
     });
 
     $overlay.on('click', '.se-manager-edit-variable', function () {
@@ -664,7 +329,7 @@ export function wireManagerModalEvents() {
             return;
         }
         if (presetManager.moveVariable($(this).attr('data-preset-id'), $(this).attr('data-var-id'), -1)) {
-            renderManagerVariablesTab();
+            managerCurrentPresetId = uiRender.renderVariablesTab(managerApi, managerCurrentPresetId);
             managerApi.renderTrackerPanel(); // Update tracker with new variable order
         }
     });
@@ -676,7 +341,7 @@ export function wireManagerModalEvents() {
             return;
         }
         if (presetManager.moveVariable($(this).attr('data-preset-id'), $(this).attr('data-var-id'), 1)) {
-            renderManagerVariablesTab();
+            managerCurrentPresetId = uiRender.renderVariablesTab(managerApi, managerCurrentPresetId);
             managerApi.renderTrackerPanel(); // Update tracker with new variable order
         }
     });
@@ -687,7 +352,7 @@ export function wireManagerModalEvents() {
         const varDef = presetManager.toggleVariableVisibility(presetId, varId);
         if (!varDef) return;
 
-        renderManagerVariablesTab();
+        managerCurrentPresetId = uiRender.renderVariablesTab(managerApi, managerCurrentPresetId);
         managerApi.setStatus(`Visibility toggled for "${varDef.name}".`);
     });
 
@@ -700,7 +365,7 @@ export function wireManagerModalEvents() {
 
         if (window.confirm(`Delete variable "${preset.variables[varId].name || varId}"?`)) {
             presetManager.deleteVariable(presetId, varId);
-            renderManagerVariablesTab();
+            managerCurrentPresetId = uiRender.renderVariablesTab(managerApi, managerCurrentPresetId);
             managerApi.setStatus(`Variable deleted.`);
         }
     });
@@ -756,7 +421,7 @@ export function wireManagerModalEvents() {
 
         managerApi.persistSettings(settings);
         hideInlineVariableEditor($row);
-        renderManagerVariablesTab();
+        managerCurrentPresetId = uiRender.renderVariablesTab(managerApi, managerCurrentPresetId);
         managerApi.setStatus(isNew ? 'Variable created.' : 'Variable updated.');
     });
 
@@ -784,7 +449,7 @@ export function wireManagerModalEvents() {
         if (!preset) return;
 
         // Re-render the preset tab to update inline description display
-        renderManagerPresetsTab();
+        uiRender.renderPresetsTab(managerApi, managerCurrentPresetId);
 
         managerApi.setStatus(`Description updated for "${preset.name}".`);
     });
@@ -792,7 +457,7 @@ export function wireManagerModalEvents() {
     // Debug mode controls
     $overlay.on('click', '#se-manager-debug-toggle', function () {
         const enabled = managerApi.toggleDebugMode();
-        renderManagerDebugTab();
+        uiRender.renderDebugTab(managerApi);
         managerApi.setStatus(`Debug mode ${enabled ? 'ENABLED' : 'DISABLED'}`);
     });
 

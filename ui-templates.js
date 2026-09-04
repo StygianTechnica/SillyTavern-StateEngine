@@ -274,3 +274,135 @@ export function buildDebugVariablesTable(debugInfo) {
     }
     return '<div style="color: #999;">No variables in active presets</div>';
 }
+
+export function buildPresetsTabContainer(presetRows) {
+    return `
+        <div class="se-manager-section">
+            <div class="se-manager-section-header">
+                <h3>Presets</h3>
+                <div class="se-manager-section-buttons">
+                    <button id="se-manager-restore-presets" class="menu_button" title="Restore default presets">
+                        <i class="fa-solid fa-redo"></i> Restore Defaults
+                    </button>
+                    <button id="se-manager-new-preset" class="menu_button" title="Create a new preset">
+                        <i class="fa-solid fa-plus"></i> New
+                    </button>
+                </div>
+            </div>
+            <div class="se-manager-preset-list">
+                ${presetRows || '<div class="se-empty">No presets yet. Click New to create one.</div>'}
+            </div>
+        </div>
+    `;
+}
+
+export function buildVariablesTabContainer(presetOptions, variablesList, showActiveOnly) {
+    return `
+        <div class="se-manager-section">
+            <div class="se-manager-section-header">
+                <div style="display: flex; align-items: center; gap: 12px; flex: 1;">
+                    <h3 style="margin: 0;">Variables for Preset:</h3>
+                    <select id="se-manager-preset-selector" class="text_pole">
+                        <option value="">-- Select preset --</option>
+                        ${presetOptions}
+                    </select>
+                    <label style="margin: 0; white-space: nowrap; display: flex; align-items: center; gap: 4px;">
+                        <input type="checkbox" id="se-manager-filter-active" ${showActiveOnly ? 'checked' : ''} />
+                        <span style="font-size: 0.9em;">Show active only</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="se-manager-section-header">
+                <button id="se-manager-new-variable" class="menu_button" title="Create a new variable">
+                    <i class="fa-solid fa-plus"></i> New Variable
+                </button>
+                <div style="flex: 1;"></div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <input
+                        type="text"
+                        id="se-manager-variable-search"
+                        class="text_pole"
+                        placeholder="Search variables..."
+                        style="width: 200px; padding: 4px 8px; font-size: 0.9em;"
+                    />
+                    <select id="se-manager-variable-sort" class="text_pole" style="width: 120px; padding: 4px 8px; font-size: 0.9em;">
+                        <option value="tracker">Tracker order</option>
+                        <option value="name-asc">Name (A-Z)</option>
+                        <option value="name-desc">Name (Z-A)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="se-manager-variable-list" id="se-manager-variable-list">
+                ${variablesList || '<div class="se-empty">No variables in this preset yet.</div>'}
+            </div>
+        </div>
+    `;
+}
+
+export function buildWorldInfoTabContainer(conditionRows, conditionCount) {
+    return `
+        <div class="se-manager-section">
+            <h3>World Info Conditions</h3>
+            <small>Displays conditions set on World Info entries. Total entries: ${conditionCount}</small>
+            <div class="se-manager-worldinfo-list">
+                ${conditionRows || '<div class="se-empty">No World Info conditions set yet.</div>'}
+            </div>
+        </div>
+    `;
+}
+
+export function buildDebugTabContainer(activePresetsHtml, variablesHtml, isEnabled, debugInfo) {
+    return `
+        <div class="se-manager-section">
+            <div class="se-manager-section-header">
+                <h3 style="margin: 0;">Debug Mode</h3>
+                <div class="se-manager-section-buttons">
+                    <button id="se-manager-debug-toggle" class="menu_button" title="Toggle debug logging">
+                        <i class="fa-solid ${isEnabled ? 'fa-check-circle' : 'fa-circle'}"></i> 
+                        ${isEnabled ? 'Disable' : 'Enable'}
+                    </button>
+                </div>
+            </div>
+            <div style="margin-bottom: 12px; padding: 8px; background: #1a1a1a; border-left: 2px solid ${isEnabled ? '#7ec699' : '#666'}; border-radius: 2px;">
+                <div><strong>Status:</strong> <span style="color: ${isEnabled ? '#7ec699' : '#999'};">${isEnabled ? 'ENABLED' : 'DISABLED'}</span></div>
+                <small style="color: #aaa;">Debug mode logs additional info to console and displays diagnostic data below.</small>
+            </div>
+        </div>
+
+        <div class="se-manager-section">
+            <h3 style="margin-top: 0;">Chat Information</h3>
+            <div style="font-family: monospace; font-size: 0.9em; background: #1a1a1a; padding: 8px; border-radius: 4px;">
+                <div><strong>Chat ID:</strong> <code>${debugInfo.chatId ? escapeHtml(debugInfo.chatId) : '(no chat selected)'}</code></div>
+                <div><strong>Timestamp:</strong> <code>${debugInfo.currentTimestamp}</code></div>
+                <div><strong>Total Presets:</strong> ${debugInfo.totalPresets}</div>
+            </div>
+        </div>
+
+        <div class="se-manager-section">
+            <h3>Active Presets</h3>
+            ${activePresetsHtml}
+        </div>
+
+        <div class="se-manager-section">
+            <h3>Variables in Active Presets</h3>
+            ${variablesHtml}
+        </div>
+
+        <div class="se-manager-section">
+            <h3>Export & Inspect</h3>
+            <div class="se-manager-section-buttons">
+                <button id="se-manager-debug-copy-json" class="menu_button" title="Copy debug info as JSON">
+                    <i class="fa-solid fa-copy"></i> Copy JSON
+                </button>
+                <button id="se-manager-debug-log-console" class="menu_button" title="Log debug info to console">
+                    <i class="fa-solid fa-terminal"></i> Log to Console
+                </button>
+            </div>
+            <small style="color: #999; display: block; margin-top: 8px;">
+                Click "Copy JSON" to copy all debug data to clipboard, or "Log to Console" to inspect in the browser developer tools.
+            </small>
+        </div>
+    `;
+}
