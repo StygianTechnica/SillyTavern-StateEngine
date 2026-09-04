@@ -2,11 +2,16 @@
 // Complete tabbed interface for preset/variable/trigger/worldinfo management
 // Uses ES6 modules - imported by index.js
 
+import * as presetManager from './preset-manager.js';
+import * as variableSchema from './variable-schema.js';
+import { escapeHtml, generateUUID } from './utils.js';
+
 let managerCurrentPresetId = null;
 let managerApi = null;
 
 export function setManagerApi(api) {
     managerApi = api;
+    presetManager.setManagerApi(api);
 }
 
 export function buildManagerModal() {
@@ -391,13 +396,8 @@ function showInlineVariableEditor(varDef, $row) {
         defaults.id = generateUUID();
 
     // Merge defaults into existing varDef
-    const d = Object.assign({}, defaults, varDef);
-
-    // Deep merge nested objects so old presets don't crash
-    d.behaviors = Object.assign({}, defaults.behaviors, varDef?.behaviors);
-    d.increment = Object.assign({}, defaults.increment, varDef?.increment);
-    d.prompted = Object.assign({}, defaults.prompted, varDef?.prompted);
-    const canIncrement = (d.type === 'number' || d.type === 'boolean' || d.type === 'enum');
+    const d = variableSchema.mergeDefinition(defaults, varDef);
+    const canIncrement = variableSchema.canIncrement(d.type);
 
     const $editor = $row.find('.se-manager-variable-editor-inline');
     
@@ -499,7 +499,7 @@ function showInlineVariableEditor(varDef, $row) {
 
             <!-- Explanation box -->
             <div class="se-manager-variable-explanation">
-                ${generateExplanation(d)}
+                ${variableSchema.describeVariable(d)}
             </div>
 
             <!-- Actions -->
@@ -516,53 +516,6 @@ function showInlineVariableEditor(varDef, $row) {
     $('#se-manager-new-variable, #se-manager-variable-search, #se-manager-variable-sort').prop('disabled', true).css('opacity', '0.5');
     $row.siblings('.se-manager-variable-row').css('opacity', '0.5').find('button:not(.se-manager-edit-variable)').prop('disabled', true);
     $row.find('.se-manager-variable-row-header').css('opacity', '0.5').find('button').prop('disabled', true);
-}
-
-function generateExplanation(d) {
-    let out = [];
-
-    // Type + default
-    const base = `${d.name || 'This variable'} is a ${d.type} variable`;
-    if (d.default !== '' && d.default !== undefined && d.default !== null) {
-        out.push(`${base} with a default value of "${d.default}".`);
-    } else {
-        out.push(`${base} with no default value.`);
-    }
-
-    // Prompted behavior
-    if (d.behaviors?.prompted) {
-        out.push(`It updates when the prompted instructions are satisfied.`);
-    }
-
-    // Increment behavior
-    if (d.behaviors?.increment) {
-
-        // Trigger logic depends on prompted
-        if (d.behaviors.prompted) {
-            out.push(`Its value increments when the prompted condition is met.`);
-        } else {
-            const trigger = incrementTriggerText(d.increment?.triggers || []);
-            out.push(`Its value increments ${trigger}.`);
-        }
-
-        // Type-specific increment behavior
-        if (d.type === 'number') {
-            out.push(`Each increment changes the value by ${d.increment?.delta ?? 1}.`);
-        } else if (d.type === 'boolean') {
-            out.push(`Each increment toggles the boolean value.`);
-        } else if (d.type === 'enum') {
-            out.push(`Each increment cycles through the enum values.`);
-        }
-    }
-
-    return out.join(' ');
-}
-
-function incrementTriggerText(triggers) {
-    if (triggers.includes('user')) return 'when a user chat is received';
-    if (triggers.includes('ai')) return 'when an AI chat is received';
-    if (triggers.includes('both')) return 'when either user or AI chat is received';
-    return 'when the increment condition is met';
 }
 
 function hideInlineVariableEditor($row) {
@@ -605,63 +558,6 @@ function collectInlineVariableValues($row) {
 }
 
 
-// function showVariableEditor(def) {
-//     const d = def || {
-//         id: generateUUID(),
-//         name: '',
-//         label: '',
-//         category: 'manual',
-//         scope: 'chat',
-//         type: 'string',
-//         default: '',
-//         enumValues: [],
-//         min: '',
-//         max: '',
-//         description: '',
-//         resetOnNewChat: false,
-//         showInTracker: true,
-//         counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
-//         cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
-//         prompted: { triggers: [], instructions: '' }
-//     };
-
-//     const $editor = $('#se-manager-variable-editor');
-//     if (!$editor.length) return;
-
-//     $editor.html(`
-//         <div class="se-manager-section">
-//             <div class="se-manager-section-header">
-//                 <h3>${def ? 'Edit variable' : 'New variable'}</h3>
-//                 <div class="se-manager-variable-editor-actions">
-//                     <button class="menu_button se-manager-save-variable">${def ? 'Save' : 'Create'}</button>
-//                     <button class="menu_button se-manager-cancel-variable">Cancel</button>
-//                 </div>
-//             </div>
-//             <div class="se-manager-variable-editor-grid">
-//                 <input class="text_pole se-manager-var-field" data-field="name" placeholder="Variable name" value="${escapeHtml(d.name || '')}" />
-//                 <input class="text_pole se-manager-var-field" data-field="label" placeholder="Label" value="${escapeHtml(d.label || '')}" />
-//                 <select class="text_pole se-manager-var-field" data-field="category">
-//                     <option value="manual" ${d.category === 'manual' ? 'selected' : ''}>Manual</option>
-//                     <option value="cycling" ${d.category === 'cycling' ? 'selected' : ''}>Cycling</option>
-//                     <option value="prompted" ${d.category === 'prompted' ? 'selected' : ''}>Prompted</option>
-//                 </select>
-//                 <select class="text_pole se-manager-var-field" data-field="type">
-//                     <option value="string" ${d.type === 'string' ? 'selected' : ''}>String</option>
-//                     <option value="number" ${d.type === 'number' ? 'selected' : ''}>Number</option>
-//                     <option value="boolean" ${d.type === 'boolean' ? 'selected' : ''}>Boolean</option>
-//                     <option value="enum" ${d.type === 'enum' ? 'selected' : ''}>Enum</option>
-//                 </select>
-//                 <input class="text_pole se-manager-var-field" data-field="default" placeholder="Default value" value="${escapeHtml(d.default || '')}" />
-//                 <label class="se-manager-inline-checkbox">
-//                     <input type="checkbox" class="se-manager-var-field" data-field="skipPromptedRefresh" ${d.skipPromptedRefresh ? 'checked' : ''} />
-//                     <span>Skip prompted refresh</span>
-//                 </label>
-//                 <textarea class="text_pole se-manager-var-field se-manager-prompted-instructions" data-field="prompted?.instructions" placeholder="Prompted variable instructions">${escapeHtml(d.prompted?.instructions || '')}</textarea>
-//             </div>
-//         </div>
-//     `).show().data('editing-id', d.id).data('editing-existing', !!def);
-// }
-
 function collectVariableEditorValues() {
     const $editor = $('#se-manager-variable-editor');
     const values = { id: $editor.data('editing-id') };
@@ -673,28 +569,6 @@ function collectVariableEditorValues() {
     values.showInTracker = true;
     values.prompted = { instructions: String($editor.find('.se-manager-prompted-instructions').val() || '') };
     return values;
-}
-
-function moveVariable(presetId, varId, direction) {
-    const settings = managerApi.getSettings();
-    const preset = settings.presets[presetId];
-    if (!preset || !preset.variables) return;
-
-    const entries = Object.entries(preset.variables);
-    const idx = entries.findIndex(([id]) => id === varId);
-    if (idx === -1) return;
-
-    const nextIdx = idx + direction;
-    if (nextIdx < 0 || nextIdx >= entries.length) return;
-
-    const swapped = entries.slice();
-    const tmp = swapped[idx];
-    swapped[idx] = swapped[nextIdx];
-    swapped[nextIdx] = tmp;
-    preset.variables = Object.fromEntries(swapped);
-    managerApi.persistSettings(settings);
-    renderManagerVariablesTab();
-    managerApi.renderTrackerPanel(); // Update tracker with new variable order
 }
 
 export function renderManagerDebugTab() {
@@ -977,11 +851,7 @@ export function wireManagerModalEvents() {
 
         const newName = prompt('Clone name:', preset.name + ' (copy)');
         if (newName && newName.trim()) {
-            const newPresetId = generateUUID();
-            const newPreset = JSON.parse(JSON.stringify(preset));
-            newPreset.name = newName.trim();
-            settings.presets[newPresetId] = newPreset;
-            managerApi.persistSettings(settings);
+            presetManager.clonePreset(presetId, newName.trim());
             renderManagerPresetsTab();
             managerApi.setStatus(`Cloned preset "${preset.name}".`);
         }
@@ -1028,69 +898,6 @@ export function wireManagerModalEvents() {
         renderManagerVariablesTab();
     });
 
-    // $overlay.on('click', '#se-manager-new-variable', function () {
-    //     if (!managerCurrentPresetId) {
-    //         alert('Select a preset first.');
-    //         return;
-    //     }
-
-
-    //     const newVar = {
-    //         id: generateUUID(),
-    //         name: '',
-    //         label: '',
-    //         category: 'manual',
-    //         scope: 'chat',
-    //         type: 'string',
-    //         default: '',
-    //         enumValues: [],
-    //         min: '',
-    //         max: '',
-    //         description: '',
-    //         resetOnNewChat: false,
-    //         showInTracker: true,
-    //         skipPromptedRefresh: false,
-
-    //         behaviors: {
-    //             increment: false,
-    //             prompted: false
-    //         },
-
-    //         increment: {
-    //             triggers: [],
-    //             delta: 1,
-    //             toggle: true,
-    //             cycle: [],
-    //             timeInterval: '',
-    //             specificTime: '',
-    //             randomInterval: ''
-    //         },
-
-    //         prompted: {
-    //             triggers: [],
-    //             instructions: ''
-    //         }
-    //     };
-
-        
-    //     const settings = managerApi.getSettings();
-    //     const activePresetIds = managerApi.getPresetsForChat(managerApi.getCurrentChatId());
-    //     const allPresets = Object.keys(settings.presets || {});
-    //     const selectedPresetId = allPresets.includes(managerCurrentPresetId)
-    //         ? managerCurrentPresetId
-    //         : activePresetIds[0] || allPresets[0] || null;
-    //     const preset = settings.presets[selectedPresetId];
-    //     preset.variables[newVar.id] = newVar;//XXXXXXXX
-    //     renderManagerVariablesTab();
-
-    //     const varId = newVar.id;
-    //     managerCurrentPresetId = selectedPresetId;
-        
-    //     const $row = $(`#se-manager-variable-list .se-manager-variable-row[data-var-id="${newVar.id}"]`);
-    //     showInlineVariableEditor({... newVar, _isNew: true }, $row);
-
-    // });
-
     $overlay.on('click', '.se-manager-edit-variable', function () {
         const varId = $(this).attr('data-var-id');
         const presetId = $(this).attr('data-preset-id');
@@ -1109,7 +916,10 @@ export function wireManagerModalEvents() {
             managerApi.setStatus('Switch to "Tracker order" sort to reorder variables.');
             return;
         }
-        moveVariable($(this).attr('data-preset-id'), $(this).attr('data-var-id'), -1);
+        if (presetManager.moveVariable($(this).attr('data-preset-id'), $(this).attr('data-var-id'), -1)) {
+            renderManagerVariablesTab();
+            managerApi.renderTrackerPanel(); // Update tracker with new variable order
+        }
     });
 
     $overlay.on('click', '.se-manager-move-variable-down', function () {
@@ -1118,19 +928,18 @@ export function wireManagerModalEvents() {
             managerApi.setStatus('Switch to "Tracker order" sort to reorder variables.');
             return;
         }
-        moveVariable($(this).attr('data-preset-id'), $(this).attr('data-var-id'), 1);
+        if (presetManager.moveVariable($(this).attr('data-preset-id'), $(this).attr('data-var-id'), 1)) {
+            renderManagerVariablesTab();
+            managerApi.renderTrackerPanel(); // Update tracker with new variable order
+        }
     });
 
     $overlay.on('click', '.se-manager-toggle-visibility', function () {
         const varId = $(this).attr('data-var-id');
         const presetId = $(this).attr('data-preset-id');
-        const settings = managerApi.getSettings();
-        const preset = settings.presets[presetId];
-        if (!preset || !preset.variables[varId]) return;
-        
-        const varDef = preset.variables[varId];
-        varDef.showInTracker = varDef.showInTracker === false;
-        managerApi.persistSettings(settings);
+        const varDef = presetManager.toggleVariableVisibility(presetId, varId);
+        if (!varDef) return;
+
         renderManagerVariablesTab();
         managerApi.setStatus(`Visibility toggled for "${varDef.name}".`);
     });
@@ -1143,29 +952,12 @@ export function wireManagerModalEvents() {
         if (!preset || !preset.variables[varId]) return;
 
         if (window.confirm(`Delete variable "${preset.variables[varId].name || varId}"?`)) {
-            delete preset.variables[varId];
-            managerApi.persistSettings(settings);
+            presetManager.deleteVariable(presetId, varId);
             renderManagerVariablesTab();
             managerApi.setStatus(`Variable deleted.`);
         }
     });
 
-    // $overlay.on('click', '.se-manager-cancel-variable', function () {
-    //     $('#se-manager-variable-editor').hide().empty();
-    // });
-
-    // $overlay.on('click', '.se-manager-cancel-variable-inline', function () {
-    //     const $row = $(this).closest('.se-manager-variable-row');
-    //     const $editor = $row.find('.se-manager-variable-editor-inline');
-    //     const varId = $editor.data('editing-id');
-    //     const presetId = $(this).attr('data-preset-id');
-    //     const settings = managerApi.getSettings();
-    //     const preset = settings.presets[presetId];
-    //     if (!preset || !preset.variables[varId]) return;
-    //     delete preset.variables[varId];
-    //     managerApi.persistSettings(settings);
-    //     hideInlineVariableEditor($row);
-    // });
     $overlay.on('click', '.se-manager-cancel-variable-inline', function () {
         const $row = $(this).closest('.se-manager-variable-row');
         const $editor = $row.find('.se-manager-variable-editor-inline');
@@ -1174,11 +966,7 @@ export function wireManagerModalEvents() {
         const varId = $editor.data('editing-id');
 
         if (isNew) {
-            const settings = managerApi.getSettings();
-            const preset = settings.presets[managerCurrentPresetId];
-
-            delete preset.variables[varId];
-            managerApi.persistSettings(settings);
+            presetManager.deleteVariable(managerCurrentPresetId, varId);
             $row.remove();
         } else {
             hideInlineVariableEditor($row);
@@ -1198,12 +986,11 @@ export function wireManagerModalEvents() {
         const values = collectInlineVariableValues($row);
         const isNew = !$editor.data('editing-existing');
 
-        if (!values.name || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(values.name)) {
+        if (!variableSchema.validateVariableName(values.name)) {
             alert('Variable name is required and must start with a letter or underscore.');
             return;
         }
 
-        // Check for reserved SillyTavern variable names
         if (managerApi.isReservedVariable(values.name)) {
             alert(`Cannot create variable: "${values.name}" is a reserved SillyTavern macro name.`);
             return;
@@ -1214,36 +1001,11 @@ export function wireManagerModalEvents() {
         const newVariable = {
             ...managerApi.blankDefinition(),
             ...values,
-            id: values.id,
-            name: values.name.trim(),
-            label: String(values.label || '').trim(),
-            description: values.description || '',
-            enumValues: values.enumValues || [],
-            defaultValue: values.defaultValue ?? '',
-            min: values.min ?? null,
-            max: values.max ?? null,
-            resetOnNewChat: !!values.resetOnNewChat,
-            showInTracker: values.showInTracker !== false,
-
-            behaviors: {
-                increment: !!values.behaviors?.increment,
-                prompted: !!values.behaviors?.prompted,
-            },
-
-            increment: {
-                delta: Number(values.increment?.delta || 1),
-                triggers: values.increment?.triggers || ['ai'],
-                tick_mode: values.increment?.tick_mode || null,
-                tick_on: values.increment?.tick_on || 'both',
-                tick_every: Number(values.increment?.tick_every || 1),
-            },
-
-            prompted: {
-                instructions: values.prompted?.instructions || '',
-            },
-
+            ...variableSchema.normalizeCollectedValues(values),
         };
 
+        // ⭐ FIX: Save or update the variable in the preset
+        preset.variables[newVariable.id] = newVariable;
 
         managerApi.persistSettings(settings);
         hideInlineVariableEditor($row);
@@ -1252,74 +1014,14 @@ export function wireManagerModalEvents() {
     });
 
 
-    // $overlay.on('click', '.se-manager-save-variable', function () {
-    //     const editor = $('#se-manager-variable-editor');
-    //     if (!editor.length) return;
-
-    //     const settings = managerApi.getSettings();
-    //     const presetId = managerCurrentPresetId;
-    //     const preset = settings.presets[presetId];
-    //     if (!preset) return;
-
-    //     const values = collectVariableEditorValues();
-    //     const isNew = !editor.data('editing-existing');
-
-    //     if (!values.name || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(values.name)) {
-    //         alert('Variable name is required and must start with a letter or underscore.');
-    //         return;
-    //     }
-
-    //     // Check for reserved SillyTavern variable names
-    //     if (managerApi.isReservedVariable(values.name)) {
-    //         alert(`Cannot create variable: "${values.name}" is a reserved SillyTavern macro name.\n\nReserved names include: charname, user, bot, time, date, random, counter, and others.\n\nPlease choose a different name.`);
-    //         return;
-    //     }
-
-    //     if (!preset.variables) preset.variables = {};
-    //     if (isNew && preset.variables[values.id]) {
-    //         values.id = generateUUID();
-    //     }
-
-    //     preset.variables[values.id] = {
-    //         id: values.id,
-    //         name: values.name.trim(),
-    //         label: String(values.label || '').trim(),
-    //         category: values.category || 'manual',
-    //         scope: 'chat',
-    //         type: values.type || 'string',
-    //         default: values.default || '',
-    //         showInTracker: true,
-    //         description: '',
-    //         counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
-    //         cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
-    //         prompted: { triggers: [], instructions: '' }
-    //     };
-
-    //     managerApi.persistSettings(settings);
-    //     editor.hide().empty();
-    //     renderManagerVariablesTab();
-    //     managerApi.setStatus(isNew ? 'Variable created.' : 'Variable updated.');
-    // });
 
     // Triggers in accordion
     $overlay.on('change', '.se-preset-trigger-checkbox', function () {
         const presetId = $(this).attr('data-preset-id');
         const trigger = $(this).attr('data-trigger');
-        const settings = managerApi.getSettings();
-        const preset = settings.presets[presetId];
+        const preset = presetManager.updatePresetTriggers(presetId, trigger, $(this).is(':checked'));
         if (!preset) return;
 
-        if (!preset.triggers) preset.triggers = [];
-
-        if ($(this).is(':checked')) {
-            if (!preset.triggers.includes(trigger)) {
-                preset.triggers.push(trigger);
-            }
-        } else {
-            preset.triggers = preset.triggers.filter(t => t !== trigger);
-        }
-
-        managerApi.persistSettings(settings);
         const $item = $(this).closest('.se-manager-preset-accordion-item');
         const $headerMeta = $item.find('.se-manager-preset-meta');
         $headerMeta.text(preset.triggers.length > 0 ? `${preset.triggers.length} trigger(s) active` : 'No triggers active');
@@ -1331,16 +1033,12 @@ export function wireManagerModalEvents() {
     $overlay.on('change', '.se-manager-preset-description-input', function () {
         const presetId = $(this).attr('data-preset-id');
         const newDescription = $(this).val();
-        const settings = managerApi.getSettings();
-        const preset = settings.presets[presetId];
+        const preset = presetManager.updatePresetDescription(presetId, newDescription);
         if (!preset) return;
 
-        preset.description = newDescription;
-        managerApi.persistSettings(settings);
-        
         // Re-render the preset tab to update inline description display
         renderManagerPresetsTab();
-        
+
         managerApi.setStatus(`Description updated for "${preset.name}".`);
     });
 
@@ -1440,25 +1138,5 @@ export function wireManagerModalEvents() {
 
         showInlineVariableEditor(values, $row);
     });    
-}
-
-function escapeHtml(text) {
-    if (!text) return '';
-    const map = {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#039;'
-    };
-    return String(text).replace(/[&<>"']/g, m => map[m]);
-}
-
-function generateUUID() {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-        const r = Math.random() * 16 | 0;
-        const v = c === 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-    });
 }
 
