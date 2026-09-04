@@ -1203,28 +1203,45 @@ export function wireManagerModalEvents() {
 
         // Check for reserved SillyTavern variable names
         if (managerApi.isReservedVariable(values.name)) {
-            alert(`Cannot create variable: "${values.name}" is a reserved SillyTavern macro name.\n\nReserved names include: charname, user, bot, time, date, random, counter, and others.\n\nPlease choose a different name.`);
+            alert(`Cannot create variable: "${values.name}" is a reserved SillyTavern macro name.`);
             return;
         }
 
-        // if (!preset.variables) preset.variables = {};
-        // if (isNew && preset.variables[values.id]) {
-        //     values.id = generateUUID();
-        // }
-
+        // Build new variable definition using the updated schema
         preset.variables[values.id] = {
             id: values.id,
             name: values.name.trim(),
             label: String(values.label || '').trim(),
-            category: values.category || 'manual',
-            scope: 'chat',
+            description: values.description || '',
+            scope: values.scope || 'chat',
+
             type: values.type || 'string',
-            default: values.default || '',
-            showInTracker: true,
-            description: '',
-            counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
-            cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
-            prompted: { triggers: [], instructions: '' }
+            enumValues: values.enumValues || [],
+
+            defaultValue: values.defaultValue ?? '',
+
+            min: values.min ?? null,
+            max: values.max ?? null,
+
+            resetOnNewChat: values.resetOnNewChat || false,
+            showInTracker: values.showInTracker !== false,
+
+            behaviors: {
+                increment: !!values.behaviors?.increment,
+                prompted: !!values.behaviors?.prompted,
+            },
+
+            increment: {
+                delta: Number(values.increment?.delta || 1),
+                triggers: values.increment?.triggers || ['ai'],
+                tick_mode: values.increment?.tick_mode || null,
+                tick_on: values.increment?.tick_on || 'both',
+                tick_every: Number(values.increment?.tick_every || 1),
+            },
+
+            prompted: {
+                instructions: values.prompted?.instructions || '',
+            },
         };
 
         managerApi.persistSettings(settings);
@@ -1232,6 +1249,7 @@ export function wireManagerModalEvents() {
         renderManagerVariablesTab();
         managerApi.setStatus(isNew ? 'Variable created.' : 'Variable updated.');
     });
+
 
     // $overlay.on('click', '.se-manager-save-variable', function () {
     //     const editor = $('#se-manager-variable-editor');
