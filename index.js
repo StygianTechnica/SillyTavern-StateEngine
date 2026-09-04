@@ -935,9 +935,9 @@ function getStarterPresetBlueprints() {
 
         increment: {
             delta: 1,
-            triggers: ['ai'],   // user, ai, both
+            triggers: [''],   // user, ai, both
             tick_mode: null,    // per_message or null
-            tick_on: 'both',
+            tick_on: null,
             tick_every: 1,
         },
 
@@ -1297,30 +1297,6 @@ export function restoreDefaultPresets() {
     seedExamplePresets(settings, false);
     persistSettings();
     console.log(`${LOG_PREFIX} restored default presets`);
-}
-
-// Fills in fields that may be missing from a definition created by an
-// earlier version of this extension, and normalizes shapes (e.g. the old
-// single `prompted.trigger` string became `prompted.triggers`, an array).
-function normalizeDefinition(def) {
-    if (!def.counter || typeof def.counter !== 'object') {
-        def.counter = { trigger: 'ai', direction: 'increment', step: 1 };
-    }
-    if (!def.prompted || typeof def.prompted !== 'object') {
-        def.prompted = { triggers: ['ai'], instructions: '' };
-    }
-    if (!Array.isArray(def.prompted.triggers)) {
-        const legacy = def.prompted.trigger;
-        if (legacy === 'both') def.prompted.triggers = ['ai', 'user'];
-        else if (legacy === 'manual' || !legacy) def.prompted.triggers = legacy === 'manual' ? [] : ['ai'];
-        else def.prompted.triggers = [legacy];
-    }
-    def.prompted.triggers = def.prompted.triggers.filter((t) => PROMPTED_TRIGGER_KEYS.includes(t));
-    delete def.prompted.trigger;
-    if (def.showInTracker === undefined) def.showInTracker = true;
-    if (def.skipPromptedRefresh === undefined) def.skipPromptedRefresh = false;
-    if (!Array.isArray(def.enumValues)) def.enumValues = [];
-    return def;
 }
 
 export function persistSettings() {
@@ -1925,56 +1901,6 @@ function applyResetOnNewChat() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Counters
-// ---------------------------------------------------------------------------
-
-// function runCounters(triggerType) {
-//     const context = SillyTavern.getContext();
-//     const settings = getSettings();
-//     if (!settings.enabled) return;
-
-//     const chatId = context.chatId;
-//     const activePresetIds = getPresetsForChat(chatId);
-//     const variables = getAllVariablesFromPresets(activePresetIds);
-
-//     let changed = false;
-//     for (const def of Object.values(variables)) {
-//         if (!def.name) continue;
-
-//         // Handle counter variables
-//         if (def.category === 'counter') {
-//             const trigger = def.counter?.trigger || 'ai';
-//             if (trigger === 'prompted') continue; // Skip AI-triggered, handled separately
-//             if (trigger !== 'both' && trigger !== triggerType) continue;
-
-//             const current = Number(getVarValue(context, def)) || 0;
-//             const step = Number(def.counter?.step ?? 1) || 0;
-//             const direction = def.counter?.direction === 'decrement' ? -1 : 1;
-//             const next = clampNumber(def, current + direction * step);
-//             setVarValue(context, def, next);
-//             changed = true;
-//         }
-
-//         // Handle cycling variables
-//         if (def.category === 'cycling') {
-//             const trigger = def.cycling?.trigger || 'ai';
-//             if (trigger === 'prompted') continue; // Skip AI-triggered, handled separately
-//             if (trigger !== 'both' && trigger !== triggerType) continue;
-
-//             const values = def.cycling?.values || [];
-//             if (values.length === 0) continue;
-
-//             const current = getVarValue(context, def);
-//             const currentIndex = values.indexOf(String(current));
-//             const nextIndex = (currentIndex + 1) % values.length;
-//             const next = values[nextIndex];
-//             setVarValue(context, def, next);
-//             changed = true;
-//         }
-//     }
-//     if (changed) refreshPanelIfOpen();
-// }
 
 function applyIncrement(context, def, delta) {
     const current = getVarValue(context, def);
@@ -2222,8 +2148,8 @@ function runDeterministicIncrements(triggerType) {
         if (!def.behaviors?.increment) continue;
         console.log(LOG_PREFIX, "Checking to increment variable", def);
         if(!def.increment) continue;
-        if(def.increment?.tick_on != triggerType || 
-            (def.increment?.tick_on == "both" && (triggerType != "ai" && triggerType != "user" )))continue;
+        if(def.increment?.triggers != triggerType || 
+            (def.increment?.triggers == "both" && (triggerType != "ai" && triggerType != "user" )))continue;
 
         // Increment internal counter
         const counter = Number(def._counter || 0) + 1;
