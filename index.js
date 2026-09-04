@@ -2762,17 +2762,17 @@ function bindPanelEvents() {
     //     setStatus(after > before ? 'Starter presets restored.' : 'Starter presets are already present.');
     // });
 
-    $('#se_add_var').on('click', () => openEditor(null));
-    $('#se_cancel_edit').on('click', closeEditor);
-    $('#se_save_var').on('click', saveVariableFromEditor);
+    //$('#se_add_var').on('click', () => openEditor(null));
+    //$('#se_cancel_edit').on('click', closeEditor);
+    //$('#se_save_var').on('click', saveVariableFromEditor);
 
-    $('#se_cancel_preset_edit').on('click', () => $('#se_preset_editor').hide());
-    $('#se_save_preset').on('click', savePresetSettings);
+    //$('#se_cancel_preset_edit').on('click', () => $('#se_preset_editor').hide());
+    //$('#se_save_preset').on('click', savePresetSettings);
 
-    $('#se_f_type').on('change', toggleEditorSections);
-    $('#se_f_category').on('change', toggleEditorSections);
-    $('#se_f_counter_trigger').on('change', toggleEditorSections);
-    $('#se_f_cycling_trigger').on('change', toggleEditorSections);
+    //$('#se_f_type').on('change', toggleEditorSections);
+    //$('#se_f_category').on('change', toggleEditorSections);
+    //$('#se_f_counter_trigger').on('change', toggleEditorSections);
+    //$('#se_f_cycling_trigger').on('change', toggleEditorSections);
 
     $('#se_prompted_header').on('change', (e) => {
         const settings = getSettings();
