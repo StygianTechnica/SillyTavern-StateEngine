@@ -80,7 +80,7 @@ setManagerApi({
     addPresetToChat,
     removePresetFromChat,
     setStatus,
-    renderVarTable,
+    //renderVarTable,
     renderTrackerPanel,
     restoreDefaultPresets,
     toggleDebugMode,
@@ -283,7 +283,7 @@ function setWICondition(entryKey, condition) {
         settings.wiConditions[entryKey] = [];
     }
     settings.wiConditions[entryKey].push(condition);
-    saveSettings(settings);
+    //saveSettings(settings);
     console.log(`${LOG_PREFIX} Added condition to ${entryKey}:`, condition);
 }
 
@@ -291,7 +291,7 @@ function updateWICondition(entryKey, index, condition) {
     const settings = getSettings();
     if (settings.wiConditions[entryKey] && settings.wiConditions[entryKey][index]) {
         settings.wiConditions[entryKey][index] = condition;
-        saveSettings(settings);
+        //saveSettings(settings);
         console.log(`${LOG_PREFIX} Updated condition ${index} for ${entryKey}:`, condition);
     }
 }
@@ -303,7 +303,7 @@ function deleteWICondition(entryKey, index) {
         if (settings.wiConditions[entryKey].length === 0) {
             delete settings.wiConditions[entryKey];
         }
-        saveSettings(settings);
+        //saveSettings(settings);
         console.log(`${LOG_PREFIX} Deleted condition ${index} for ${entryKey}`);
     }
 }
@@ -312,7 +312,7 @@ function clearWIConditionsForEntry(entryKey) {
     const settings = getSettings();
     if (settings.wiConditions[entryKey]) {
         delete settings.wiConditions[entryKey];
-        saveSettings(settings);
+        //saveSettings(settings);
         console.log(`${LOG_PREFIX} Cleared all conditions for ${entryKey}`);
     }
 }
@@ -1648,52 +1648,52 @@ function applyResetOnNewChat() {
 // Counters
 // ---------------------------------------------------------------------------
 
-function runCounters(triggerType) {
-    const context = SillyTavern.getContext();
-    const settings = getSettings();
-    if (!settings.enabled) return;
+// function runCounters(triggerType) {
+//     const context = SillyTavern.getContext();
+//     const settings = getSettings();
+//     if (!settings.enabled) return;
 
-    const chatId = context.chatId;
-    const activePresetIds = getPresetsForChat(chatId);
-    const variables = getAllVariablesFromPresets(activePresetIds);
+//     const chatId = context.chatId;
+//     const activePresetIds = getPresetsForChat(chatId);
+//     const variables = getAllVariablesFromPresets(activePresetIds);
 
-    let changed = false;
-    for (const def of Object.values(variables)) {
-        if (!def.name) continue;
+//     let changed = false;
+//     for (const def of Object.values(variables)) {
+//         if (!def.name) continue;
 
-        // Handle counter variables
-        if (def.category === 'counter') {
-            const trigger = def.counter?.trigger || 'ai';
-            if (trigger === 'prompted') continue; // Skip AI-triggered, handled separately
-            if (trigger !== 'both' && trigger !== triggerType) continue;
+//         // Handle counter variables
+//         if (def.category === 'counter') {
+//             const trigger = def.counter?.trigger || 'ai';
+//             if (trigger === 'prompted') continue; // Skip AI-triggered, handled separately
+//             if (trigger !== 'both' && trigger !== triggerType) continue;
 
-            const current = Number(getVarValue(context, def)) || 0;
-            const step = Number(def.counter?.step ?? 1) || 0;
-            const direction = def.counter?.direction === 'decrement' ? -1 : 1;
-            const next = clampNumber(def, current + direction * step);
-            setVarValue(context, def, next);
-            changed = true;
-        }
+//             const current = Number(getVarValue(context, def)) || 0;
+//             const step = Number(def.counter?.step ?? 1) || 0;
+//             const direction = def.counter?.direction === 'decrement' ? -1 : 1;
+//             const next = clampNumber(def, current + direction * step);
+//             setVarValue(context, def, next);
+//             changed = true;
+//         }
 
-        // Handle cycling variables
-        if (def.category === 'cycling') {
-            const trigger = def.cycling?.trigger || 'ai';
-            if (trigger === 'prompted') continue; // Skip AI-triggered, handled separately
-            if (trigger !== 'both' && trigger !== triggerType) continue;
+//         // Handle cycling variables
+//         if (def.category === 'cycling') {
+//             const trigger = def.cycling?.trigger || 'ai';
+//             if (trigger === 'prompted') continue; // Skip AI-triggered, handled separately
+//             if (trigger !== 'both' && trigger !== triggerType) continue;
 
-            const values = def.cycling?.values || [];
-            if (values.length === 0) continue;
+//             const values = def.cycling?.values || [];
+//             if (values.length === 0) continue;
 
-            const current = getVarValue(context, def);
-            const currentIndex = values.indexOf(String(current));
-            const nextIndex = (currentIndex + 1) % values.length;
-            const next = values[nextIndex];
-            setVarValue(context, def, next);
-            changed = true;
-        }
-    }
-    if (changed) refreshPanelIfOpen();
-}
+//             const current = getVarValue(context, def);
+//             const currentIndex = values.indexOf(String(current));
+//             const nextIndex = (currentIndex + 1) % values.length;
+//             const next = values[nextIndex];
+//             setVarValue(context, def, next);
+//             changed = true;
+//         }
+//     }
+//     if (changed) refreshPanelIfOpen();
+// }
 
 async function runPromptedIncrements(triggerType) {
     const context = SillyTavern.getContext();
@@ -1704,31 +1704,25 @@ async function runPromptedIncrements(triggerType) {
     const activePresetIds = getPresetsForChat(chatId);
     const variables = getAllVariablesFromPresets(activePresetIds);
 
-    // Collect counter and cycling variables with "prompted" trigger
+    // Collect variables with prompted behavior
     const incrementCandidates = [];
     for (const def of Object.values(variables)) {
         if (!def.name) continue;
-        
-        if (def.category === 'counter' && def.counter?.trigger === 'prompted') {
-            incrementCandidates.push({
-                type: 'counter',
-                def,
-                currentValue: getVarValue(context, def),
-            });
-        }
-        if (def.category === 'cycling' && def.cycling?.trigger === 'prompted') {
-            incrementCandidates.push({
-                type: 'cycling',
-                def,
-                currentValue: getVarValue(context, def),
-            });
-        }
+        if (!def.behaviors?.prompted) continue;
+
+        incrementCandidates.push({
+            name: def.name,
+            type: def.type,
+            def,
+            currentValue: getVarValue(context, def),
+            instructions: (def.prompted?.instructions || def.description || '').trim()
+        });
     }
 
     if (incrementCandidates.length === 0) return;
     if (!Array.isArray(context.chat)) return;
 
-    setStatus('Checking for state increments…');
+    setStatus('Checking for prompted increments…');
 
     try {
         const count = Math.max(1, Number(settings.contextMessageCount) || 10);
@@ -1743,42 +1737,17 @@ async function runPromptedIncrements(triggerType) {
 
         const varLines = incrementCandidates
             .map((cand) => {
-                const { def, currentValue, type } = cand;
-                if (type === 'counter') {
-                    const instructions = (def.counter?.prompted.instructions || def.description || '').trim();
-                    return `- "${def.name}" (counter, step ${def.counter?.step ?? 1}, current: ${currentValue}): ${instructions}`;
-                } else {
-                    const values = def.cycling?.values || [];
-                    const instructions = (def.cycling?.promptedInstructions || def.description || '').trim();
-                    return `- "${def.name}" (cycling through: ${values.join(' → ')}, current: ${currentValue}): ${instructions}`;
-                }
+                return `- "${cand.name}" (${cand.type}, current: ${cand.currentValue}): ${cand.instructions}`;
             })
             .join('\n');
 
         const systemPrompt = [
-                settings.promptedHeader || DEFAULT_PROMPTED_HEADER,
-                settings.incrementedRules || DEFAULT_INCREMENTED_VARIABLE_RULES,
-                '',
-                'Variables that may increment',
-                varLines,
-        ].join('\n');
-
-        /*
-        const systemPrompt = [
-            'You are a silent background state-tracking process for a roleplay chat application.',
-            'You are not a character in the roleplay and must not narrate, comment, or add anything besides the requested output.',
-            'You will be given a recent conversation excerpt and a list of state counters/flags that may need to increment/cycle based on story conditions.',
-            'Decide if each variable should increment/cycle based on the conversation and the per-variable conditions.',
-            '',
-            'Output rules:',
-            '- Reply with ONLY a single raw JSON object. No markdown code fences, no explanation, no extra text.',
-            '- The object maps variable names to increment instruction: true if should increment, false if should not.',
-            '- Example: {"rounds": true, "tournament_phase": false} means increment "rounds" but leave "tournament_phase" unchanged.',
+            settings.promptedHeader || DEFAULT_PROMPTED_HEADER,
+            settings.incrementedRules || DEFAULT_INCREMENTED_VARIABLE_RULES,
             '',
             'Variables that may increment:',
             varLines,
         ].join('\n');
-        */
 
         const messages = [
             { role: 'system', content: systemPrompt },
@@ -1787,50 +1756,56 @@ async function runPromptedIncrements(triggerType) {
         ];
 
         const raw = await callBackgroundLLM(context, settings, messages, Number(settings.responseLength) || 300);
-
         const parsed = extractJsonObject(raw);
+
         if (!parsed) {
             console.warn(LOG_PREFIX, 'could not parse increment JSON:', raw);
-            setStatus('Increment check failed — response was not valid JSON. See console.', true);
+            setStatus('Prompted increment failed — invalid JSON. See console.', true);
             return;
         }
 
         let changedCount = 0;
+
         for (const cand of incrementCandidates) {
-            const { def, type } = cand;
-            const shouldIncrement = parsed[def.name] === true;
+            const def = cand.def;
+            const shouldIncrement = parsed[cand.name] === true;
             if (!shouldIncrement) continue;
 
-            if (type === 'counter') {
-                const current = Number(getVarValue(context, def)) || 0;
-                const step = Number(def.counter?.step ?? 1) || 0;
-                const direction = def.counter?.direction === 'decrement' ? -1 : 1;
-                const next = clampNumber(def, current + direction * step);
-                setVarValue(context, def, next);
-                changedCount++;
-            } else if (type === 'cycling') {
-                const values = def.cycling?.values || [];
-                const current = getVarValue(context, def);
-                const currentIndex = values.indexOf(String(current));
-                const nextIndex = (currentIndex + 1) % values.length;
-                const next = values[nextIndex];
-                setVarValue(context, def, next);
-                changedCount++;
+            const current = getVarValue(context, def);
+
+            if (cand.type === 'number') {
+                const delta = Number(def.delta || 1);
+                setVarValue(context, def, current + delta);
             }
+
+            else if (cand.type === 'boolean') {
+                setVarValue(context, def, !current);
+            }
+
+            else if (cand.type === 'enum') {
+                const values = def.enumValues || [];
+                const idx = values.indexOf(current);
+                const next = values[(idx + 1) % values.length];
+                setVarValue(context, def, next);
+            }
+
+            changedCount++;
         }
 
         if (changedCount > 0) {
-            setStatus(`State incremented (${changedCount} variable${changedCount === 1 ? '' : 's'}).`);
+            setStatus(`Prompted increments applied (${changedCount} variable${changedCount === 1 ? '' : 's'}).`);
         } else {
-            setStatus('No state increments needed.');
+            setStatus('No prompted increments needed.');
         }
+
     } catch (err) {
         console.error(LOG_PREFIX, 'prompted increment check failed', err);
-        setStatus('Increment check failed — see browser console for details.', true);
+        setStatus('Prompted increment failed — see console.', true);
     } finally {
         refreshPanelIfOpen();
     }
 }
+
 // ---------------------------------------------------------------------------
 
 function stripHtml(str) {
@@ -2013,37 +1988,49 @@ function runDeterministicIncrements(triggerType) {
     const activePresetIds = getPresetsForChat(chatId);
     const variables = getAllVariablesFromPresets(activePresetIds);
 
-    // Loop through all variables
     for (const def of Object.values(variables)) {
         if (!def.name) continue;
 
         // Only deterministic increment variables
-        if (def.category !== 'increment') continue;
+        if (!def.behaviors?.increment) continue;
         if (def.tick_mode !== 'per_message') continue;
 
-        // Check if this event should trigger it
+        // Check trigger
         const tickOn = def.tick_on || 'both';
         if (tickOn !== 'both' && tickOn !== triggerType) continue;
 
-        // Increment the internal counter
+        // Increment internal counter
         const counter = Number(def._counter || 0) + 1;
         def._counter = counter;
 
-        // If counter reaches threshold, apply delta
-        if (counter >= (def.tick_every || 1)) {
-            const current = Number(getVarValue(context, def)) || 0;
+        if (counter < (def.tick_every || 1)) continue;
+
+        // Reset counter
+        def._counter = 0;
+
+        // Apply deterministic increment based on type
+        const current = getVarValue(context, def);
+
+        if (def.type === 'number') {
             const delta = Number(def.delta || 1);
-            const next = current + delta;
+            setVarValue(context, def, current + delta);
+        }
 
+        else if (def.type === 'boolean') {
+            setVarValue(context, def, !current);
+        }
+
+        else if (def.type === 'enum') {
+            const values = def.enumValues || [];
+            const idx = values.indexOf(current);
+            const next = values[(idx + 1) % values.length];
             setVarValue(context, def, next);
-
-            // Reset counter
-            def._counter = 0;
         }
     }
 
     refreshPanelIfOpen();
 }
+
 
 
 // ---------------------------------------------------------------------------
@@ -2349,227 +2336,227 @@ function setStatus(text, isError = false) {
     statusTimer = setTimeout(() => $status.text(''), 5000);
 }
 
-function categoryLabel(cat) {
-    if (cat === 'counter') return 'Counter';
-    if (cat === 'cycling') return 'Cycling';
-    if (cat === 'prompted') return 'Prompted';
-    return 'Manual';
-}
+// function categoryLabel(cat) {
+//     if (cat === 'counter') return 'Counter';
+//     if (cat === 'cycling') return 'Cycling';
+//     if (cat === 'prompted') return 'Prompted';
+//     return 'Manual';
+// }
 
-function typeLabel(type) {
-    if (type === 'number') return 'Number';
-    if (type === 'boolean') return 'True/False';
-    if (type === 'enum') return 'Choice';
-    if (type === 'array') return 'Array';
-    return 'Text';
-}
+// function typeLabel(type) {
+//     if (type === 'number') return 'Number';
+//     if (type === 'boolean') return 'True/False';
+//     if (type === 'enum') return 'Choice';
+//     if (type === 'array') return 'Array';
+//     return 'Text';
+// }
 
-function formatValueForDisplay(value) {
-    if (typeof value === 'boolean') return value ? 'true' : 'false';
-    if (Array.isArray(value)) {
-        if (value.length === 0) return '[]';
-        return `[${value.map(v => typeof v === 'string' ? `"${v}"` : String(v)).join(', ')}]`;
-    }
-    if (value === '' || value === undefined || value === null) return '—';
-    return String(value);
-}
+// function formatValueForDisplay(value) {
+//     if (typeof value === 'boolean') return value ? 'true' : 'false';
+//     if (Array.isArray(value)) {
+//         if (value.length === 0) return '[]';
+//         return `[${value.map(v => typeof v === 'string' ? `"${v}"` : String(v)).join(', ')}]`;
+//     }
+//     if (value === '' || value === undefined || value === null) return '—';
+//     return String(value);
+// }
 
-function renderVarTable() {
-    const context = SillyTavern.getContext();
-    const settings = getSettings();
-    const chatId = context.chatId;
-    if (!chatId) {
-        const $tabContainer = $('#se_preset_tabs');
-        const $tbody = $('#se_var_tbody');
-        const $empty = $('#se_var_empty');
-        if ($tabContainer.length) $tabContainer.empty();
-        if ($tbody.length) $tbody.empty();
-        if ($empty.length) $empty.show().text('Select a chat to view state variables.');
-        currentPresetId = null;
-        return;
-    }
-    const activePresetIds = getPresetsForChat(chatId);
+// function renderVarTable() {
+//     const context = SillyTavern.getContext();
+//     const settings = getSettings();
+//     const chatId = context.chatId;
+//     if (!chatId) {
+//         const $tabContainer = $('#se_preset_tabs');
+//         const $tbody = $('#se_var_tbody');
+//         const $empty = $('#se_var_empty');
+//         if ($tabContainer.length) $tabContainer.empty();
+//         if ($tbody.length) $tbody.empty();
+//         if ($empty.length) $empty.show().text('Select a chat to view state variables.');
+//         currentPresetId = null;
+//         return;
+//     }
+//     const activePresetIds = getPresetsForChat(chatId);
     
-    // Don't auto-add default presets here — that should only happen on first chat load
-    // If user explicitly deactivated all presets, respect that choice
+//     // Don't auto-add default presets here — that should only happen on first chat load
+//     // If user explicitly deactivated all presets, respect that choice
     
-    // Render tabs
-    const $tabContainer = $('#se_preset_tabs');
-    if (!$tabContainer.length) return;
+//     // Render tabs
+//     const $tabContainer = $('#se_preset_tabs');
+//     if (!$tabContainer.length) return;
     
-    $tabContainer.empty();
+//     $tabContainer.empty();
     
-    // If no presets at all, show a message
-    if (Object.keys(settings.presets).length === 0) {
-        $tabContainer.html('<div class="se-empty">No presets created. Click "New Preset" to get started.</div>');
-        return;
-    }
+//     // If no presets at all, show a message
+//     if (Object.keys(settings.presets).length === 0) {
+//         $tabContainer.html('<div class="se-empty">No presets created. Click "New Preset" to get started.</div>');
+//         return;
+//     }
     
-    // Create tab buttons
-    for (const presetId of activePresetIds) {
-        const preset = settings.presets[presetId];
-        if (!preset) continue;
+//     // Create tab buttons
+//     for (const presetId of activePresetIds) {
+//         const preset = settings.presets[presetId];
+//         if (!preset) continue;
         
-        const $tab = $('<button></button>')
-            .addClass('se-tab-btn')
-            .toggleClass('se-tab-active', presetId === currentPresetId)
-            .text(preset.name)
-            .on('click', () => {
-                currentPresetId = presetId;
-                renderVarTable();
-            });
-        $tabContainer.append($tab);
-    }
+//         const $tab = $('<button></button>')
+//             .addClass('se-tab-btn')
+//             .toggleClass('se-tab-active', presetId === currentPresetId)
+//             .text(preset.name)
+//             .on('click', () => {
+//                 currentPresetId = presetId;
+//                 renderVarTable();
+//             });
+//         $tabContainer.append($tab);
+//     }
     
-    // Render variables for current preset
-    const $tbody = $('#se_var_tbody');
-    const $empty = $('#se_var_empty');
-    if (!$tbody.length) return;
+//     // Render variables for current preset
+//     const $tbody = $('#se_var_tbody');
+//     const $empty = $('#se_var_empty');
+//     if (!$tbody.length) return;
     
-    $tbody.empty();
+//     $tbody.empty();
     
-    // If no current preset, select the first active one
-    if (!currentPresetId && activePresetIds.length > 0) {
-        currentPresetId = activePresetIds[0];
-    }
+//     // If no current preset, select the first active one
+//     if (!currentPresetId && activePresetIds.length > 0) {
+//         currentPresetId = activePresetIds[0];
+//     }
     
-    const currentPreset = settings.presets[currentPresetId];
-    if (!currentPreset) {
-        $empty.show();
-        return;
-    }
+//     const currentPreset = settings.presets[currentPresetId];
+//     if (!currentPreset) {
+//         $empty.show();
+//         return;
+//     }
     
-    const defs = Object.values(currentPreset.variables).sort((a, b) => a.name.localeCompare(b.name));
-    $empty.toggle(defs.length === 0);
+//     const defs = Object.values(currentPreset.variables).sort((a, b) => a.name.localeCompare(b.name));
+//     $empty.toggle(defs.length === 0);
     
-    for (const def of defs) {
-        const value = def.name ? getVarValue(context, def) : '';
-        const $row = $('<tr></tr>').attr('data-id', def.id);
-        $row.append($('<td></td>').append($('<code></code>').text(def.name || '(unnamed)')));
-        $row.append($('<td></td>').append(
-            $('<span></span>').addClass(`se-badge se-badge-${def.category}`).text(categoryLabel(def.category)),
-        ));
-        $row.append($('<td></td>').text(typeLabel(def.type)));
-        $row.append($('<td></td>').text(def.scope === 'global' ? 'Global' : 'Chat'));
-        $row.append($('<td></td>').addClass('se-col-value').text(formatValueForDisplay(value)));
+//     for (const def of defs) {
+//         const value = def.name ? getVarValue(context, def) : '';
+//         const $row = $('<tr></tr>').attr('data-id', def.id);
+//         $row.append($('<td></td>').append($('<code></code>').text(def.name || '(unnamed)')));
+//         $row.append($('<td></td>').append(
+//             $('<span></span>').addClass(`se-badge se-badge-${def.category}`).text(categoryLabel(def.category)),
+//         ));
+//         $row.append($('<td></td>').text(typeLabel(def.type)));
+//         $row.append($('<td></td>').text(def.scope === 'global' ? 'Global' : 'Chat'));
+//         $row.append($('<td></td>').addClass('se-col-value').text(formatValueForDisplay(value)));
 
-        const $actions = $('<div></div>').addClass('se-row-actions');
-        const $editBtn = $('<button></button>').addClass('menu_button se-edit-btn').text('Edit');
-        const $delBtn = $('<button></button>').addClass('menu_button se-delete-btn').text('Delete');
-        $actions.append($editBtn, $delBtn);
-        $row.append($('<td></td>').append($actions));
+//         const $actions = $('<div></div>').addClass('se-row-actions');
+//         const $editBtn = $('<button></button>').addClass('menu_button se-edit-btn').text('Edit');
+//         const $delBtn = $('<button></button>').addClass('menu_button se-delete-btn').text('Delete');
+//         $actions.append($editBtn, $delBtn);
+//         $row.append($('<td></td>').append($actions));
 
-        $tbody.append($row);
-    }
-}
+//         $tbody.append($row);
+//     }
+// }
 
-function toggleEditorSections() {
-    const type = $('#se_f_type').val();
-    const category = $('#se_f_category').val();
-    const counterTrigger = $('#se_f_counter_trigger').val();
-    const cyclingTrigger = $('#se_f_cycling_trigger').val();
+// function toggleEditorSections() {
+//     const type = $('#se_f_type').val();
+//     const category = $('#se_f_category').val();
+//     const counterTrigger = $('#se_f_counter_trigger').val();
+//     const cyclingTrigger = $('#se_f_cycling_trigger').val();
     
-    $('#se_f_enum_row').toggle(type === 'enum');
-    $('#se_f_minmax_row').toggle(type === 'number');
-    $('#se_f_array_row').toggle(type === 'array');
-    $('.se-cat-counter').toggle(category === 'counter');
-    $('.se-cat-cycling').toggle(category === 'cycling');
-    $('.se-cat-prompted').toggle(category === 'prompted');
+//     $('#se_f_enum_row').toggle(type === 'enum');
+//     $('#se_f_minmax_row').toggle(type === 'number');
+//     $('#se_f_array_row').toggle(type === 'array');
+//     $('.se-cat-counter').toggle(category === 'counter');
+//     $('.se-cat-cycling').toggle(category === 'cycling');
+//     $('.se-cat-prompted').toggle(category === 'prompted');
     
-    // Show prompted instruction sections for AI-triggered increments
-    $('#se_f_counter_prompted_section').toggle(category === 'counter' && counterTrigger === 'prompted');
-    $('#se_f_cycling_prompted_section').toggle(category === 'cycling' && cyclingTrigger === 'prompted');
-}
+//     // Show prompted instruction sections for AI-triggered increments
+//     $('#se_f_counter_prompted_section').toggle(category === 'counter' && counterTrigger === 'prompted');
+//     $('#se_f_cycling_prompted_section').toggle(category === 'cycling' && cyclingTrigger === 'prompted');
+// }
 
-function openEditor(def) {
-    const isNew = !def;
-    const d = def || blankDefinition();
+// function openEditor(def) {
+//     const isNew = !def;
+//     const d = def || blankDefinition();
 
-    $('#se_edit_id').val(d.id);
-    $('#se_f_name').val(d.name).prop('disabled', !isNew);
-    $('#se_f_label').val(d.label);
-    $('#se_f_category').val(d.category);
-    $('#se_f_scope').val(d.scope);
-    $('#se_f_type').val(d.type);
-    $('#se_f_default').val(d.default);
-    $('#se_f_enum_values').val((d.enumValues || []).join(', '));
-    $('#se_f_min').val(d.min);
-    $('#se_f_max').val(d.max);
-    $('#se_f_description').val(d.description);
-    $('#se_f_reset_on_new_chat').prop('checked', !!d.resetOnNewChat);
-    $('#se_f_show_in_tracker').prop('checked', d.showInTracker !== false);
+//     $('#se_edit_id').val(d.id);
+//     $('#se_f_name').val(d.name).prop('disabled', !isNew);
+//     $('#se_f_label').val(d.label);
+//     $('#se_f_category').val(d.category);
+//     $('#se_f_scope').val(d.scope);
+//     $('#se_f_type').val(d.type);
+//     $('#se_f_default').val(d.default);
+//     $('#se_f_enum_values').val((d.enumValues || []).join(', '));
+//     $('#se_f_min').val(d.min);
+//     $('#se_f_max').val(d.max);
+//     $('#se_f_description').val(d.description);
+//     $('#se_f_reset_on_new_chat').prop('checked', !!d.resetOnNewChat);
+//     $('#se_f_show_in_tracker').prop('checked', d.showInTracker !== false);
     
-    // Counter fields
-    $('#se_f_counter_trigger').val(d.counter?.trigger || 'ai');
-    $('#se_f_counter_direction').val(d.counter?.direction || 'increment');
-    $('#se_f_counter_step').val(d.counter?.step ?? 1);
-    $('#se_f_counter_prompted_instructions').val(d.counter?.promptedInstructions || '');
+//     // Counter fields
+//     $('#se_f_counter_trigger').val(d.counter?.trigger || 'ai');
+//     $('#se_f_counter_direction').val(d.counter?.direction || 'increment');
+//     $('#se_f_counter_step').val(d.counter?.step ?? 1);
+//     $('#se_f_counter_prompted_instructions').val(d.counter?.promptedInstructions || '');
     
-    // Cycling fields
-    $('#se_f_cycling_values').val((d.cycling?.values || []).join('\n'));
-    $('#se_f_cycling_trigger').val(d.cycling?.trigger || 'ai');
-    $('#se_f_cycling_prompted_instructions').val(d.cycling?.promptedInstructions || '');
+//     // Cycling fields
+//     $('#se_f_cycling_values').val((d.cycling?.values || []).join('\n'));
+//     $('#se_f_cycling_trigger').val(d.cycling?.trigger || 'ai');
+//     $('#se_f_cycling_prompted_instructions').val(d.cycling?.promptedInstructions || '');
     
-    // Prompted fields
-    const activeTriggers = Array.isArray(d.prompted?.triggers) ? d.prompted.triggers : [];
-    $('.se-f-prompted-trigger').each(function () {
-        $(this).prop('checked', activeTriggers.includes($(this).val()));
-    });
-    $('#se_f_prompted_instructions').val(d.promptedInstructions || '');
+//     // Prompted fields
+//     const activeTriggers = Array.isArray(d.prompted?.triggers) ? d.prompted.triggers : [];
+//     $('.se-f-prompted-trigger').each(function () {
+//         $(this).prop('checked', activeTriggers.includes($(this).val()));
+//     });
+//     $('#se_f_prompted_instructions').val(d.promptedInstructions || '');
 
-    toggleEditorSections();
-    $('#se_editor').data('is-new', isNew).show();
-    $('html, body').stop();
-    document.getElementById('se_editor')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-}
+//     toggleEditorSections();
+//     $('#se_editor').data('is-new', isNew).show();
+//     $('html, body').stop();
+//     document.getElementById('se_editor')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+// }
 
-function closeEditor() {
-    $('#se_editor').hide();
-    $('#se_f_name').prop('disabled', false);
-}
+// function closeEditor() {
+//     $('#se_editor').hide();
+//     $('#se_f_name').prop('disabled', false);
+// }
 
-function readEditorForm() {
-    const enumValues = String($('#se_f_enum_values').val() || '')
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
+// function readEditorForm() {
+//     const enumValues = String($('#se_f_enum_values').val() || '')
+//         .split(',')
+//         .map((s) => s.trim())
+//         .filter((s) => s.length > 0);
 
-    const cyclingValues = String($('#se_f_cycling_values').val() || '')
-        .split('\n')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
+//     const cyclingValues = String($('#se_f_cycling_values').val() || '')
+//         .split('\n')
+//         .map((s) => s.trim())
+//         .filter((s) => s.length > 0);
 
-    return {
-        id: $('#se_edit_id').val(),
-        name: String($('#se_f_name').val() || '').trim(),
-        label: String($('#se_f_label').val() || '').trim(),
-        category: $('#se_f_category').val(),
-        scope: $('#se_f_scope').val(),
-        type: $('#se_f_type').val(),
-        enumValues,
-        default: $('#se_f_default').val(),
-        min: $('#se_f_min').val(),
-        max: $('#se_f_max').val(),
-        description: String($('#se_f_description').val() || ''),
-        resetOnNewChat: $('#se_f_reset_on_new_chat').is(':checked'),
-        showInTracker: $('#se_f_show_in_tracker').is(':checked'),
-        counter: {
-            trigger: $('#se_f_counter_trigger').val(),
-            direction: $('#se_f_counter_direction').val(),
-            step: Number($('#se_f_counter_step').val()) || 1,
-            promptedInstructions: String($('#se_f_counter_prompted_instructions').val() || ''),
-        },
-        cycling: {
-            trigger: $('#se_f_cycling_trigger').val(),
-            values: cyclingValues,
-            promptedInstructions: String($('#se_f_cycling_prompted_instructions').val() || ''),
-        },
-        prompted: {
-            triggers: $('.se-f-prompted-trigger:checked').map(function () { return $(this).val(); }).get(),
-            instructions: String($('#se_f_prompted_instructions').val() || ''),
-        },
-    };
-}
+//     return {
+//         id: $('#se_edit_id').val(),
+//         name: String($('#se_f_name').val() || '').trim(),
+//         label: String($('#se_f_label').val() || '').trim(),
+//         category: $('#se_f_category').val(),
+//         scope: $('#se_f_scope').val(),
+//         type: $('#se_f_type').val(),
+//         enumValues,
+//         default: $('#se_f_default').val(),
+//         min: $('#se_f_min').val(),
+//         max: $('#se_f_max').val(),
+//         description: String($('#se_f_description').val() || ''),
+//         resetOnNewChat: $('#se_f_reset_on_new_chat').is(':checked'),
+//         showInTracker: $('#se_f_show_in_tracker').is(':checked'),
+//         counter: {
+//             trigger: $('#se_f_counter_trigger').val(),
+//             direction: $('#se_f_counter_direction').val(),
+//             step: Number($('#se_f_counter_step').val()) || 1,
+//             promptedInstructions: String($('#se_f_counter_prompted_instructions').val() || ''),
+//         },
+//         cycling: {
+//             trigger: $('#se_f_cycling_trigger').val(),
+//             values: cyclingValues,
+//             promptedInstructions: String($('#se_f_cycling_prompted_instructions').val() || ''),
+//         },
+//         prompted: {
+//             triggers: $('.se-f-prompted-trigger:checked').map(function () { return $(this).val(); }).get(),
+//             instructions: String($('#se_f_prompted_instructions').val() || ''),
+//         },
+//     };
+// }
 
 // Known SillyTavern built-in variables and reserved names
 const SILLYTAVERN_RESERVED_VARS = new Set([
@@ -2614,83 +2601,83 @@ function isReservedVariable(name) {
     }
 }
 
-function saveVariableFromEditor() {
-    const settings = getSettings();
-    const def = readEditorForm();
-    const presetId = currentPresetId;
+// function saveVariableFromEditor() {
+//     const settings = getSettings();
+//     const def = readEditorForm();
+//     const presetId = currentPresetId;
 
-    if (!presetId) {
-        setStatus('No preset selected.', true);
-        return;
-    }
+//     if (!presetId) {
+//         setStatus('No preset selected.', true);
+//         return;
+//     }
     
-    const preset = settings.presets[presetId];
-    if (!preset) {
-        setStatus('Preset not found.', true);
-        return;
-    }
+//     const preset = settings.presets[presetId];
+//     if (!preset) {
+//         setStatus('Preset not found.', true);
+//         return;
+//     }
 
-    if (!def.name) {
-        setStatus('Variable name is required.', true);
-        return;
-    }
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(def.name)) {
-        setStatus('Variable name should only contain letters, numbers, and underscores, and not start with a number.', true);
-        return;
-    }
-    const isNew = $('#se_editor').data('is-new');
-    const nameTaken = Object.values(preset.variables).some((other) => other.id !== def.id && other.name === def.name);
-    if (nameTaken) {
-        setStatus(`A variable named "${def.name}" already exists in this preset.`, true);
-        return;
-    }
-    // Check against SillyTavern's reserved variable names
-    if (isReservedVariable(def.name)) {
-        setStatus(`"${def.name}" is a reserved SillyTavern variable name and cannot be overridden. Choose a different name.`, true);
-        return;
-    }
-    if (def.type === 'enum' && def.enumValues.length === 0) {
-        setStatus('Add at least one allowed value for a choice-list variable.', true);
-        return;
-    }
-    if (def.category === 'cycling' && def.cycling.values.length === 0) {
-        setStatus('Add at least one value for a cycling variable.', true);
-        return;
-    }
+//     if (!def.name) {
+//         setStatus('Variable name is required.', true);
+//         return;
+//     }
+//     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(def.name)) {
+//         setStatus('Variable name should only contain letters, numbers, and underscores, and not start with a number.', true);
+//         return;
+//     }
+//     const isNew = $('#se_editor').data('is-new');
+//     const nameTaken = Object.values(preset.variables).some((other) => other.id !== def.id && other.name === def.name);
+//     if (nameTaken) {
+//         setStatus(`A variable named "${def.name}" already exists in this preset.`, true);
+//         return;
+//     }
+//     // Check against SillyTavern's reserved variable names
+//     if (isReservedVariable(def.name)) {
+//         setStatus(`"${def.name}" is a reserved SillyTavern variable name and cannot be overridden. Choose a different name.`, true);
+//         return;
+//     }
+//     if (def.type === 'enum' && def.enumValues.length === 0) {
+//         setStatus('Add at least one allowed value for a choice-list variable.', true);
+//         return;
+//     }
+//     if (def.category === 'cycling' && def.cycling.values.length === 0) {
+//         setStatus('Add at least one value for a cycling variable.', true);
+//         return;
+//     }
 
-    preset.variables[def.id] = def;
-    persistSettings();
+//     preset.variables[def.id] = def;
+//     persistSettings();
 
-    if (isNew) {
-        const context = SillyTavern.getContext();
-        setVarValue(context, def, getDefaultValue(def));
-    }
+//     if (isNew) {
+//         const context = SillyTavern.getContext();
+//         setVarValue(context, def, getDefaultValue(def));
+//     }
 
-    closeEditor();
-    renderVarTable();
-    setStatus(`Saved "${def.name}".`);
-}
+//     closeEditor();
+//     renderVarTable();
+//     setStatus(`Saved "${def.name}".`);
+// }
 
-function deleteVariable(id) {
-    const settings = getSettings();
-    const presetId = currentPresetId;
+// function deleteVariable(id) {
+//     const settings = getSettings();
+//     const presetId = currentPresetId;
     
-    if (!presetId) return;
+//     if (!presetId) return;
     
-    const preset = settings.presets[presetId];
-    if (!preset) return;
+//     const preset = settings.presets[presetId];
+//     if (!preset) return;
     
-    const def = preset.variables[id];
-    if (!def) return;
+//     const def = preset.variables[id];
+//     if (!def) return;
     
-    if (!window.confirm(`Delete variable "${def.name}"? This only removes the definition; any value already stored for it is left in place.`)) {
-        return;
-    }
-    delete preset.variables[id];
-    persistSettings();
-    renderVarTable();
-    setStatus(`Deleted "${def.name}".`);
-}
+//     if (!window.confirm(`Delete variable "${def.name}"? This only removes the definition; any value already stored for it is left in place.`)) {
+//         return;
+//     }
+//     delete preset.variables[id];
+//     persistSettings();
+//     renderVarTable();
+//     setStatus(`Deleted "${def.name}".`);
+// }
 
 function loadGeneralSettingsIntoForm() {
     const settings = getSettings();
@@ -2827,65 +2814,65 @@ function bindPanelEvents() {
     });
 }
 
-function renderPresetList() {
-    const settings = getSettings();
-    const $list = $('#se_preset_list');
-    if (!$list.length) return;
+// function renderPresetList() {
+//     const settings = getSettings();
+//     const $list = $('#se_preset_list');
+//     if (!$list.length) return;
 
-    $list.empty();
+//     $list.empty();
 
-    if (Object.keys(settings.presets).length === 0) {
-       $list.html('<div class="se-empty">No presets yet. Click the + button to create one.</div>');
-       return;
-    }
+//     if (Object.keys(settings.presets).length === 0) {
+//        $list.html('<div class="se-empty">No presets yet. Click the + button to create one.</div>');
+//        return;
+//     }
 
-    for (const [presetId, preset] of Object.entries(settings.presets)) {
-       const $item = $('<div></div>').addClass('se-preset-item');
-       const $name = $('<span></span>').addClass('se-preset-name').text(preset.name);
-       const $actions = $('<div></div>').addClass('se-preset-actions');
+//     for (const [presetId, preset] of Object.entries(settings.presets)) {
+//        const $item = $('<div></div>').addClass('se-preset-item');
+//        const $name = $('<span></span>').addClass('se-preset-name').text(preset.name);
+//        const $actions = $('<div></div>').addClass('se-preset-actions');
 
-       // Edit/Settings button
-       const $settingsBtn = $('<button></button>')
-           .addClass('se-preset-btn')
-           .html('<i class="fa-solid fa-cog"></i>')
-           .attr('title', 'Edit triggers for this preset')
-           .on('click', () => editPresetSettings(presetId));
+//        // Edit/Settings button
+//        const $settingsBtn = $('<button></button>')
+//            .addClass('se-preset-btn')
+//            .html('<i class="fa-solid fa-cog"></i>')
+//            .attr('title', 'Edit triggers for this preset')
+//            .on('click', () => editPresetSettings(presetId));
 
-       // Rename button
-       const $renameBtn = $('<button></button>')
-           .addClass('se-preset-btn')
-           .html('<i class="fa-solid fa-pencil"></i>')
-           .attr('title', 'Rename preset')
-           .on('click', () => {
-               const newName = prompt('New name:', preset.name);
-               if (newName && newName.trim()) {
-                   renamePreset(presetId, newName.trim());
-                   renderPresetList();
-                   renderVarTable();
-                   setStatus(`Renamed to "${newName}".`);
-               }
-           });
+//        // Rename button
+//        const $renameBtn = $('<button></button>')
+//            .addClass('se-preset-btn')
+//            .html('<i class="fa-solid fa-pencil"></i>')
+//            .attr('title', 'Rename preset')
+//            .on('click', () => {
+//                const newName = prompt('New name:', preset.name);
+//                if (newName && newName.trim()) {
+//                    renamePreset(presetId, newName.trim());
+//                    renderPresetList();
+//                    renderVarTable();
+//                    setStatus(`Renamed to "${newName}".`);
+//                }
+//            });
 
-       // Delete button
-       const $deleteBtn = $('<button></button>')
-           .addClass('se-preset-btn')
-           .html('<i class="fa-solid fa-trash"></i>')
-           .attr('title', 'Delete preset (variables stay)')
-           .on('click', () => {
-               if (window.confirm(`Delete preset "${preset.name}"? Variables in this preset won't be deleted.`)) {
-                   deletePreset(presetId);
-                   if (currentPresetId === presetId) currentPresetId = null;
-                   renderPresetList();
-                   renderVarTable();
-                   setStatus(`Deleted "${preset.name}".`);
-               }
-           });
+//        // Delete button
+//        const $deleteBtn = $('<button></button>')
+//            .addClass('se-preset-btn')
+//            .html('<i class="fa-solid fa-trash"></i>')
+//            .attr('title', 'Delete preset (variables stay)')
+//            .on('click', () => {
+//                if (window.confirm(`Delete preset "${preset.name}"? Variables in this preset won't be deleted.`)) {
+//                    deletePreset(presetId);
+//                    if (currentPresetId === presetId) currentPresetId = null;
+//                    renderPresetList();
+//                    renderVarTable();
+//                    setStatus(`Deleted "${preset.name}".`);
+//                }
+//            });
 
-       $actions.append($settingsBtn, $renameBtn, $deleteBtn);
-       $item.append($name, $actions);
-       $list.append($item);
-    }
-}
+//        $actions.append($settingsBtn, $renameBtn, $deleteBtn);
+//        $item.append($name, $actions);
+//        $list.append($item);
+//     }
+// }
 
 function renderTrackerPresetList() {
     const settings = getSettings();
@@ -2922,85 +2909,85 @@ function renderTrackerPresetList() {
     }
 }
 
-function editPresetSettings(presetId) {
-    const settings = getSettings();
-    const preset = settings.presets[presetId];
-    if (!preset) return;
+// function editPresetSettings(presetId) {
+//     const settings = getSettings();
+//     const preset = settings.presets[presetId];
+//     if (!preset) return;
 
-    const $editor = $('#se_preset_editor');
-    const $title = $('#se_preset_edit_title');
-    $title.text(`Edit "${preset.name}" - Update Triggers`);
-    $('#se_preset_edit_id').val(presetId);
+//     const $editor = $('#se_preset_editor');
+//     const $title = $('#se_preset_edit_title');
+//     $title.text(`Edit "${preset.name}" - Update Triggers`);
+//     $('#se_preset_edit_id').val(presetId);
 
-    // Clear checkboxes
-    $('.se-preset-trigger').prop('checked', false);
+//     // Clear checkboxes
+//     $('.se-preset-trigger').prop('checked', false);
 
-    // Set which triggers are active
-    if (preset.triggers && Array.isArray(preset.triggers)) {
-        preset.triggers.forEach(trigger => {
-            $(`.se-preset-trigger[value="${trigger}"]`).prop('checked', true);
-        });
-    }
+//     // Set which triggers are active
+//     if (preset.triggers && Array.isArray(preset.triggers)) {
+//         preset.triggers.forEach(trigger => {
+//             $(`.se-preset-trigger[value="${trigger}"]`).prop('checked', true);
+//         });
+//     }
 
-    $editor.show();
-    $('html, body').scrollTop($editor.offset().top - 100);
-}
+//     $editor.show();
+//     $('html, body').scrollTop($editor.offset().top - 100);
+// }
 
-function savePresetSettings() {
-    const presetId = $('#se_preset_edit_id').val();
-    const settings = getSettings();
-    const preset = settings.presets[presetId];
-    if (!preset) return;
+// function savePresetSettings() {
+//     const presetId = $('#se_preset_edit_id').val();
+//     const settings = getSettings();
+//     const preset = settings.presets[presetId];
+//     if (!preset) return;
 
-    const triggers = [];
-    $('.se-preset-trigger:checked').each(function () {
-        triggers.push($(this).val());
-    });
+//     const triggers = [];
+//     $('.se-preset-trigger:checked').each(function () {
+//         triggers.push($(this).val());
+//     });
 
-    preset.triggers = triggers;
-    persistSettings();
+//     preset.triggers = triggers;
+//     persistSettings();
     
-    $('#se_preset_editor').hide();
-    setStatus(`Triggers updated for "${preset.name}".`);
-    renderVarTable(); // Refresh in case prompt variables are shown
-}
+//     $('#se_preset_editor').hide();
+//     setStatus(`Triggers updated for "${preset.name}".`);
+//     renderVarTable(); // Refresh in case prompt variables are shown
+// }
 
-async function initPanel() {
-    const context = SillyTavern.getContext();
-    let html;
-    try {
-        html = await context.renderExtensionTemplateAsync(EXT_TEMPLATE_PATH, 'settings');
-    } catch (err) {
-        console.error(LOG_PREFIX, 'failed to load settings.html template', err);
-        return;
-    }
-    const $html = $(html);
-    $html.find('#se_macro_example, #se_macro_example2').text('{{getvar::name}}');
-    $('#extensions_settings2').append($html);
+// async function initPanel() {
+//     const context = SillyTavern.getContext();
+//     let html;
+//     try {
+//         html = await context.renderExtensionTemplateAsync(EXT_TEMPLATE_PATH, 'settings');
+//     } catch (err) {
+//         console.error(LOG_PREFIX, 'failed to load settings.html template', err);
+//         return;
+//     }
+//     const $html = $(html);
+//     $html.find('#se_macro_example, #se_macro_example2').text('{{getvar::name}}');
+//     $('#extensions_settings2').append($html);
 
-    bindPanelEvents();
-    loadGeneralSettingsIntoForm();
+//     bindPanelEvents();
+//     loadGeneralSettingsIntoForm();
      
-    const chatId = getCurrentChatId();
-    if (chatId) {
-        const activePresetIds = getPresetsForChat(chatId);
-        if (activePresetIds.length > 0) {
-            currentPresetId = activePresetIds[0];
-        }
-        renderVarTable();
-    } else {
-        const $tabContainer = $('#se_preset_tabs');
-        const $tbody = $('#se_var_tbody');
-        const $empty = $('#se_var_empty');
-        if ($tabContainer.length) $tabContainer.empty();
-        if ($tbody.length) $tbody.empty();
-        if ($empty.length) $empty.show().text('Select a chat to view state variables.');
-    }
+//     const chatId = getCurrentChatId();
+//     if (chatId) {
+//         const activePresetIds = getPresetsForChat(chatId);
+//         if (activePresetIds.length > 0) {
+//             currentPresetId = activePresetIds[0];
+//         }
+//         renderVarTable();
+//     } else {
+//         const $tabContainer = $('#se_preset_tabs');
+//         const $tbody = $('#se_var_tbody');
+//         const $empty = $('#se_var_empty');
+//         if ($tabContainer.length) $tabContainer.empty();
+//         if ($tbody.length) $tbody.empty();
+//         if ($empty.length) $empty.show().text('Select a chat to view state variables.');
+//     }
 
-    if (getSettings().showTrackerPanel) {
-        setTrackerPanelVisible(true);
-    }
-}
+//     if (getSettings().showTrackerPanel) {
+//         setTrackerPanelVisible(true);
+//     }
+// }
 
 // ---------------------------------------------------------------------------
 // Stylesheet loader
