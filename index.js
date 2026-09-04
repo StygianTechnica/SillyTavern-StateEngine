@@ -50,21 +50,22 @@ const DEFAULT_UNIFIED_VARIABLE_RULES = [
 window.seDebugMode = false;
 
 function migrateAllSettings(settings) {
-    if(!settings)return;
-    console.log(LOG_PREFIX, "Updating Settings", settings)
-    for (const preset of Object.values(settings.presets)) {
-        for (const def of Object.values(preset.vars)) {
+    if (!settings) return;
+    for (const preset of Object.values(settings.presets || {})) {
+        const vars = preset.variables || {};
+        for (const def of Object.values(vars)) {
             migrateVariableDefinition(def);
         }
     }
 
-    // Also sanitize chatPresetBindings
-    for (const chatId of Object.keys(settings.chatPresetBindings)) {
+    // Sanitize chatPresetBindings
+    for (const chatId of Object.keys(settings.chatPresetBindings || {})) {
         if (!Array.isArray(settings.chatPresetBindings[chatId])) {
             settings.chatPresetBindings[chatId] = [];
         }
     }
 }
+
 
 function migrateVariableDefinition(def) {
     const v = def.version || 0;
