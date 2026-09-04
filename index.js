@@ -1952,6 +1952,44 @@ function applyResetOnNewChat() {
 //     if (changed) refreshPanelIfOpen();
 // }
 
+function applyIncrement(context, def, delta) {
+    const current = getVarValue(context, def);
+    let next;
+
+    switch (def.type) {
+        case 'number':
+            next = current + delta;
+            break;
+
+        case 'boolean':
+            next = !current;
+            break;
+
+        case 'enum':
+            next = cycleEnum(def, current);
+            break;
+
+    }
+
+    //enforceConstraints is the future place where you’ll clamp values, validate enums, enforce min/max, and guarantee type correctness.
+    //next = enforceConstraints(def, next);
+
+    setVarValue(context, def, next);
+
+    //triggerHooks would be It’s the future place where you fire side‑effects when a variable changes.
+    //triggerHooks(def, current, next);
+
+    refreshPanelIfOpen();
+}
+
+function cycleEnum(def, current) {
+    const values = def.enumValues || [];
+    if (!values.length) return current;
+
+    const idx = values.indexOf(current);
+    return values[(idx + 1) % values.length];
+}
+
 async function runPromptedIncrements(triggerType) {
     const context = SillyTavern.getContext();
     const settings = getSettings();
@@ -1966,6 +2004,7 @@ async function runPromptedIncrements(triggerType) {
     for (const def of Object.values(variables)) {
         if (!def.name) continue;
         if (!def.behaviors?.prompted) continue;
+        if (!def.behaviors?.increment) continue;
 
         incrementCandidates.push({
             name: def.name,
@@ -2027,24 +2066,7 @@ async function runPromptedIncrements(triggerType) {
             const def = cand.def;
             const shouldIncrement = parsed[cand.name] === true;
             if (!shouldIncrement) continue;
-
-            const current = getVarValue(context, def);
-
-            if (cand.type === 'number') {
-                const delta = Number(def.delta || 1);
-                setVarValue(context, def, current + delta);
-            }
-
-            else if (cand.type === 'boolean') {
-                setVarValue(context, def, !current);
-            }
-
-            else if (cand.type === 'enum') {
-                const values = def.enumValues || [];
-                const idx = values.indexOf(current);
-                const next = values[(idx + 1) % values.length];
-                setVarValue(context, def, next);
-            }
+            applyIncrement(context, def, def.increment.delta);
 
             changedCount++;
         }
@@ -2249,12 +2271,10 @@ function runDeterministicIncrements(triggerType) {
         if (!def.name) continue;
 
         // Only deterministic increment variables
+        if(def.behaviors?.prompted) continue;
         if (!def.behaviors?.increment) continue;
-        if (def.tick_mode !== 'per_message') continue;
-
-        // Check trigger
-        const tickOn = def.tick_on || 'both';
-        if (tickOn !== 'both' && tickOn !== triggerType) continue;
+        if(!def.increment) continue;
+        if(def.increment?.tick_on != triggerType && def.increment?.tick_on != "both")continue;
 
         // Increment internal counter
         const counter = Number(def._counter || 0) + 1;
@@ -2265,24 +2285,8 @@ function runDeterministicIncrements(triggerType) {
         // Reset counter
         def._counter = 0;
 
-        // Apply deterministic increment based on type
-        const current = getVarValue(context, def);
+        applyIncrement(context, def, def.increment.delta);
 
-        if (def.type === 'number') {
-            const delta = Number(def.delta || 1);
-            setVarValue(context, def, current + delta);
-        }
-
-        else if (def.type === 'boolean') {
-            setVarValue(context, def, !current);
-        }
-
-        else if (def.type === 'enum') {
-            const values = def.enumValues || [];
-            const idx = values.indexOf(current);
-            const next = values[(idx + 1) % values.length];
-            setVarValue(context, def, next);
-        }
     }
 
     refreshPanelIfOpen();
