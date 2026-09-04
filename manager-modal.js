@@ -634,11 +634,6 @@ function collectInlineVariableValues($row) {
         assignNested(values, field, value);
     });
 
-    // Prompted instructions (already nested)
-    assignNested(values, "prompted.instructions",
-        String($editor.find('.se-manager-prompted-instructions').val() || '')
-    );
-
     values.showInTracker = true;
     return values;
 }
