@@ -28,27 +28,20 @@ const MODULE_NAME = 'state_engine';
 const EXT_TEMPLATE_PATH = 'third-party/SillyTavern-StateEngine';
 const LOG_PREFIX = '[State Engine]';
 const DEFAULT_PROMPTED_HEADER = [
-            'You are a silent background state-tracking process for a roleplay chat application.',
+            'You are a silent background state‑tracking process for a roleplay chat application.',
             'You are not a character in the roleplay and must not narrate, comment, or add anything besides the requested output.',
-            'You will be given a recent conversation excerpt and a list of state counters/flags that may need to increment/cycle based on story conditions.',
-            'Decide if each variable should increment/cycle based on the conversation and the per-variable conditions.',
+            'You will be given a recent conversation excerpt and a list of state variables with conditions.',
+            'Evaluate each variable according to its conditions and return the required JSON output.',
             ''
         ].join('\n');
-const DEFAULT_INCREMENTED_VARIABLE_RULES = [
-            '',
-            'Output rules:',
-            '- Reply with ONLY a single raw JSON object. No markdown code fences, no explanation, no extra text.',
-            '- The object maps variable names to increment instruction: true if should increment, false if should not.',
-            '- Example: {"rounds": true, "tournament_phase": false} means increment "rounds" but leave "tournament_phase" unchanged.'
-        ].join('\n');
 
-const DEFAULT_PROMPTED_VARIABLE_RULES = [
+const DEFAULT_UNIFIED_VARIABLE_RULES = [
             '',
             'Output rules:',
             '- Reply with ONLY a single raw JSON object. No markdown code fences, no explanation, no extra text.',
-            '- The object must have exactly one key per listed variable, using the exact variable name given.',
-            '- If a variable should not change, repeat its current value unchanged.',
-            '- Respect each variable\'s type and constraints exactly.'
+            '- The object must contain exactly one key per listed variable.',
+            '- For update variables: return the new value. If no change is needed, repeat the current value unchanged.',
+            '- For boolean-condition variables: return true if the condition is met, otherwise false.',
         ].join('\n');
 
 // Debug mode - session-only, not persisted
@@ -965,7 +958,7 @@ function getStarterPresetBlueprints() {
                     type: 'number',
                     defaultValue: 1,
                     min: 1,
-                    behaviors: { increment: false, prompted: true },
+                    behaviors: { prompted: true, increment: false },
                     prompted: { instructions: 'Increment when the story clearly moves to the next chapter.' },
                     description: 'Main narrative chapter progression.',
                 }),
@@ -976,7 +969,7 @@ function getStarterPresetBlueprints() {
                     type: 'enum',
                     enumValues: ['setup', 'rising_action', 'climax', 'aftermath'],
                     defaultValue: 'setup',
-                    behaviors: { increment: false, prompted: true },
+                    behaviors: { prompted: true, increment: false },
                     prompted: { instructions: 'Advance when the current arc phase has clearly resolved.' },
                     description: 'Current high-level story arc phase.',
                 }),
@@ -986,6 +979,8 @@ function getStarterPresetBlueprints() {
                     label: 'Quest Active',
                     type: 'boolean',
                     defaultValue: false,
+                    behaviors: { prompted: true, increment: false },
+                    prompted: { instructions: 'Set true when a quest begins; set false when it ends.' },
                     description: 'Whether a main quest is currently active.',
                 }),
 
@@ -994,6 +989,8 @@ function getStarterPresetBlueprints() {
                     label: 'Quest Name',
                     type: 'string',
                     defaultValue: '',
+                    behaviors: { prompted: true, increment: false },
+                    prompted: { instructions: 'Update when a new quest begins or the quest name changes.' },
                     description: 'Current quest title.',
                 }),
             ],
@@ -1010,6 +1007,8 @@ function getStarterPresetBlueprints() {
                     type: 'enum',
                     enumValues: ['tavern', 'market', 'arena', 'road', 'wilderness'],
                     defaultValue: 'tavern',
+                    behaviors: { prompted: true, increment: false },
+                    prompted: { instructions: 'Infer location from narrative context.' },
                     description: 'Current scene location.',
                 }),
 
@@ -1019,7 +1018,7 @@ function getStarterPresetBlueprints() {
                     type: 'enum',
                     enumValues: ['dawn', 'morning', 'noon', 'evening', 'night'],
                     defaultValue: 'morning',
-                    behaviors: { increment: false, prompted: true },
+                    behaviors: { prompted: true, increment: false },
                     prompted: { instructions: 'Advance when narration implies time has progressed.' },
                     description: 'Narrative time period.',
                 }),
@@ -1039,6 +1038,8 @@ function getStarterPresetBlueprints() {
                     label: 'Indoor Scene',
                     type: 'boolean',
                     defaultValue: true,
+                    behaviors: { prompted: true, increment: false },
+                    prompted: { instructions: 'Set true when the scene moves indoors; false when outdoors.' },
                     description: 'Whether current scene is indoors.',
                 }),
             ],
@@ -1089,6 +1090,8 @@ function getStarterPresetBlueprints() {
                     label: 'Betrayal Flag',
                     type: 'boolean',
                     defaultValue: false,
+                    behaviors: { prompted: true, increment: false },
+                    prompted: { instructions: 'Set true when betrayal occurs; false when resolved.' },
                     description: 'Set true if betrayal has occurred.',
                 }),
             ],
@@ -1104,6 +1107,8 @@ function getStarterPresetBlueprints() {
                     label: 'Combat Active',
                     type: 'boolean',
                     defaultValue: false,
+                    behaviors: { prompted: true, increment: false },
+                    prompted: { instructions: 'Set true when combat begins; false when combat ends.' },
                     description: 'Whether combat is currently active.',
                 }),
 
@@ -1129,6 +1134,8 @@ function getStarterPresetBlueprints() {
                     type: 'enum',
                     enumValues: ['low', 'medium', 'high', 'critical'],
                     defaultValue: 'low',
+                    behaviors: { prompted: true, increment: false },
+                    prompted: { instructions: 'Infer threat level from narrative context.' },
                     description: 'Current encounter danger level.',
                 }),
 
@@ -1136,7 +1143,9 @@ function getStarterPresetBlueprints() {
                     name: 'encounter_tags',
                     label: 'Encounter Tags',
                     type: 'array',
-                    defaultValue: '[]',
+                    defaultValue: [],
+                    behaviors: { prompted: true, increment: false },
+                    prompted: { instructions: 'Update tags when encounter descriptors change.' },
                     description: 'Array of current encounter tags.',
                 }),
             ],
@@ -1173,7 +1182,9 @@ function getStarterPresetBlueprints() {
                     name: 'story_flags',
                     label: 'Story Flags',
                     type: 'array',
-                    defaultValue: '[]',
+                    defaultValue: [],
+                    behaviors: { prompted: true, increment: false },
+                    prompted: { instructions: 'Update flags when story conditions change.' },
                     description: 'Manual array.',
                 }),
 
@@ -1209,12 +1220,15 @@ function getStarterPresetBlueprints() {
                     label: 'Omens Unlocked',
                     type: 'boolean',
                     defaultValue: false,
+                    behaviors: { prompted: true, increment: false },
+                    prompted: { instructions: 'Set true when omens are discovered; false when reset.' },
                     description: 'Manual boolean toggle showcase.',
                 }),
             ],
         },
     ];
 }
+
 
 function seedExamplePresets(settings, restoreMissing) {
     const blueprints = getStarterPresetBlueprints();
@@ -1955,7 +1969,7 @@ function applyResetOnNewChat() {
 function applyIncrement(context, def, delta) {
     const current = getVarValue(context, def);
     let next;
-
+    console.log("Incrementing Variable: ", def.name, " by ", delta);
     switch (def.type) {
         case 'number':
             next = current + delta;
@@ -1988,101 +2002,6 @@ function cycleEnum(def, current) {
 
     const idx = values.indexOf(current);
     return values[(idx + 1) % values.length];
-}
-
-async function runPromptedIncrements(triggerType) {
-    const context = SillyTavern.getContext();
-    const settings = getSettings();
-    if (!settings.enabled) return;
-
-    const chatId = context.chatId;
-    const activePresetIds = getPresetsForChat(chatId);
-    const variables = getAllVariablesFromPresets(activePresetIds);
-
-    // Collect variables with prompted behavior
-    const incrementCandidates = [];
-    for (const def of Object.values(variables)) {
-        if (!def.name) continue;
-        if (!def.behaviors?.prompted) continue;
-        if (!def.behaviors?.increment) continue;
-
-        incrementCandidates.push({
-            name: def.name,
-            type: def.type,
-            def,
-            currentValue: getVarValue(context, def),
-            instructions: (def.prompted?.instructions || def.description || '').trim()
-        });
-    }
-
-    if (incrementCandidates.length === 0) return;
-    if (!Array.isArray(context.chat)) return;
-
-    setStatus('Checking for prompted increments…');
-
-    try {
-        const count = Math.max(1, Number(settings.contextMessageCount) || 10);
-        const recent = context.chat.slice(-count);
-        const transcript = recent
-            .map((m) => {
-                const speaker = m.is_user ? (context.name1 || 'User') : (m.name || context.name2 || 'Character');
-                return `${speaker}: ${stripHtml(m.mes)}`;
-            })
-            .filter((line) => line.trim().length > 0)
-            .join('\n');
-
-        const varLines = incrementCandidates
-            .map((cand) => {
-                return `- "${cand.name}" (${cand.type}, current: ${cand.currentValue}): ${cand.instructions}`;
-            })
-            .join('\n');
-
-        const systemPrompt = [
-            settings.promptedHeader || DEFAULT_PROMPTED_HEADER,
-            settings.incrementedRules || DEFAULT_INCREMENTED_VARIABLE_RULES,
-            '',
-            'Variables that may increment:',
-            varLines,
-        ].join('\n');
-
-        const messages = [
-            { role: 'system', content: systemPrompt },
-            { role: 'system', content: transcript ? `Recent conversation:\n${transcript}` : 'No conversation yet.' },
-            { role: 'user', content: 'Output the JSON object now. JSON only, no other text.' },
-        ];
-
-        const raw = await callBackgroundLLM(context, settings, messages, Number(settings.responseLength) || 300);
-        const parsed = extractJsonObject(raw);
-
-        if (!parsed) {
-            console.warn(LOG_PREFIX, 'could not parse increment JSON:', raw);
-            setStatus('Prompted increment failed — invalid JSON. See console.', true);
-            return;
-        }
-
-        let changedCount = 0;
-
-        for (const cand of incrementCandidates) {
-            const def = cand.def;
-            const shouldIncrement = parsed[cand.name] === true;
-            if (!shouldIncrement) continue;
-            applyIncrement(context, def, def.increment.delta);
-
-            changedCount++;
-        }
-
-        if (changedCount > 0) {
-            setStatus(`Prompted increments applied (${changedCount} variable${changedCount === 1 ? '' : 's'}).`);
-        } else {
-            setStatus('No prompted increments needed.');
-        }
-
-    } catch (err) {
-        console.error(LOG_PREFIX, 'prompted increment check failed', err);
-        setStatus('Prompted increment failed — see console.', true);
-    } finally {
-        refreshPanelIfOpen();
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2154,14 +2073,14 @@ function extractTextFromServiceResult(result) {
     return '';
 }
 
-async function runPromptedUpdates(triggerType) {
+async function runPromptedStateUpdate(triggerType) {
     const context = SillyTavern.getContext();
     const settings = getSettings();
     if (!settings.enabled) return;
 
     const chatId = context.chatId;
     const activePresetIds = getPresetsForChat(chatId);
-    
+
     // Filter presets that have this trigger enabled
     let presetsToUpdate = [];
     if (triggerType === 'manual-all') {
@@ -2172,12 +2091,21 @@ async function runPromptedUpdates(triggerType) {
             return preset && Array.isArray(preset.triggers) && preset.triggers.includes(triggerType);
         });
     }
-    
-    // Collect all prompted variables from presets that should update
-    const variables = getAllVariablesFromPresets(presetsToUpdate);
-    const defs = Object.values(variables).filter((def) => def.category === 'prompted' && def.name && !shouldSkipPromptedRefresh(def));
 
-    if (defs.length === 0) return;
+    // Collect variables from presets that should update, and classify them
+    const variables = getAllVariablesFromPresets(presetsToUpdate);
+    const updateVars = [];
+    const incrementVars = [];
+    for (const def of Object.values(variables)) {
+        if (!def.name) continue;
+        if (def.category === 'prompted' && !shouldSkipPromptedRefresh(def)) {
+            updateVars.push(def);
+        } else if (def.behaviors?.prompted === true && def.behaviors?.increment === true) {
+            incrementVars.push(def);
+        }
+    }
+
+    if (updateVars.length === 0 && incrementVars.length === 0) return;
     if (!Array.isArray(context.chat)) return;
 
     setStatus('Updating state…');
@@ -2193,44 +2121,44 @@ async function runPromptedUpdates(triggerType) {
             .filter((line) => line.trim().length > 0)
             .join('\n');
 
-        const varLines = defs
+        const updateVarLines = updateVars
             .map((def) => {
                 const current = getVarValue(context, def);
-                const instructions = (def.promptedInstructions || def.description || '').trim();
+                const instructions = (def.prompted?.instructions || def.description || '').trim();
                 return `- "${def.name}" [${describeConstraint(def)}] currently ${JSON.stringify(current)}.${instructions ? ` ${instructions}` : ''}`;
             })
             .join('\n');
 
-        const systemPrompt = [
-            settings.promptedHeader || DEFAULT_PROMPTED_HEADER,
-            settings.promptedRules || DEFAULT_PROMPTED_VARIABLE_RULES,
-            '',
-            'Tracked variables:',
-            varLines,
-        ].join('\n');
+        const incrementVarLines = incrementVars
+            .map((def) => {
+                const current = getVarValue(context, def);
+                const instructions = (def.prompted?.instructions || def.description || '').trim();
+                return `- "${def.name}" (${def.type}, current: ${current}): ${instructions}`;
+            })
+            .join('\n');
 
-        /*
-        const systemPrompt = [
-            'You are a silent background state-tracking process for a roleplay chat application.',
-            'You are not a character in the roleplay and must not narrate, comment, or add anything besides the requested output.',
-            'You will be given a short excerpt of recent conversation and a list of tracked state variables.',
-            'Decide the updated value for each variable based on the conversation and the per-variable instructions.',
+        const varLines = [updateVarLines, incrementVarLines].filter(Boolean).join('\n');
+        if (!varLines.trim()) return;
+
+        const promptSections = [
+            settings.promptedHeader || DEFAULT_PROMPTED_HEADER,
+            DEFAULT_UNIFIED_VARIABLE_RULES,
             '',
-            'Output rules:',
-            '- Reply with ONLY a single raw JSON object. No markdown code fences, no explanation, no extra text.',
-            '- The object must have exactly one key per listed variable, using the exact variable name given.',
-            '- If a variable should not change, repeat its current value unchanged.',
-            '- Respect each variable\'s type and constraints exactly.',
-            '',
-            'Tracked variables:',
-            varLines,
-        ].join('\n');
-        */
+            transcript ? `Recent conversation:\n${transcript}` : 'No conversation yet.',
+        ];
+
+        if (updateVarLines) {
+            promptSections.push('', 'Update variables:', updateVarLines);
+        }
+        if (incrementVarLines) {
+            promptSections.push('', 'Boolean-condition variables:', incrementVarLines);
+        }
+
+        const systemPrompt = promptSections.join('\n');
 
         const messages = [
             { role: 'system', content: systemPrompt },
-            { role: 'system', content: transcript ? `Recent conversation:\n${transcript}` : 'No conversation yet.' },
-            { role: 'user', content: 'Output the updated JSON object now. JSON only, no other text.' },
+            { role: 'user', content: 'Output the JSON object now. JSON only, no other text.' },
         ];
 
         const raw = await callBackgroundLLM(context, settings, messages, Number(settings.responseLength) || 300);
@@ -2243,15 +2171,24 @@ async function runPromptedUpdates(triggerType) {
         }
 
         let updatedCount = 0;
-        for (const def of defs) {
+        for (const def of updateVars) {
             if (Object.prototype.hasOwnProperty.call(parsed, def.name)) {
                 setVarValue(context, def, parsed[def.name]);
                 updatedCount++;
             }
         }
-        setStatus(`State updated (${updatedCount}/${defs.length} variables).`);
+
+        let incrementedCount = 0;
+        for (const def of incrementVars) {
+            if (parsed[def.name] === true) {
+                applyIncrement(context, def, def.increment.delta);
+                incrementedCount++;
+            }
+        }
+
+        setStatus(`State updated (${updatedCount}/${updateVars.length} variables, ${incrementedCount}/${incrementVars.length} incremented).`);
     } catch (err) {
-        console.error(LOG_PREFIX, 'prompted update failed', err);
+        console.error(LOG_PREFIX, 'prompted state update failed', err);
         setStatus('Update failed — see browser console for details.', true);
     } finally {
         refreshPanelIfOpen();
@@ -2274,7 +2211,8 @@ function runDeterministicIncrements(triggerType) {
         if(def.behaviors?.prompted) continue;
         if (!def.behaviors?.increment) continue;
         if(!def.increment) continue;
-        if(def.increment?.tick_on != triggerType && def.increment?.tick_on != "both")continue;
+        if(def.increment?.tick_on != triggerType || 
+            (def.increment?.tick_on == "both" && (triggerType != "ai" && triggerType != "user" )))continue;
 
         // Increment internal counter
         const counter = Number(def._counter || 0) + 1;
@@ -2303,7 +2241,7 @@ let startupRan = false;
 function runStartupOnce() {
     if (startupRan) return;
     startupRan = true;
-    runPromptedUpdates('startup');
+    runPromptedStateUpdate('startup');
 }
 
 function registerEvents() {
@@ -2317,14 +2255,14 @@ function registerEvents() {
     eventSource.on(eventTypes.CHAT_CREATED, () => {
         applyResetOnNewChat();
         applyDefaultsForMissing();
-        runPromptedUpdates('new_chat');
+        runPromptedStateUpdate('new_chat');
         refreshPanelIfOpen();
         refreshManagerButtonLater();
     });
 
     eventSource.on(eventTypes.CHAT_CHANGED, () => {
         applyDefaultsForMissing();
-        runPromptedUpdates('chat_change');
+        runPromptedStateUpdate('chat_change');
         refreshPanelIfOpen();
         refreshManagerButtonLater();
     });
@@ -2332,24 +2270,22 @@ function registerEvents() {
     eventSource.on(eventTypes.USER_MESSAGE_RENDERED, () => {
         //runCounters('user');
         runDeterministicIncrements('user');
-        runPromptedUpdates('user');
-        runPromptedIncrements('user');
+        runPromptedStateUpdate('user');
     });
 
     eventSource.on(eventTypes.CHARACTER_MESSAGE_RENDERED, () => {
         //runCounters('ai');
         runDeterministicIncrements('ai');
-        runPromptedUpdates('ai');
-        runPromptedIncrements('ai');
+        runPromptedStateUpdate('ai');
     });
 
     eventSource.on(eventTypes.GENERATION_AFTER_COMMANDS, () => {
-        runPromptedUpdates('pre_generation');
+        runPromptedStateUpdate('pre_generation');
     });
 
     if (eventTypes.GROUP_MEMBER_DRAFTED) {
         eventSource.on(eventTypes.GROUP_MEMBER_DRAFTED, () => {
-            runPromptedUpdates('group_draft');
+            runPromptedStateUpdate('group_draft');
         });
     }
 
@@ -2383,7 +2319,7 @@ function registerSlashCommand() {
         context.SlashCommandParser.addCommandObject(context.SlashCommand.fromProps({
             name: 'state-run',
             callback: async () => {
-                await runPromptedUpdates('manual-all');
+                await runPromptedStateUpdate('manual-all');
                 return '';
             },
             helpString: 'Force State Engine to run all prompted variable updates right now.',
@@ -2995,7 +2931,7 @@ function bindPanelEvents() {
         persistSettings();
     });
 
-    $('#se_run_now').on('click', () => runPromptedUpdates('manual-all'));
+    $('#se_run_now').on('click', () => runPromptedStateUpdate('manual-all'));
 
     $('#se_open_manager').on('click', () => openManagerIfReady());
     updateManagerButtonState();
