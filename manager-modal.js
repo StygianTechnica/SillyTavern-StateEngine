@@ -460,7 +460,7 @@ function showInlineVariableEditor(varDef, $row) {
                 <div class="se-manager-toggle-row">
                     <div class="se-row">
                         <label class="checkbox_label">
-                            <input id="se-manager-prompted-toggle" type="checkbox" data-field="behaviors.prompted"/>
+                            <input id="se-manager-prompted-toggle" type="checkbox" data-field="behaviors.prompted" ${d.behaviors?.prompted ? 'checked' : ''} />
                             <span>Prompted Behavior</span>
                         </label>
                     </div>
@@ -476,7 +476,7 @@ function showInlineVariableEditor(varDef, $row) {
                     <div class="se-manager-toggle-row">
                         <div class="se-row">
                             <label class="checkbox_label">
-                                <input id="se-manager-increment-toggle" type="checkbox" data-field="behaviors.increment"/>
+                                <input id="se-manager-increment-toggle" type="checkbox" data-field="behaviors.increment" ${d.behaviors?.increment ? 'checked' : ''} />
                                 <span>Incremented Behavior</span>
                             </label>
                         </div>
