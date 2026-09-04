@@ -59,28 +59,19 @@ function migrateAllSettings(settings) {
     }
 
     // Sanitize chatPresetBindings
-    for (const chatId of Object.keys(settings.chatPresetBindings || {})) {
-        const current = settings.chatPresetBindings[chatId];
+    if (!settings.chatPresetBindings || typeof settings.chatPresetBindings !== 'object') {
+        settings.chatPresetBindings = {};
+    } else {
+        for (const chatId of Object.keys(settings.chatPresetBindings)) {
+            const binding = settings.chatPresetBindings[chatId];
 
-        // If already an array, keep as-is
-        if (Array.isArray(current)) continue;
+            // If binding is null or not an object, reset it
+            if (!binding || typeof binding !== 'object') {
+                settings.chatPresetBindings[chatId] = {};
+            }
 
-        // If it's a single preset ID string, wrap it
-        if (typeof current === 'string') {
-            settings.chatPresetBindings[chatId] = [current];
-            continue;
+            // Otherwise leave it EXACTLY as-is
         }
-
-        // If it's an object, try to extract presetId or similar
-        if (current && typeof current === 'object') {
-            // adjust this based on your actual shape
-            const presetId = current.presetId || current.id || null;
-            settings.chatPresetBindings[chatId] = presetId ? [presetId] : [];
-            continue;
-        }
-
-        // Fallback: unknown type → empty array
-        settings.chatPresetBindings[chatId] = [];
     }
 
 }
