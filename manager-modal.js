@@ -631,7 +631,6 @@ function collectInlineVariableValues($row) {
         const $field = $(this);
         const field = $field.attr('data-field');
         const value = $field.is(':checkbox') ? $field.is(':checked') : $field.val();
-        console.log("FIELD:", field, "VALUE:", value);
         assignNested(values, field, value);
     });
 
@@ -1248,10 +1247,12 @@ export function wireManagerModalEvents() {
             return;
         }
 
+        console.log("VALUES BEFORE SAVE:", values);
+
         // Build new variable definition using the updated schema
         preset.variables[values.id] = {
             id: values.id,
-            name: values.name.trim(),collectInlineVariableValues,
+            name: values.name.trim(),
             label: String(values.label || '').trim(),
             description: values.description || '',
             scope: values.scope || 'chat',
