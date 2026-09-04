@@ -1274,7 +1274,13 @@ function seedExamplePresets(settings, restoreMissing) {
 export function restoreDefaultPresets() {
     const settings = getSettings();
     const blueprints = getStarterPresetBlueprints();
-    
+    // Ensure all chat bindings are arrays
+    for (const chatId of Object.keys(settings.chatPresetBindings)) {
+        const list = settings.chatPresetBindings[chatId];
+        if (!Array.isArray(list)) {
+            settings.chatPresetBindings[chatId] = [];
+        }
+    }
     // Delete existing default presets by name so we can restore them
     for (const seed of blueprints) {
         for (const [presetId, preset] of Object.entries(settings.presets)) {
@@ -1357,6 +1363,7 @@ export function deletePreset(presetId) {
     
     // Remove from all chat bindings
     for (const bindingList of Object.values(settings.chatPresetBindings)) {
+        if (!Array.isArray(bindingList)) continue;
         const idx = bindingList.indexOf(presetId);
         if (idx !== -1) bindingList.splice(idx, 1);
     }
