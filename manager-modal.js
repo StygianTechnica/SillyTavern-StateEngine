@@ -439,56 +439,79 @@ function showInlineVariableEditor(varDef, $row) {
         <div class="se-manager-variable-editor-fields">
 
             <!-- Basic fields -->
-            <input class="text_pole se-manager-var-field" data-field="name"
-                placeholder="Variable name" value="${escapeHtml(d.name)}" />
+            <input class="text_pole se-manager-var-field"
+                data-field="name"
+                placeholder="Variable name"
+                value="${escapeHtml(d.name)}" />
 
-            <input class="text_pole se-manager-var-field" data-field="label"
-                placeholder="Label" value="${escapeHtml(d.label)}" />
+            <input class="text_pole se-manager-var-field"
+                data-field="label"
+                placeholder="Label"
+                value="${escapeHtml(d.label)}" />
 
-            <select class="text_pole se-manager-var-field" data-field="type">
+            <select class="text_pole se-manager-var-field"
+                    data-field="type">
                 <option value="string" ${d.type === 'string' ? 'selected' : ''}>String</option>
                 <option value="number" ${d.type === 'number' ? 'selected' : ''}>Number</option>
                 <option value="boolean" ${d.type === 'boolean' ? 'selected' : ''}>Boolean</option>
                 <option value="enum" ${d.type === 'enum' ? 'selected' : ''}>Enum</option>
             </select>
 
-            <input class="text_pole se-manager-var-field" data-field="default"
-                placeholder="Default value" value="${escapeHtml(d.default)}" />
+            <input class="text_pole se-manager-var-field"
+                data-field="defaultValue"
+                placeholder="Default value"
+                value="${escapeHtml(d.defaultValue)}" />
 
             <!-- Behavior toggles -->
             <div class="se-manager-variable-behaviors">
+
+                <!-- Prompted toggle -->
                 <div class="se-manager-toggle-row">
                     <div class="se-row">
                         <label class="checkbox_label">
-                            <input id="se-manager-prompted-toggle" type="checkbox" data-field="behaviors.prompted" ${d.behaviors?.prompted ? 'checked' : ''} />
+                            <input id="se-manager-prompted-toggle"
+                                type="checkbox"
+                                class="se-manager-var-field"
+                                data-field="behaviors.prompted"
+                                ${d.behaviors?.prompted ? 'checked' : ''} />
                             <span>Prompted Behavior</span>
                         </label>
                     </div>
                 </div>
-                <!-- Prompted section (hidden unless checkbox is checked) -->
+
+                <!-- Prompted section -->
                 <div class="se-manager-prompted-section"
                     style="display: ${d.behaviors.prompted ? 'block' : 'none'};">
                     <textarea class="text_pole se-manager-var-field"
-                        data-field="prompted.instructions"
-                        placeholder="Prompted variable instructions">${escapeHtml(d.prompted.instructions)}</textarea>
+                            data-field="prompted.instructions"
+                            placeholder="Prompted variable instructions">${escapeHtml(d.prompted.instructions)}</textarea>
                 </div>
+
+                <!-- Increment toggle -->
                 ${canIncrement ? `
                     <div class="se-manager-toggle-row">
                         <div class="se-row">
                             <label class="checkbox_label">
-                                <input id="se-manager-increment-toggle" type="checkbox" data-field="behaviors.increment" ${d.behaviors?.increment ? 'checked' : ''} />
+                                <input id="se-manager-increment-toggle"
+                                    type="checkbox"
+                                    class="se-manager-var-field"
+                                    data-field="behaviors.increment"
+                                    ${d.behaviors?.increment ? 'checked' : ''} />
                                 <span>Incremented Behavior</span>
                             </label>
                         </div>
                     </div>
                 ` : ''}
-                <!-- Increment section (hidden unless checkbox is checked) -->
+
+                <!-- Increment section -->
                 <div class="se-manager-increment-settings"
                     style="display: ${d.behaviors.increment ? 'block' : 'none'};">
-                    <!-- Heartbeat triggers (hidden if prompted is active) -->
+
+                    <!-- Increment trigger (only when not prompted) -->
                     ${!d.behaviors.prompted ? `
                         <label>Increment trigger:</label>
-                        <select class="text_pole se-manager-var-field" data-field="increment.triggers">
+                        <select class="text_pole se-manager-var-field"
+                                data-field="increment.triggers">
                             <option value="user" ${d.increment.triggers.includes('user') ? 'selected' : ''}>On user chats</option>
                             <option value="ai" ${d.increment.triggers.includes('ai') ? 'selected' : ''}>On AI chats</option>
                             <option value="both" ${d.increment.triggers.includes('both') ? 'selected' : ''}>Both AI and User Chats</option>
@@ -512,6 +535,7 @@ function showInlineVariableEditor(varDef, $row) {
                     ${d.type === 'enum' ? `
                         <label>Cycle through enum values</label>
                     ` : ''}
+
                 </div>
             </div>
 
@@ -526,6 +550,7 @@ function showInlineVariableEditor(varDef, $row) {
                 <button class="menu_button se-manager-cancel-variable-inline">Cancel</button>
             </div>
         </div>
+
     `).data('editing-id', d.id).data('editing-existing', !d._isNew).show();
 
 
@@ -1210,7 +1235,7 @@ export function wireManagerModalEvents() {
         // Build new variable definition using the updated schema
         preset.variables[values.id] = {
             id: values.id,
-            name: values.name.trim(),
+            name: values.name.trim(),collectInlineVariableValues
             label: String(values.label || '').trim(),
             description: values.description || '',
             scope: values.scope || 'chat',
