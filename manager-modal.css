@@ -427,7 +427,7 @@
     margin-bottom: 12px;
 }
 
-.se-manager-variable-editor-fields .se-manager-var-field {
+.se-manager-variable-editor-fields {
     width: 100%;
     padding: 8px 10px;
     background-color: var(--bg-secondary, #222);
@@ -439,7 +439,7 @@
     transition: border-color 0.2s;
 }
 
-.se-manager-variable-editor-fields .se-manager-var-field:focus {
+.se-manager-variable-editor-fields {
     outline: none;
     border-color: var(--accent-color, #4a9eff);
 }
