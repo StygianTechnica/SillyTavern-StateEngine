@@ -13,15 +13,11 @@
 // generation, and the results are written straight into SillyTavern's
 // native chat/global variable store.
 
+
 import { 
     buildManagerModal, 
-    showManagerModal, 
     hideManagerModal,
-    renderManagerPresetsTab,
-    renderManagerVariablesTab,
-    renderManagerWorldInfoTab,
     setManagerApi,
-    wireManagerModalEvents
 } from './manager-modal.js';
 
 const CURRENT_SCHEMA_VERSION = 1;
