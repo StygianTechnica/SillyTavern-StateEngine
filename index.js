@@ -899,14 +899,7 @@ export function getSettings() {
     
     if (!settings.defaultPresetForNewChats) settings.defaultPresetForNewChats = '';
     if (!settings.wiConditions || typeof settings.wiConditions !== 'object') settings.wiConditions = {};
-    
-    // Normalize all presets and their variables
-    for (const preset of Object.values(settings.presets)) {
-        if (!preset.variables || typeof preset.variables !== 'object') preset.variables = {};
-        for (const def of Object.values(preset.variables)) {
-            normalizeDefinition(def);
-        }
-    }
+
     
     return settings;
 }
@@ -914,39 +907,13 @@ export function getSettings() {
 
 
 function getStarterPresetBlueprints() {
-    const makeVar = (overrides) => normalizeDefinition({
-        id: genId(),
-        name: '',
-        label: '',
-        description: '',
-        scope: 'chat',
-        type: 'string',
-        defaultValue: '',
-        enumValues: [],
-        min: null,
-        max: null,
-        resetOnNewChat: false,
-        showInTracker: true,
-
-        behaviors: {
-            increment: false,
-            prompted: false,
-        },
-
-        increment: {
-            delta: 1,
-            triggers: [''],   // user, ai, both
-            tick_mode: null,    // per_message or null
-            tick_on: null,
-            tick_every: 1,
-        },
-
-        prompted: {
-            instructions: '',
-        },
-
-        ...overrides,
-    });
+    const makeVar = (overrides) => {
+        const base = managerApi.blankDefinition();
+        return {
+            ...base,
+            ...overrides,
+        };
+    };
 
     return [
         {
