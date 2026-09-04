@@ -861,7 +861,7 @@ export function getSettings() {
     if (settings.trackerShowHidden === undefined) settings.trackerShowHidden = false;
     
     // Migrate old flat variables to presets
-    migrateToPresets(settings);
+    //migrateToPresets(settings);
     
     if (!settings.presets || typeof settings.presets !== 'object') settings.presets = {};
     if (!settings.chatPresetBindings || typeof settings.chatPresetBindings !== 'object') settings.chatPresetBindings = {};
@@ -891,32 +891,32 @@ export function getSettings() {
     return settings;
 }
 
-function migrateToPresets(settings) {
-    // If using old flat variables format and no presets yet, create default preset
-    if (settings.variables && Object.keys(settings.variables).length > 0 && Object.keys(settings.presets || {}).length === 0) {
-        const defaultPresetId = genId();
-        const defaultPreset = {
-            id: defaultPresetId,
-            name: 'Default',
-            variables: settings.variables,
-            triggers: ['ai'],  // Default trigger for prompted variables
-            showInTracker: false,  // Default tracker visibility
-        };
-        settings.presets = { [defaultPresetId]: defaultPreset };
-        settings.defaultPresetForNewChats = defaultPresetId;
-        settings.chatPresetBindings = {}; // Will be populated on chat switch
-        delete settings.variables; // Remove old flat structure
-        console.log(LOG_PREFIX, 'migrated old variables to default preset');
-    }
+// function migrateToPresets(settings) {
+//     // If using old flat variables format and no presets yet, create default preset
+//     if (settings.variables && Object.keys(settings.variables).length > 0 && Object.keys(settings.presets || {}).length === 0) {
+//         const defaultPresetId = genId();
+//         const defaultPreset = {
+//             id: defaultPresetId,
+//             name: 'Default',
+//             variables: settings.variables,
+//             triggers: ['ai'],  // Default trigger for prompted variables
+//             showInTracker: false,  // Default tracker visibility
+//         };
+//         settings.presets = { [defaultPresetId]: defaultPreset };
+//         settings.defaultPresetForNewChats = defaultPresetId;
+//         settings.chatPresetBindings = {}; // Will be populated on chat switch
+//         delete settings.variables; // Remove old flat structure
+//         console.log(LOG_PREFIX, 'migrated old variables to default preset');
+//     }
     
-    // Normalize existing presets
-    for (const preset of Object.values(settings.presets || {})) {
-        if (!Array.isArray(preset.triggers)) preset.triggers = ['ai'];
-        if (preset.showInTracker === undefined) preset.showInTracker = false;
-    }
+//     // Normalize existing presets
+//     for (const preset of Object.values(settings.presets || {})) {
+//         if (!Array.isArray(preset.triggers)) preset.triggers = ['ai'];
+//         if (preset.showInTracker === undefined) preset.showInTracker = false;
+//     }
 
-    seedExamplePresets(settings, false);
-}
+//     seedExamplePresets(settings, false);
+// }
 
 function getStarterPresetBlueprints() {
     const makeVar = (overrides) => normalizeDefinition({
@@ -924,7 +924,6 @@ function getStarterPresetBlueprints() {
         name: '',
         label: '',
         description: '',
-        category: 'manual',
         scope: 'chat',
         type: 'string',
         defaultValue: '',
@@ -933,9 +932,24 @@ function getStarterPresetBlueprints() {
         max: null,
         resetOnNewChat: false,
         showInTracker: true,
-        counter: { trigger: 'ai', direction: 'increment', step: 1 },
-        cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
-        prompted: { triggers: ['ai'], instructions: '' },
+
+        behaviors: {
+            increment: false,
+            prompted: false,
+        },
+
+        increment: {
+            delta: 1,
+            triggers: ['ai'],   // user, ai, both
+            tick_mode: null,    // per_message or null
+            tick_on: 'both',
+            tick_every: 1,
+        },
+
+        prompted: {
+            instructions: '',
+        },
+
         ...overrides,
     });
 
@@ -945,56 +959,258 @@ function getStarterPresetBlueprints() {
             description: 'Track narrative progression: chapters, story arcs, quests, and major plot points.',
             triggers: ['ai'],
             vars: [
-                makeVar({ name: 'chapter', label: 'Chapter', category: 'counter', type: 'number', defaultValue: 1, min: 1, counter: { trigger: 'prompted', direction: 'increment', step: 1 }, description: 'Main narrative chapter progression.' }),
-                makeVar({ name: 'arc_phase', label: 'Arc Phase', category: 'cycling', type: 'enum', enumValues: ['setup', 'rising_action', 'climax', 'aftermath'], defaultValue: 'setup', cycling: { trigger: 'prompted', values: ['setup', 'rising_action', 'climax', 'aftermath'], promptedInstructions: 'Advance when the current arc phase has clearly resolved in roleplay context.' }, description: 'Current high-level story arc phase.' }),
-                makeVar({ name: 'quest_active', label: 'Quest Active', category: 'manual', type: 'boolean', defaultValue: false, description: 'Whether a main quest is currently active.' }),
-                makeVar({ name: 'quest_name', label: 'Quest Name', category: 'manual', type: 'string', defaultValue: '', description: 'Current quest title.' }),
+                makeVar({
+                    name: 'chapter',
+                    label: 'Chapter',
+                    type: 'number',
+                    defaultValue: 1,
+                    min: 1,
+                    behaviors: { increment: false, prompted: true },
+                    prompted: { instructions: 'Increment when the story clearly moves to the next chapter.' },
+                    description: 'Main narrative chapter progression.',
+                }),
+
+                makeVar({
+                    name: 'arc_phase',
+                    label: 'Arc Phase',
+                    type: 'enum',
+                    enumValues: ['setup', 'rising_action', 'climax', 'aftermath'],
+                    defaultValue: 'setup',
+                    behaviors: { increment: false, prompted: true },
+                    prompted: { instructions: 'Advance when the current arc phase has clearly resolved.' },
+                    description: 'Current high-level story arc phase.',
+                }),
+
+                makeVar({
+                    name: 'quest_active',
+                    label: 'Quest Active',
+                    type: 'boolean',
+                    defaultValue: false,
+                    description: 'Whether a main quest is currently active.',
+                }),
+
+                makeVar({
+                    name: 'quest_name',
+                    label: 'Quest Name',
+                    type: 'string',
+                    defaultValue: '',
+                    description: 'Current quest title.',
+                }),
             ],
         },
+
         {
             name: 'Location and Time',
             description: 'Manage scene settings: current location, time of day, weather, and environment state.',
             triggers: ['user', 'ai'],
             vars: [
-                makeVar({ name: 'current_location', label: 'Current Location', category: 'manual', type: 'enum', enumValues: ['tavern', 'market', 'arena', 'road', 'wilderness'], defaultValue: 'tavern', description: 'Current scene location.' }),
-                makeVar({ name: 'time_of_day', label: 'Time of Day', category: 'cycling', type: 'enum', enumValues: ['dawn', 'morning', 'noon', 'evening', 'night'], defaultValue: 'morning', cycling: { trigger: 'prompted', values: ['dawn', 'morning', 'noon', 'evening', 'night'], promptedInstructions: 'Advance when scene pacing or narration implies time has progressed.' }, description: 'Narrative time period.' }),
-                makeVar({ name: 'weather', label: 'Weather', category: 'prompted', type: 'string', defaultValue: 'clear', prompted: { triggers: ['ai'], instructions: 'Infer weather from current narrative context. Keep concise (1-3 words).' }, description: 'Current weather condition.' }),
-                makeVar({ name: 'is_indoor', label: 'Indoor Scene', category: 'manual', type: 'boolean', defaultValue: true, description: 'Whether current scene is indoors.' }),
+                makeVar({
+                    name: 'current_location',
+                    label: 'Current Location',
+                    type: 'enum',
+                    enumValues: ['tavern', 'market', 'arena', 'road', 'wilderness'],
+                    defaultValue: 'tavern',
+                    description: 'Current scene location.',
+                }),
+
+                makeVar({
+                    name: 'time_of_day',
+                    label: 'Time of Day',
+                    type: 'enum',
+                    enumValues: ['dawn', 'morning', 'noon', 'evening', 'night'],
+                    defaultValue: 'morning',
+                    behaviors: { increment: false, prompted: true },
+                    prompted: { instructions: 'Advance when narration implies time has progressed.' },
+                    description: 'Narrative time period.',
+                }),
+
+                makeVar({
+                    name: 'weather',
+                    label: 'Weather',
+                    type: 'string',
+                    defaultValue: 'clear',
+                    behaviors: { prompted: true, increment: false },
+                    prompted: { instructions: 'Infer weather from narrative context. Keep concise (1–3 words).' },
+                    description: 'Current weather condition.',
+                }),
+
+                makeVar({
+                    name: 'is_indoor',
+                    label: 'Indoor Scene',
+                    type: 'boolean',
+                    defaultValue: true,
+                    description: 'Whether current scene is indoors.',
+                }),
             ],
         },
+
         {
             name: 'Relationships',
             description: 'Track character dynamics: trust levels, affection, relationship status, and betrayals.',
             triggers: ['ai'],
             vars: [
-                makeVar({ name: 'npc_trust', label: 'NPC Trust', category: 'prompted', type: 'number', defaultValue: 25, min: 0, max: 100, prompted: { triggers: ['ai'], instructions: 'Estimate trust from recent interactions on a 0-100 scale.' }, description: 'General trust level with a focal NPC.' }),
-                makeVar({ name: 'npc_affection', label: 'NPC Affection', category: 'prompted', type: 'number', defaultValue: 20, min: 0, max: 100, prompted: { triggers: ['ai'], instructions: 'Estimate affection from recent interactions on a 0-100 scale.' }, description: 'General affection level with a focal NPC.' }),
-                makeVar({ name: 'relationship_status', label: 'Relationship Status', category: 'cycling', type: 'enum', enumValues: ['strangers', 'acquaintances', 'friends', 'allies', 'intimate'], defaultValue: 'strangers', cycling: { trigger: 'prompted', values: ['strangers', 'acquaintances', 'friends', 'allies', 'intimate'], promptedInstructions: 'Advance only when interactions clearly justify relationship progression.' }, description: 'Current relationship state.' }),
-                makeVar({ name: 'betrayal_flag', label: 'Betrayal Flag', category: 'manual', type: 'boolean', defaultValue: false, description: 'Set true if betrayal has occurred.' }),
+                makeVar({
+                    name: 'npc_trust',
+                    label: 'NPC Trust',
+                    type: 'number',
+                    defaultValue: 25,
+                    min: 0,
+                    max: 100,
+                    behaviors: { prompted: true, increment: false },
+                    prompted: { instructions: 'Estimate trust from recent interactions on a 0–100 scale.' },
+                    description: 'General trust level with a focal NPC.',
+                }),
+
+                makeVar({
+                    name: 'npc_affection',
+                    label: 'NPC Affection',
+                    type: 'number',
+                    defaultValue: 20,
+                    min: 0,
+                    max: 100,
+                    behaviors: { prompted: true, increment: false },
+                    prompted: { instructions: 'Estimate affection from recent interactions on a 0–100 scale.' },
+                    description: 'General affection level with a focal NPC.',
+                }),
+
+                makeVar({
+                    name: 'relationship_status',
+                    label: 'Relationship Status',
+                    type: 'enum',
+                    enumValues: ['strangers', 'acquaintances', 'friends', 'allies', 'intimate'],
+                    defaultValue: 'strangers',
+                    behaviors: { prompted: true, increment: false },
+                    prompted: { instructions: 'Advance only when interactions justify relationship progression.' },
+                    description: 'Current relationship state.',
+                }),
+
+                makeVar({
+                    name: 'betrayal_flag',
+                    label: 'Betrayal Flag',
+                    type: 'boolean',
+                    defaultValue: false,
+                    description: 'Set true if betrayal has occurred.',
+                }),
             ],
         },
+
         {
             name: 'Combat and Encounter',
             description: 'Manage combat state: active/inactive status, round count, threat level, and encounter tags.',
             triggers: ['user', 'ai'],
             vars: [
-                makeVar({ name: 'combat_active', label: 'Combat Active', category: 'manual', type: 'boolean', defaultValue: false, description: 'Whether combat is currently active.' }),
-                makeVar({ name: 'rounds_elapsed', label: 'Rounds Elapsed', category: 'counter', type: 'number', defaultValue: 0, min: 0, counter: { trigger: 'prompted', direction: 'increment', step: 1 }, description: 'Combat rounds elapsed.' }),
-                makeVar({ name: 'threat_level', label: 'Threat Level', category: 'manual', type: 'enum', enumValues: ['low', 'medium', 'high', 'critical'], defaultValue: 'low', description: 'Current encounter danger level.' }),
-                makeVar({ name: 'encounter_tags', label: 'Encounter Tags', category: 'manual', type: 'array', defaultValue: '[]', description: 'Array of current encounter tags, e.g. [\"ambush\",\"boss\"].' }),
+                makeVar({
+                    name: 'combat_active',
+                    label: 'Combat Active',
+                    type: 'boolean',
+                    defaultValue: false,
+                    description: 'Whether combat is currently active.',
+                }),
+
+                makeVar({
+                    name: 'rounds_elapsed',
+                    label: 'Rounds Elapsed',
+                    type: 'number',
+                    defaultValue: 0,
+                    behaviors: { increment: true, prompted: false },
+                    increment: {
+                        delta: 1,
+                        triggers: ['both'],
+                        tick_mode: 'per_message',
+                        tick_on: 'both',
+                        tick_every: 1,
+                    },
+                    description: 'Combat rounds elapsed.',
+                }),
+
+                makeVar({
+                    name: 'threat_level',
+                    label: 'Threat Level',
+                    type: 'enum',
+                    enumValues: ['low', 'medium', 'high', 'critical'],
+                    defaultValue: 'low',
+                    description: 'Current encounter danger level.',
+                }),
+
+                makeVar({
+                    name: 'encounter_tags',
+                    label: 'Encounter Tags',
+                    type: 'array',
+                    defaultValue: '[]',
+                    description: 'Array of current encounter tags.',
+                }),
             ],
         },
+
         {
             name: 'Mixed Showcase',
-            description: 'Example preset demonstrating all variable types: prompted text/numbers, cycling enums, counters, arrays, and booleans.',
+            description: 'Example preset demonstrating all variable types.',
             triggers: ['ai'],
             vars: [
-                makeVar({ name: 'mood', label: 'Mood', category: 'prompted', type: 'string', defaultValue: 'neutral', prompted: { triggers: ['ai'], instructions: 'Infer room mood in one word: calm, tense, hopeful, ominous, etc.' }, description: 'Prompted text example.' }),
-                makeVar({ name: 'danger_score', label: 'Danger Score', category: 'prompted', type: 'number', defaultValue: 10, min: 0, max: 100, prompted: { triggers: ['ai'], instructions: 'Estimate danger from recent context from 0-100.' }, description: 'Prompted number with min/max.' }),
-                makeVar({ name: 'story_flags', label: 'Story Flags', category: 'manual', type: 'array', defaultValue: '[]', description: 'Manual array, e.g. [\"blood_moon\",\"debt_paid\"].' }),
-                makeVar({ name: 'event_stage', label: 'Event Stage', category: 'cycling', type: 'enum', enumValues: ['seed', 'signal', 'portent', 'manifest'], defaultValue: 'seed', cycling: { trigger: 'prompted', values: ['seed', 'signal', 'portent', 'manifest'], promptedInstructions: 'Advance when narrative omens intensify enough to justify next stage.' }, description: 'Cycling enum showcase.' }),
-                makeVar({ name: 'heartbeat', label: 'Heartbeat Counter', category: 'counter', type: 'number', defaultValue: 0, counter: { trigger: 'both', direction: 'increment', step: 1 }, description: 'Simple per-message counter.' }),
-                makeVar({ name: 'omens_unlocked', label: 'Omens Unlocked', category: 'manual', type: 'boolean', defaultValue: false, description: 'Manual boolean toggle showcase.' }),
+                makeVar({
+                    name: 'mood',
+                    label: 'Mood',
+                    type: 'string',
+                    defaultValue: 'neutral',
+                    behaviors: { prompted: true, increment: false },
+                    prompted: { instructions: 'Infer room mood in one word: calm, tense, hopeful, ominous, etc.' },
+                    description: 'Prompted text example.',
+                }),
+
+                makeVar({
+                    name: 'danger_score',
+                    label: 'Danger Score',
+                    type: 'number',
+                    defaultValue: 10,
+                    min: 0,
+                    max: 100,
+                    behaviors: { prompted: true, increment: false },
+                    prompted: { instructions: 'Estimate danger from recent context from 0–100.' },
+                    description: 'Prompted number with min/max.',
+                }),
+
+                makeVar({
+                    name: 'story_flags',
+                    label: 'Story Flags',
+                    type: 'array',
+                    defaultValue: '[]',
+                    description: 'Manual array.',
+                }),
+
+                makeVar({
+                    name: 'event_stage',
+                    label: 'Event Stage',
+                    type: 'enum',
+                    enumValues: ['seed', 'signal', 'portent', 'manifest'],
+                    defaultValue: 'seed',
+                    behaviors: { prompted: true, increment: false },
+                    prompted: { instructions: 'Advance when narrative omens intensify.' },
+                    description: 'Enum showcase.',
+                }),
+
+                makeVar({
+                    name: 'heartbeat',
+                    label: 'Heartbeat Counter',
+                    type: 'number',
+                    defaultValue: 0,
+                    behaviors: { increment: true, prompted: false },
+                    increment: {
+                        delta: 1,
+                        triggers: ['both'],
+                        tick_mode: 'per_message',
+                        tick_on: 'both',
+                        tick_every: 1,
+                    },
+                    description: 'Simple per-message counter.',
+                }),
+
+                makeVar({
+                    name: 'omens_unlocked',
+                    label: 'Omens Unlocked',
+                    type: 'boolean',
+                    defaultValue: false,
+                    description: 'Manual boolean toggle showcase.',
+                }),
             ],
         },
     ];
@@ -1324,23 +1540,52 @@ function genId() {
 function blankDefinition() {
     return {
         id: genId(),
+
+        // Identity
         name: '',
         label: '',
-        category: 'manual', // manual | counter | cycling | prompted
+        description: '',
+
+        // Scope
         scope: 'chat', // chat | global
+
+        // Type system
         type: 'number', // number | string | boolean | enum | array
         enumValues: [],
-        default: '0',
-        min: '',
-        max: '',
-        description: '',
+
+        // Default value
+        defaultValue: 0,
+
+        // Numeric constraints
+        min: null,
+        max: null,
+
+        // Behavior flags
         resetOnNewChat: false,
         showInTracker: true,
-        counter: { trigger: 'ai', direction: 'increment', step: 1, promptedInstructions: '' },
-        cycling: { trigger: 'ai', values: [], promptedInstructions: '' },
-        prompted: { triggers: ['ai'], instructions: '' },
+
+        // New behavior model
+        behaviors: {
+            increment: false,   // deterministic increment
+            prompted: false,    // LLM-driven increment
+        },
+
+        // Deterministic increment configuration
+        increment: {
+            delta: 1,           // arithmetic increment for numbers
+            triggers: ['ai'],   // user | ai | both
+            tick_mode: null,    // null or "per_message"
+            tick_on: 'both',    // user | ai | both
+            tick_every: 1,      // threshold for deterministic increments
+        },
+
+        // Prompted increment configuration
+        prompted: {
+            instructions: '',   // LLM instructions
+        },
     };
 }
+
 
 function getDefaultValue(def) {
     switch (def.type) {
@@ -1556,7 +1801,7 @@ export function getDebugInfo() {
         const chatId = getCurrentChatId();
         const settings = getSettings();
         const activePresetIds = getPresetsForChat(chatId);
-        
+
         // Collect active preset details
         const activePresetsInfo = activePresetIds.map(id => {
             const preset = settings.presets[id];
@@ -1568,7 +1813,7 @@ export function getDebugInfo() {
                 triggers: preset?.triggers || []
             };
         });
-        
+
         // Collect all variables and their current values
         const variables = getAllVariablesFromPresets(activePresetIds);
         const variablesWithValues = Object.entries(variables).map(([varId, varDef]) => {
@@ -1577,15 +1822,26 @@ export function getDebugInfo() {
                 id: varId,
                 name: varDef.name,
                 label: varDef.label,
-                category: varDef.category,
                 type: varDef.type,
                 scope: varDef.scope,
                 value: value,
-                default: varDef.default,
-                showInTracker: varDef.showInTracker !== false
+                defaultValue: varDef.defaultValue,
+                enumValues: varDef.enumValues,
+                min: varDef.min,
+                max: varDef.max,
+                showInTracker: varDef.showInTracker !== false,
+
+                // New behavior model
+                behaviors: varDef.behaviors || {},
+
+                // Deterministic increment config
+                increment: varDef.increment || {},
+
+                // Prompted increment config
+                prompted: varDef.prompted || {},
             };
         });
-        
+
         return {
             chatId,
             currentTimestamp: new Date().toISOString(),
@@ -1594,13 +1850,14 @@ export function getDebugInfo() {
             totalPresets: Object.keys(settings.presets || {}).length,
             debugEnabled: window.seDebugMode,
             settingsKeys: Object.keys(settings),
-            fullSettings: settings  // Full raw settings for inspection
+            fullSettings: settings
         };
     } catch (err) {
         console.error(`${LOG_PREFIX} Error collecting debug info:`, err);
         return { error: err.message };
     }
 }
+
 
 // ---------------------------------------------------------------------------
 // Initialization / reset
@@ -2070,16 +2327,16 @@ function registerEvents() {
 
     eventSource.on(eventTypes.USER_MESSAGE_RENDERED, () => {
         //runCounters('user');
+        runDeterministicIncrements('user');
         runPromptedUpdates('user');
         runPromptedIncrements('user');
-        runDeterministicIncrements('user');
     });
 
     eventSource.on(eventTypes.CHARACTER_MESSAGE_RENDERED, () => {
         //runCounters('ai');
+        runDeterministicIncrements('ai');
         runPromptedUpdates('ai');
         runPromptedIncrements('ai');
-        runDeterministicIncrements('ai');
     });
 
     eventSource.on(eventTypes.GENERATION_AFTER_COMMANDS, () => {
