@@ -1359,13 +1359,15 @@ export function wireManagerModalEvents() {
         $overlay.find('.se-manager-prompted-section').toggle(isOn);
         $overlay.find('.se-manager-increment-heartbeat').toggle(!isOn);
 
-        // Delay re-render so checkbox state commits
         setTimeout(() => {
             const values = collectInlineVariableValues($row);
 
             // Ensure behaviors exists
             values.behaviors = values.behaviors || {};
+
+            // Inject BOTH behaviors
             values.behaviors.prompted = isOn;
+            values.behaviors.increment = $('#se-manager-increment-toggle').is(':checked');
 
             showInlineVariableEditor(values, $row);
         }, 0);
@@ -1382,7 +1384,10 @@ export function wireManagerModalEvents() {
             const values = collectInlineVariableValues($row);
 
             values.behaviors = values.behaviors || {};
+
+            // Inject BOTH behaviors
             values.behaviors.increment = isOn;
+            values.behaviors.prompted = $('#se-manager-prompted-toggle').is(':checked');
 
             showInlineVariableEditor(values, $row);
         }, 0);
