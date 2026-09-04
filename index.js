@@ -2220,7 +2220,7 @@ function renderTrackerPanel() {
         const $row = $('<div></div>').addClass('se-tracker-row');
         if (def.showInTracker === false) $row.addClass('se-tracker-row-hidden');
         $row.append($('<span></span>').addClass('se-tracker-label').text(def.label || def.name));
-        $row.append($('<span></span>').addClass(`se-badge se-badge-${def.category} se-tracker-badge`).text(categoryLabel(def.category)));
+        //$row.append($('<span></span>').addClass(`se-badge se-badge-${def.category} se-tracker-badge`).text(categoryLabel(def.category)));//111111111111
         $row.append($('<span></span>').addClass('se-tracker-value').text(formatValueForDisplay(value)));
         $body.append($row);
     }
@@ -2351,15 +2351,15 @@ function setStatus(text, isError = false) {
 //     return 'Text';
 // }
 
-// function formatValueForDisplay(value) {
-//     if (typeof value === 'boolean') return value ? 'true' : 'false';
-//     if (Array.isArray(value)) {
-//         if (value.length === 0) return '[]';
-//         return `[${value.map(v => typeof v === 'string' ? `"${v}"` : String(v)).join(', ')}]`;
-//     }
-//     if (value === '' || value === undefined || value === null) return '—';
-//     return String(value);
-// }
+function formatValueForDisplay(value) {
+    if (typeof value === 'boolean') return value ? 'true' : 'false';
+    if (Array.isArray(value)) {
+        if (value.length === 0) return '[]';
+        return `[${value.map(v => typeof v === 'string' ? `"${v}"` : String(v)).join(', ')}]`;
+    }
+    if (value === '' || value === undefined || value === null) return '—';
+    return String(value);
+}
 
 // function renderVarTable() {
 //     const context = SillyTavern.getContext();
@@ -2692,15 +2692,15 @@ function loadGeneralSettingsIntoForm() {
     populateConnectionProfileDropdown();
 }
 
-function refreshPanelIfOpen() {
-    if ($('#state_engine_settings').length) {
-        renderVarTable();
-    }
-    if ($('#se_tracker_panel').length) {
-        renderTrackerPanel();
-    }
-    updateManagerButtonState();
-}
+// function refreshPanelIfOpen() {
+//     if ($('#state_engine_settings').length) {
+//         renderVarTable();
+//     }
+//     if ($('#se_tracker_panel').length) {
+//         renderTrackerPanel();
+//     }
+//     updateManagerButtonState();
+// }
 
 function bindPanelEvents() {
     $('#se_enabled').on('change', function () {
@@ -2739,28 +2739,28 @@ function bindPanelEvents() {
     $('#se_open_manager').on('click', () => openManagerIfReady());
     updateManagerButtonState();
 
-    $('#se_new_preset').on('click', () => {
-       const name = prompt('Preset name:');
-       if (name && name.trim()) {
-           const presetId = createPreset(name.trim());
-           currentPresetId = presetId;
-           renderPresetList();
-           renderVarTable();
-           setStatus(`Created preset "${name}".`);
-       }
-    });
+    // $('#se_new_preset').on('click', () => {
+    //    const name = prompt('Preset name:');
+    //    if (name && name.trim()) {
+    //        const presetId = createPreset(name.trim());
+    //        currentPresetId = presetId;
+    //        renderPresetList();
+    //        renderVarTable();
+    //        setStatus(`Created preset "${name}".`);
+    //    }
+    // });
 
-    $('#se_restore_defaults').on('click', () => {
-        const settings = getSettings();
-        const before = Object.keys(settings.presets).length;
-        seedExamplePresets(settings, true);
-        persistSettings();
-        renderPresetList();
-        renderTrackerPresetList();
-        renderVarTable();
-        const after = Object.keys(settings.presets).length;
-        setStatus(after > before ? 'Starter presets restored.' : 'Starter presets are already present.');
-    });
+    // $('#se_restore_defaults').on('click', () => {
+    //     const settings = getSettings();
+    //     const before = Object.keys(settings.presets).length;
+    //     seedExamplePresets(settings, true);
+    //     persistSettings();
+    //     renderPresetList();
+    //     renderTrackerPresetList();
+    //     renderVarTable();
+    //     const after = Object.keys(settings.presets).length;
+    //     setStatus(after > before ? 'Starter presets restored.' : 'Starter presets are already present.');
+    // });
 
     $('#se_add_var').on('click', () => openEditor(null));
     $('#se_cancel_edit').on('click', closeEditor);
@@ -2974,7 +2974,7 @@ async function initPanel() {
         if (activePresetIds.length > 0) {
             currentPresetId = activePresetIds[0];
         }
-        renderVarTable();
+        // renderVarTable();
     } else {
         const $tabContainer = $('#se_preset_tabs');
         const $tbody = $('#se_var_tbody');
