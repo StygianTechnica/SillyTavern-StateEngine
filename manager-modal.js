@@ -631,6 +631,7 @@ function collectInlineVariableValues($row) {
         const $field = $(this);
         const field = $field.attr('data-field');
         const value = $field.is(':checkbox') ? $field.is(':checked') : $field.val();
+        console.log("FIELD:", field, "VALUE:", value);
         assignNested(values, field, value);
     });
 
