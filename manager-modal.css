@@ -56,6 +56,7 @@
     padding: 16px 20px;
     border-bottom: 1px solid var(--border-color, #333);
     background-color: var(--bg-secondary, #222);
+    flex-shrink: 0;
 }
 
 .se-manager-header h2 {
@@ -89,6 +90,7 @@
     border-bottom: 1px solid var(--border-color, #333);
     background-color: var(--bg-color, #1a1a1a);
     overflow-x: auto;
+    flex-shrink: 0;
 }
 
 .se-manager-tab-btn {
