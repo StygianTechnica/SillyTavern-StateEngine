@@ -206,6 +206,7 @@ export function wireEvents(managerApi, managerState) {
             managerState.currentPresetId = uiRender.renderVariablesTab(managerApi, managerState.currentPresetId);
             managerApi.setStatus(`Variable deleted.`);
         }
+        managerApi.renderTrackerPanel(); 
     });
 
     $overlay.on('click', '.se-manager-cancel-variable-inline', function () {
@@ -261,6 +262,7 @@ export function wireEvents(managerApi, managerState) {
         hideInlineVariableEditor($row);
         managerState.currentPresetId = uiRender.renderVariablesTab(managerApi, managerState.currentPresetId);
         managerApi.setStatus(isNew ? 'Variable created.' : 'Variable updated.');
+        managerApi.renderTrackerPanel(); 
     });
 
 
