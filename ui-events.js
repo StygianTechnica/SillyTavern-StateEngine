@@ -189,6 +189,9 @@ export function wireEvents(managerApi, managerState) {
 
         managerState.currentPresetId = uiRender.renderVariablesTab(managerApi, managerState.currentPresetId);
         managerApi.setStatus(`Visibility toggled for "${varDef.name}".`);
+
+        // FIX: refresh tracker immediately
+        managerApi.renderTrackerPanel();
     });
 
     $overlay.on('click', '.se-manager-delete-variable', function () {
@@ -385,6 +388,35 @@ export function wireEvents(managerApi, managerState) {
 
         showInlineVariableEditor(values, $row);
     });    
+
+    $overlay.on('click', '#se-manager-new-variable', function () {
+        const presetId = managerState.currentPresetId;
+        if (!presetId) {
+            alert('Select a preset first.');
+            return;
+        }
+
+        // Create a blank variable using the modern schema
+        const newVar = managerApi.blankDefinition();
+        newVar.id = generateUUID();
+
+        // Insert into preset BEFORE opening editor
+        const settings = managerApi.getSettings();
+        const preset = settings.presets[presetId];
+        preset.variables[newVar.id] = newVar;
+
+        managerApi.persistSettings(settings);
+
+        // Re-render the variables tab
+        managerState.currentPresetId = presetId;
+        uiRender.renderVariablesTab(managerApi, managerState.currentPresetId);
+
+        // Find the new row
+        const $row = $(`#se-manager-variable-list .se-manager-variable-row[data-var-id="${newVar.id}"]`);
+
+        // Open the inline editor for the new variable
+        showInlineVariableEditor({ ...newVar, _isNew: true }, $row);
+    });
 
     // ---------------------------------------------------------------------
     // Helpers used exclusively by the event handlers above
