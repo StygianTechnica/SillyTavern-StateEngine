@@ -68,20 +68,27 @@ export function syncVarStoreToChat(context) {
     const localStore = context.variables.local;
     const globalStore = context.variables.global;
 
+    // Normalize keys for both Map-like and object-like stores
     const localKeys = localStore instanceof Map
         ? Array.from(localStore.keys())
         : Object.keys(localStore);
+
     const globalKeys = globalStore instanceof Map
         ? Array.from(globalStore.keys())
         : Object.keys(globalStore);
 
+    // Remove stale local variables
     for (const key of localKeys) {
-
         if (!definedNames.has(key)) {
-            localStore.delete(key);
+            if (localStore instanceof Map) {
+                localStore.delete(key);
+            } else {
+                delete localStore[key];
+            }
         }
     }
 
+    // Remove stale global variables
     for (const key of globalKeys) {
         if (!definedNames.has(key)) {
             if (globalStore instanceof Map) {
