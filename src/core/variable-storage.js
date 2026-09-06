@@ -40,7 +40,7 @@ export function setVarValue(context, def, rawValue) {
     return validation.value;
 }
 
-function syncVarStoreToChat(context) {
+export function syncVarStoreToChat(context) {
     const chatId = context.chatId;
     const activePresetIds = getPresetsForChat(chatId);
 
