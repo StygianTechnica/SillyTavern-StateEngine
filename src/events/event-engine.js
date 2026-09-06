@@ -1,6 +1,6 @@
 // State Engine — event wiring
 
-import { applyResetOnNewChat, applyDefaultsForMissing, runStartupOnce } from '../core/initialization-engine.js';
+import { applyResetOnNewChat, runStartupOnce } from '../core/initialization-engine.js';
 import { runPromptedStateUpdate } from '../core/prompted-engine.js';
 import { runDeterministicIncrements } from '../core/increment-engine.js';
 import { applyWorldInfoConditionalFiltering } from '../world-info/wi-filtering.js';
@@ -8,6 +8,7 @@ import { observeWIEditorChanges } from '../world-info/wi-condition-ui.js';
 import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
 import { refreshManagerButtonLater } from '../ui/wand-ui.js';
 import { populateConnectionProfileDropdown } from '../ui/connection-profile-ui.js';
+import { useSyncExternalStore } from './src/core/variable-storage.js';
 
 export function registerEvents() {
     const context = SillyTavern.getContext();
@@ -19,14 +20,14 @@ export function registerEvents() {
 
     eventSource.on(eventTypes.CHAT_CREATED, () => {
         applyResetOnNewChat();
-        applyDefaultsForMissing();
+        useSyncExternalStore();
         runPromptedStateUpdate('new_chat');
         refreshPanelIfOpen();
         refreshManagerButtonLater();
     });
 
     eventSource.on(eventTypes.CHAT_CHANGED, () => {
-        applyDefaultsForMissing();
+        useSyncExternalStore();
         runPromptedStateUpdate('chat_change');
         refreshPanelIfOpen();
         refreshManagerButtonLater();

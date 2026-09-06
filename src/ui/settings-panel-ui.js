@@ -1,10 +1,9 @@
 // State Engine — UI settings panel
 
 import { LOG_PREFIX, EXT_TEMPLATE_PATH, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED_VARIABLE_RULES, getSettings, persistSettings } from '../core/settings-core.js';
-import { getPresetsForChat } from '../core/preset-manager.js';
 import { runPromptedStateUpdate } from '../core/prompted-engine.js';
 import { populateConnectionProfileDropdown } from './connection-profile-ui.js';
-import { renderVarTable, currentPresetId } from './manager-modal-ui.js';
+import { renderVarTable } from './manager-modal-ui.js';
 import { setTrackerPanelVisible } from './tracker-panel-ui.js';
 import { openManagerIfReady, updateManagerButtonState, getCurrentChatId } from './wand-ui.js';
 

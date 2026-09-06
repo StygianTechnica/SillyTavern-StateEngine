@@ -1,11 +1,11 @@
 // State Engine — preset and preset-scoped variable operations
 
 import { LOG_PREFIX, getSettings, persistSettings, debugLog } from './settings-core.js';
-import { genId } from './variable-definition.js';
+import { genId, blankDefinition } from './variable-definition.js';
 
 function getStarterPresetBlueprints() {
     const makeVar = (overrides) => {
-        const base = managerApi.blankDefinition();
+        const base = blankDefinition();
         return {
             ...base,
             ...overrides,
@@ -340,13 +340,13 @@ function seedExamplePresets(settings, restoreMissing) {
 export function restoreDefaultPresets() {
     const settings = getSettings();
     const blueprints = getStarterPresetBlueprints();
-    // Ensure all chat bindings are arrays
-    for (const chatId of Object.keys(settings.chatPresetBindings)) {
-        const list = settings.chatPresetBindings[chatId];
-        if (!Array.isArray(list)) {
-            settings.chatPresetBindings[chatId] = [];
-        }
-    }
+    // // Ensure all chat bindings are arrays
+    // for (const chatId of Object.keys(settings.chatPresetBindings)) {
+    //     const list = settings.chatPresetBindings[chatId];
+    //     if (!Array.isArray(list)) {
+    //         settings.chatPresetBindings[chatId] = [];
+    //     }
+    // }
     // Delete existing default presets by name so we can restore them
     for (const seed of blueprints) {
         for (const [presetId, preset] of Object.entries(settings.presets)) {
@@ -560,6 +560,26 @@ export function getAllVariablesFromPresets(presetIds, preserveOrder = true) {
     const allVars = {};
     // If preserveOrder is true, iterate in given order to maintain preset load order
     // Variables are collected in order, so first preset's vars come first
+    for (const presetId of presetIds) {
+        const preset = settings.presets[presetId];
+        if (preset && preset.variables) {
+            // Only assign if not already present (earlier preset takes precedence)
+            for (const [varId, varDef] of Object.entries(preset.variables)) {
+                if (!allVars[varId]) {
+                    allVars[varId] = varDef;
+                }
+            }
+        }
+    }
+    return allVars;
+}
+
+export function getVarValueFromPresetStorage(context, def) {
+    const settings = getSettings();
+    const allVars = {};
+    // If preserveOrder is true, iterate in given order to maintain preset load order
+    // Variables are collected in order, so first preset's vars come first
+    
     for (const presetId of presetIds) {
         const preset = settings.presets[presetId];
         if (preset && preset.variables) {
