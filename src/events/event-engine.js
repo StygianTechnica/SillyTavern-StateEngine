@@ -8,7 +8,7 @@ import { observeWIEditorChanges } from '../world-info/wi-condition-ui.js';
 import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
 import { refreshManagerButtonLater } from '../ui/wand-ui.js';
 import { populateConnectionProfileDropdown } from '../ui/connection-profile-ui.js';
-import { syncVarStoreToChat } from './src/core/variable-storage.js';
+import { syncVarStoreToChat } from '../core/variable-storage.js';
 import { getContext } from '../core/settings-core.js';
 
 export function registerEvents() {
