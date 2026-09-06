@@ -9,7 +9,6 @@ import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
 import { refreshManagerButtonLater } from '../ui/wand-ui.js';
 import { populateConnectionProfileDropdown } from '../ui/connection-profile-ui.js';
 import { syncVarStoreToChat } from '../core/variable-storage.js';
-import { getContext } from '../core/settings-core.js';
 
 export function registerEvents() {
     const context = SillyTavern.getContext();
@@ -20,7 +19,7 @@ export function registerEvents() {
     eventSource.on(eventTypes.APP_READY, runStartupOnce);
 
     eventSource.on(eventTypes.CHAT_CREATED, () => {
-        const context = getContext();
+        const context = SillyTavern.getContext();
         applyResetOnNewChat();
         syncVarStoreToChat(context);
         runPromptedStateUpdate('new_chat');
@@ -29,7 +28,7 @@ export function registerEvents() {
     });
 
     eventSource.on(eventTypes.CHAT_CHANGED, () => {
-        const context = getContext();
+        const context = SillyTavern.getContext();
         syncVarStoreToChat(context);
         runPromptedStateUpdate('chat_change');
         refreshPanelIfOpen();
