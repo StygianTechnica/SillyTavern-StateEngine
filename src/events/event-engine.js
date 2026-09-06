@@ -8,7 +8,8 @@ import { observeWIEditorChanges } from '../world-info/wi-condition-ui.js';
 import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
 import { refreshManagerButtonLater } from '../ui/wand-ui.js';
 import { populateConnectionProfileDropdown } from '../ui/connection-profile-ui.js';
-import { useSyncExternalStore } from './src/core/variable-storage.js';
+import { syncVarStoreToChat } from './src/core/variable-storage.js';
+import { getContext } from '../core/settings-core.js';
 
 export function registerEvents() {
     const context = SillyTavern.getContext();
@@ -19,15 +20,17 @@ export function registerEvents() {
     eventSource.on(eventTypes.APP_READY, runStartupOnce);
 
     eventSource.on(eventTypes.CHAT_CREATED, () => {
+        const context = getContext();
         applyResetOnNewChat();
-        useSyncExternalStore();
+        syncVarStoreToChat(context);
         runPromptedStateUpdate('new_chat');
         refreshPanelIfOpen();
         refreshManagerButtonLater();
     });
 
     eventSource.on(eventTypes.CHAT_CHANGED, () => {
-        useSyncExternalStore();
+        const context = getContext();
+        syncVarStoreToChat(context);
         runPromptedStateUpdate('chat_change');
         refreshPanelIfOpen();
         refreshManagerButtonLater();
