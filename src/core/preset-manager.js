@@ -574,22 +574,35 @@ export function getAllVariablesFromPresets(presetIds, preserveOrder = true) {
     return allVars;
 }
 
-export function getVarValueFromPresetStorage(context, def) {
+export function getChatVarValue(chatId, varName) {
     const settings = getSettings();
-    const allVars = {};
-    // If preserveOrder is true, iterate in given order to maintain preset load order
-    // Variables are collected in order, so first preset's vars come first
-    
-    for (const presetId of presetIds) {
-        const preset = settings.presets[presetId];
-        if (preset && preset.variables) {
-            // Only assign if not already present (earlier preset takes precedence)
-            for (const [varId, varDef] of Object.entries(preset.variables)) {
-                if (!allVars[varId]) {
-                    allVars[varId] = varDef;
-                }
-            }
-        }
+    return settings.chatVariables?.[chatId]?.[varName];
+}
+
+export function setChatVarValue(chatId, varName, value) {
+    const settings = getSettings();
+    if (!settings.chatVariables[chatId]) {
+        settings.chatVariables[chatId] = {};
     }
-    return allVars;
+    settings.chatVariables[chatId][varName] = value;
+    persistSettings();
+}
+
+export function deleteChatVar(chatId, varName) {
+    const settings = getSettings();
+    if (settings.chatVariables?.[chatId]) {
+        delete settings.chatVariables[chatId][varName];
+        persistSettings();
+    }
+}
+
+export function getChatVarKeys(chatId) {
+    const settings = getSettings();
+    return Object.keys(settings.chatVariables?.[chatId] || {});
+}
+
+export function getVarValueFromPresetStorage(context, def) {
+    const chatId = context.chatId;
+    const stored = getChatVarValue(chatId, def.name);
+    return stored !== undefined ? stored : def.defaultValue;
 }

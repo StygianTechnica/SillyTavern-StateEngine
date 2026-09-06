@@ -1,7 +1,7 @@
 // State Engine — extensions-menu "wand" entry point, manager button state,
 // and chat-selection watching.
 
-import { buildManagerModal, hideManagerModal } from '../../manager-modal.js';
+import { buildManagerModal, hideManagerModal } from './manager-modal/manager-modal.js';
 import { getSettings } from '../core/settings-core.js';
 import { setTrackerPanelVisible } from './tracker-panel-ui.js';
 

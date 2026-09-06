@@ -14,11 +14,10 @@
 // native chat/global variable store.
 
 
-import './src/ui/manager-api.js';
+import './src/ui/manager-modal/manager-api.js';
 
 import { LOG_PREFIX, getSettings } from './src/core/settings-core.js';
 import { runStartupOnce } from './src/core/initialization-engine.js';
-import { useSyncExternalStore } from './src/core/variable-storage.js';
 
 import { initPanel } from './src/ui/settings-panel-ui.js';
 import { addStateEngineWandUi, watchChatSelection, updateManagerButtonState } from './src/ui/wand-ui.js';
@@ -39,7 +38,6 @@ jQuery(async () => {
         addStateEngineWandUi();
         registerEvents();
         registerSlashCommand();
-        useSyncExternalStore();
         updateManagerButtonState();
         watchChatSelection();
         // Covers the case where APP_READY already fired before we got here.

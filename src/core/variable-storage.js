@@ -4,7 +4,7 @@
 import { LOG_PREFIX } from './settings-core.js';
 import { getDefaultValue } from './variable-definition.js';
 import { validateValueStrict } from './variable-validation.js';
-import { getPresetsForChat, getAllVariablesFromPresets } from '../core/preset-manager.js';
+import { getPresetsForChat, getAllVariablesFromPresets, getVarValueFromPresetStorage } from '../core/preset-manager.js';
 import { getSettings } from '../core/settings-core.js';
 import { shouldSkipPromptedRefresh } from './prompted-engine.js';
 
@@ -49,24 +49,34 @@ function syncVarStoreToChat(context) {
     }
 
     const variables = getAllVariablesFromPresets(activePresetIds);
+
     const definedNames = new Set(
         Object.values(variables)
             .filter(def => def.name && !shouldSkipPromptedRefresh(def))
             .map(def => def.name)
     );
 
-    // 1. Write correct values from preset storage into varStore
+    // 1. Load chat-stored values into global varStore
     for (const def of Object.values(variables)) {
         if (!def.name || shouldSkipPromptedRefresh(def)) continue;
-        const value = getAllVariablesFromPresets(activePresetIds);
-        //const value = getVarValueFromPresetStorage(context, def); // per-chat source of truth
+
+        const value = getVarValueFromPresetStorage(context, def);
         setVarValue(context, def, value);
     }
 
-    // 2. Remove stale entries not defined by this chat's presets
-    //for (const key of getStoreKeys(context)) {
+    // 2. Remove stale global entries
+    const localStore = context.variables.local;
+    const globalStore = context.variables.global;
+
+    for (const key of localStore.keys()) {
         if (!definedNames.has(key)) {
-            //removeVar(context, key);
+            localStore.delete(key);
         }
     }
-}   
+
+    for (const key of globalStore.keys()) {
+        if (!definedNames.has(key)) {
+            globalStore.delete(key);
+        }
+    }
+}

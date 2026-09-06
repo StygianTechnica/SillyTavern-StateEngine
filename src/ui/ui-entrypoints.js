@@ -28,7 +28,7 @@ export function loadManagerModalScript() {
     const scriptId = 'se-manager-modal-script';
     if (document.getElementById(scriptId)) return Promise.resolve(); // Already loaded
 
-    const scriptPath = `scripts/extensions/${EXT_TEMPLATE_PATH}/manager-modal.js?v=${Date.now()}`;
+    const scriptPath = `scripts/extensions/${EXT_TEMPLATE_PATH}/src/ui/manager-modal/manager-modal.js?v=${Date.now()}`;
 
     return new Promise((resolve, reject) => {
         const script = document.createElement('script');
@@ -50,7 +50,7 @@ export function loadManagerModalStyles() {
     const styleId = 'se-manager-modal-styles';
     if (document.getElementById(styleId)) return; // Already loaded
 
-    const cssPath = `scripts/extensions/${EXT_TEMPLATE_PATH}/manager-modal.css`;
+    const cssPath = `scripts/extensions/${EXT_TEMPLATE_PATH}/src/ui/manager-modal/manager-modal.css`;
     const link = document.createElement('link');
     link.id = styleId;
     link.rel = 'stylesheet';

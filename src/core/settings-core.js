@@ -95,6 +95,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
     trackerPresets: [],
     wiConditions: {}, // Maps "worldbook.uid" -> array of {variable, operator, value}
     promptedHeader: DEFAULT_PROMPTED_HEADER,
+    chatVariables: {},
 });
 
 // ---------------------------------------------------------------------------

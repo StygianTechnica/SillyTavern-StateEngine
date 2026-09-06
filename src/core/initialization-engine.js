@@ -5,17 +5,19 @@ import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.
 import { setVarValue } from './variable-storage.js';
 import { getDefaultValue } from './variable-definition.js';
 import { shouldSkipPromptedRefresh, runPromptedStateUpdate } from './prompted-engine.js';
+import { syncVarStoreToChat } from './src/core/variable-storage.js';
 
 export function applyResetOnNewChat() {
     const context = SillyTavern.getContext();
-    const chatId = context.chatId;
-    const activePresetIds = getPresetsForChat(chatId);
-    const variables = getAllVariablesFromPresets(activePresetIds);
+    // const chatId = context.chatId;
+    // const activePresetIds = getPresetsForChat(chatId);
+    // const variables = getAllVariablesFromPresets(activePresetIds);
+    syncVarStoreToChat(context);
 
-    for (const def of Object.values(variables)) {
-        if (!def.name || !def.resetOnNewChat || shouldSkipPromptedRefresh(def)) continue;
-        setVarValue(context, def, getDefaultValue(def));
-    }
+    // for (const def of Object.values(variables)) {
+    //     if (!def.name || !def.resetOnNewChat || shouldSkipPromptedRefresh(def)) continue;
+    //     setVarValue(context, def, getDefaultValue(def));
+    // }
 }
 
 let startupRan = false;

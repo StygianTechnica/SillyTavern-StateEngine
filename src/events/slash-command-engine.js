@@ -1,6 +1,6 @@
 // State Engine — slash command registration
 
-import { buildManagerModal } from '../../manager-modal.js';
+import { buildManagerModal } from '../ui/manager-modal/manager-modal.js';
 import { LOG_PREFIX } from '../core/settings-core.js';
 import { runPromptedStateUpdate } from '../core/prompted-engine.js';
 
