@@ -60,8 +60,17 @@ export function syncVarStoreToChat(context) {
     for (const def of Object.values(variables)) {
         if (!def.name || shouldSkipPromptedRefresh(def)) continue;
 
-        const value = getVarValueFromPresetStorage(context, def);
-        setVarValue(context, def, value);
+        // Read from chat storage first
+        const storedValue = getVarValueFromPresetStorage(context, def);
+
+        // If chat storage has a value, use it
+        if (storedValue !== undefined) {
+            setVarValue(context, def, storedValue);
+            continue;
+        }
+
+        // Otherwise apply default
+        setVarValue(context, def, def.defaultValue);
     }
 
     // 2. Remove stale global entries
