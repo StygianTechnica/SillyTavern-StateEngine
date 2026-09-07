@@ -6,13 +6,16 @@
 // contributes anything to the prompted-update pipeline (that separation is
 // enforced in prompted-engine.js's own classification step).
 
-import { LOG_PREFIX } from './settings-core.js';
+import { LOG_PREFIX, getSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
 import { loadStateForChat } from './state-loader.js';
 import { setVar, applyIncrement } from './variable-store.js';
 
 export function runDeterministicIncrements(chatId, triggerType) {
     try {
+        const settings = getSettings();
+        if (!settings.enabled) return;
+
         const activePresetIds = getPresetsForChat(chatId);
         const variables = getAllVariablesFromPresets(activePresetIds);
         const state = loadStateForChat(chatId);

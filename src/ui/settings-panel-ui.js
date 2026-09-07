@@ -2,6 +2,7 @@
 
 import { LOG_PREFIX, EXT_TEMPLATE_PATH, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED_VARIABLE_RULES, getSettings, persistSettings } from '../core/settings-core.js';
 import { runPromptedStateUpdate } from '../core/prompted-engine.js';
+import { seedVariablesForChat, clearMacroVarsForChat } from '../core/variable-store.js';
 import { populateConnectionProfileDropdown, populateStateEngineProfileDropdown } from './connection-profile-ui.js';
 import { renderVarTable } from './manager-modal-ui.js';
 import { setTrackerPanelVisible } from './tracker-panel-ui.js';
@@ -38,8 +39,20 @@ export function loadGeneralSettingsIntoForm() {
 
 export function bindPanelEvents() {
     $('#se_enabled').on('change', function () {
-        getSettings().enabled = $(this).is(':checked');
+        const enabled = $(this).is(':checked');
+        getSettings().enabled = enabled;
         persistSettings();
+
+        try {
+            const chatId = SillyTavern.getContext().chatId;
+            if (enabled) {
+                seedVariablesForChat(chatId); // after enabling the engine
+            } else {
+                clearMacroVarsForChat(chatId); // on engine disable
+            }
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
     });
     $('#se_wand_visible').on('change', function () {
         getSettings().wandVisible = $(this).is(':checked');

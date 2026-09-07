@@ -18,7 +18,8 @@
 // *values*. It never reads or writes SillyTavern chat storage/metadata.
 
 import { LOG_PREFIX, getSettings, persistSettings } from './settings-core.js';
-import { setVarValue } from './variable-storage.js';
+import { setVarValue, deleteVarValue } from './variable-storage.js';
+import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
 
 const SCHEMA_VERSION = 1;
 
@@ -145,5 +146,108 @@ export function applyIncrement(chatId, varName, delta, def) {
         setVarValue(SillyTavern.getContext(), def || { name: varName, type: 'number' }, next);
     } catch (err) {
         console.warn(LOG_PREFIX, 'applyIncrement failed (gracefully handled)', err);
+    }
+}
+
+// Seeds any preset variable that doesn't yet have an entry in this chat's
+// isolated state, so the store (and the macro mirror) is never empty for a
+// chat that has active presets. Writes exclusively through setVar() - never
+// mutates state.variables directly - so the isolated store and the macro
+// mirror stay in sync through the one write path.
+//
+// NOTE: per spec this seeds `def.default ?? null`, not `def.defaultValue`
+// (the field variable definitions actually use — see blankDefinition() in
+// variable-definition.js). This matches the existing (already inconsistent)
+// getDefaultValue() helper, which also reads `def.default`, but it means
+// `def.default` will almost always be undefined and most variables will
+// seed to `value: null` rather than any author-configured default.
+export function seedVariablesForChat(chatId) {
+    try {
+        if (!chatId) return;
+        const activePresetIds = getPresetsForChat(chatId);
+        const variables = getAllVariablesFromPresets(activePresetIds);
+        const state = loadChatState(chatId);
+
+        for (const def of Object.values(variables)) {
+            try {
+                if (!def.name) continue;
+                if (state.variables[def.name]) continue;
+
+                const value = def.default ?? null;
+                setVar(chatId, def.name, value, def);
+            } catch (err) {
+                console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+            }
+        }
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+    }
+}
+
+// Deletes every macro-visible variable this chat's isolated state knows
+// about, via deleteVarValue() (the same varStore mechanism setVar/
+// applyIncrement already mirror through) - never chat metadata.
+//
+// context.variables.local only ever reflects the chat SillyTavern currently
+// has open (it swaps automatically on chat switch); there is no API this
+// extension can use to reach a *different* chat's macro variables. So this
+// can only actually delete anything when chatId is the chat that's active
+// right now - for any other chatId it safely no-ops (see cleanupDeadChats).
+export function clearMacroVarsForChat(chatId) {
+    try {
+        if (!chatId) return;
+        const context = SillyTavern.getContext();
+        if (context.chatId !== chatId) return;
+
+        const state = loadChatState(chatId);
+        for (const varName of Object.keys(state.variables || {})) {
+            try {
+                deleteVarValue(context, { name: varName });
+            } catch (err) {
+                console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+            }
+        }
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+    }
+}
+
+// Removes isolated-store entries for chats SillyTavern no longer has.
+//
+// NOTE: context.chatList is not a confirmed SillyTavern context API from
+// anything verifiable in this environment - if it doesn't exist, or has a
+// different shape than [{ chatId }], the try/catch below turns that into a
+// warning and a no-op rather than a crash, but this should be checked
+// against a live SillyTavern console before being relied on.
+//
+// clearMacroVarsForChat() is called before the isolated entry is deleted
+// (reversed from the literal step order given) because it needs that
+// entry's variable names to know what to delete - deleting the entry first
+// would leave it nothing to clear. In practice, for a genuinely dead chat
+// (chatId not in `live`), that chat is essentially never SillyTavern's
+// currently active chat either, so this call is a safe no-op most of the
+// time (see clearMacroVarsForChat's own active-chat guard) - it's kept for
+// the rare case chatId does match, and for symmetry with the spec.
+export function cleanupDeadChats() {
+    try {
+        const context = SillyTavern.getContext();
+        const live = new Set((context.chatList || []).map(c => c.chatId));
+        const store = getStore();
+
+        for (const chatId of Object.keys(store.chats)) {
+            if (live.has(chatId)) continue;
+
+            try {
+                clearMacroVarsForChat(chatId);
+            } catch (err) {
+                console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+            }
+
+            delete store.chats[chatId];
+        }
+
+        persistSettings();
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
     }
 }

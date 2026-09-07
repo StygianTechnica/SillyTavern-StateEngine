@@ -36,3 +36,12 @@ export function setVarValue(context, def, rawValue) {
     }
     return validation.value;
 }
+
+export function deleteVarValue(context, def) {
+    const store = varStore(context, def);
+    try {
+        store.delete(def.name);
+    } catch (err) {
+        console.warn(LOG_PREFIX, `could not delete variable "${def.name}"`, err);
+    }
+}
