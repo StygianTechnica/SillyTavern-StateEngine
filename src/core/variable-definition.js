@@ -63,22 +63,22 @@ export function blankDefinition() {
 export function getDefaultValue(def) {
     switch (def.type) {
         case 'number': {
-            const n = Number(def.default);
+            const n = Number(def.defaultValue);
             return Number.isFinite(n) ? n : 0;
         }
         case 'boolean':
-            return String(def.default).trim().toLowerCase() === 'true';
+            return String(def.defaultValue).trim().toLowerCase() === 'true';
         case 'enum':
-            return def.enumValues.includes(def.default) ? def.default : (def.enumValues[0] ?? '');
+            return def.enumValues.includes(def.defaultValue) ? def.defaultValue : (def.enumValues[0] ?? '');
         case 'array':
-            if (Array.isArray(def.default)) return [...def.default];
-            if (typeof def.default === 'string' && def.default.trim()) {
-                try { return JSON.parse(def.default); }
+            if (Array.isArray(def.defaultValue)) return [...def.defaultValue];
+            if (typeof def.defaultValue === 'string' && def.defaultValue.trim()) {
+                try { return JSON.parse(def.defaultValue); }
                 catch { return []; }
             }
             return [];
         default:
-            return def.default ?? '';
+            return def.defaultValue ?? '';
     }
 }
 

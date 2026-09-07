@@ -155,12 +155,7 @@ export function applyIncrement(chatId, varName, delta, def) {
 // mutates state.variables directly - so the isolated store and the macro
 // mirror stay in sync through the one write path.
 //
-// NOTE: per spec this seeds `def.default ?? null`, not `def.defaultValue`
-// (the field variable definitions actually use — see blankDefinition() in
-// variable-definition.js). This matches the existing (already inconsistent)
-// getDefaultValue() helper, which also reads `def.default`, but it means
-// `def.default` will almost always be undefined and most variables will
-// seed to `value: null` rather than any author-configured default.
+
 export function seedVariablesForChat(chatId) {
     try {
         if (!chatId) return;
@@ -173,7 +168,7 @@ export function seedVariablesForChat(chatId) {
                 if (!def.name) continue;
                 if (state.variables[def.name]) continue;
 
-                const value = def.default ?? null;
+                const value = def.defaultValue ?? null;
                 setVar(chatId, def.name, value, def);
             } catch (err) {
                 console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
