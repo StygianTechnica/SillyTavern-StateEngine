@@ -13,8 +13,8 @@ export function shouldSkipPromptedRefresh(def) {
     return !!(def && def.skipPromptedRefresh);
 }
 
-// Fires the background "prompted variable" LLM update and returns
-// immediately without awaiting it. Nothing in this function may block or
+// Fires the background "prompted variable" LLM update and returns``
+// immediately without awaiting it. Nothing in this function may block or``
 // throw into whatever caller (event handler, slash command, startup) invoked
 // it — every failure is logged and swallowed here so the chat LLM pipeline
 // is never affected by a State Engine problem.
@@ -39,17 +39,47 @@ export async function runPromptedStateUpdate(triggerType) {
         }
 
         // Collect variables from presets that should update, and classify them
+        // Collect variables from presets that should update, and classify them
         const variables = getAllVariablesFromPresets(presetsToUpdate);
         const updateVars = [];
         const incrementVars = [];
+
         for (const def of Object.values(variables)) {
-            if (!def.name) continue;
-            if (def.category === 'prompted' && !shouldSkipPromptedRefresh(def)) {
+            if (!def?.name) continue;
+
+            const isPromptedUpdate =
+                def.category === 'prompted' &&
+                !shouldSkipPromptedRefresh(def);
+
+            const isPromptedIncrement =
+                def.behaviors?.prompted === true &&
+                def.behaviors?.increment === true;
+
+            const isDeterministicIncrement =
+                def.behaviors?.increment === true &&
+                def.behaviors?.prompted !== true;
+
+            if (isPromptedUpdate) {
+                // Normal prompted update variable
                 updateVars.push(def);
-            } else if (def.behaviors?.prompted === true && def.behaviors?.increment === true) {
-                incrementVars.push(def);
+                continue;
             }
+
+            if (isPromptedIncrement) {
+                // Prompted increment variable (LLM returns boolean)
+                incrementVars.push(def);
+                continue;
+            }
+
+            if (isDeterministicIncrement) {
+                // Deterministic increments are NOT part of prompted updates
+                // They are handled exclusively by runDeterministicIncrements()
+                continue;
+            }
+
+            // All other variable types are ignored by prompted updates
         }
+
 
         if (updateVars.length === 0 && incrementVars.length === 0) return;
         if (!Array.isArray(context.chat)) return;
