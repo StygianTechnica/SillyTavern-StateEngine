@@ -45,103 +45,129 @@ export function setVarValue(context, def, rawValue) {
 // ---------------------------------------------------------------------------
 
 export function readVarFromChatStorage(context, varName) {
-    const store = context.chatExtensions?.stateEngine?.variables;
-    if (!store) return undefined;
-    return store[varName];
+    try {
+        const store = context.chatExtensions?.stateEngine?.variables;
+        if (!store) return undefined;
+        return store[varName];
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        return undefined;
+    }
 }
 
 export function writeVarToChatStorage(context, varName, value) {
-    if (!context.chatExtensions) {
-        context.chatExtensions = {};
+    try {
+        if (!context.chatExtensions) {
+            context.chatExtensions = {};
+        }
+        if (!context.chatExtensions.stateEngine) {
+            context.chatExtensions.stateEngine = {};
+        }
+        if (!context.chatExtensions.stateEngine.variables) {
+            context.chatExtensions.stateEngine.variables = {};
+        }
+        context.chatExtensions.stateEngine.variables[varName] = value;
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
     }
-    if (!context.chatExtensions.stateEngine) {
-        context.chatExtensions.stateEngine = {};
-    }
-    if (!context.chatExtensions.stateEngine.variables) {
-        context.chatExtensions.stateEngine.variables = {};
-    }
-    context.chatExtensions.stateEngine.variables[varName] = value;
 }
 
 export function deleteVarFromChatStorage(context, varName) {
-    const store = context.chatExtensions?.stateEngine?.variables;
-    if (store) {
-        delete store[varName];
+    try {
+        const store = context.chatExtensions?.stateEngine?.variables;
+        if (store) {
+            delete store[varName];
+        }
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
     }
 }
 
 export function listVarsInChatStorage(context) {
-    const store = context.chatExtensions?.stateEngine?.variables;
-    return store ? Object.keys(store) : [];
+    try {
+        const store = context.chatExtensions?.stateEngine?.variables;
+        return store ? Object.keys(store) : [];
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        return [];
+    }
 }
 
+// Sync must always run, independent of any State Engine LLM work — it is
+// never called from inside a promise chain, and every failure here is
+// caught and logged rather than thrown, so chat metadata read/write and
+// variable persistence are never blocked by an unrelated State Engine error.
 export function syncVarStoreToChat(context) {
-    const chatId = context.chatId;
-    const activePresetIds = getPresetsForChat(chatId);
+    try {
+        const chatId = context.chatId;
+        const activePresetIds = getPresetsForChat(chatId);
 
-    if (activePresetIds.length === 0 && getSettings().defaultPresetForNewChats) {
-        activePresetIds.push(getSettings().defaultPresetForNewChats);
-    }
-
-    const variables = getAllVariablesFromPresets(activePresetIds);
-
-    const definedNames = new Set(
-        Object.values(variables)
-            .filter(def => def.name && !shouldSkipPromptedRefresh(def))
-            .map(def => def.name)
-    );
-
-    // 1. Load chat-stored values into global varStore
-    for (const def of Object.values(variables)) {
-        if (!def.name || shouldSkipPromptedRefresh(def)) continue;
-
-        // Read from chat storage first
-        const storedValue = readVarFromChatStorage(context, def.name);
-
-        // If chat storage has a value, use it
-        if (storedValue !== undefined) {
-            setVarValue(context, def, storedValue);
-            continue;
+        if (activePresetIds.length === 0 && getSettings().defaultPresetForNewChats) {
+            activePresetIds.push(getSettings().defaultPresetForNewChats);
         }
 
-        // Otherwise apply default
-        setVarValue(context, def, def.defaultValue);
-    }
+        const variables = getAllVariablesFromPresets(activePresetIds);
 
-    // 2. Remove stale global entries
-    const localStore = context.variables.local;
-    const globalStore = context.variables.global;
+        const definedNames = new Set(
+            Object.values(variables)
+                .filter(def => def.name && !shouldSkipPromptedRefresh(def))
+                .map(def => def.name)
+        );
 
-    // Normalize keys for both Map-like and object-like stores
-    const localKeys = localStore instanceof Map
-        ? Array.from(localStore.keys())
-        : Object.keys(localStore);
+        // 1. Load chat-stored values into global varStore
+        for (const def of Object.values(variables)) {
+            if (!def.name || shouldSkipPromptedRefresh(def)) continue;
 
-    const globalKeys = globalStore instanceof Map
-        ? Array.from(globalStore.keys())
-        : Object.keys(globalStore);
+            // Read from chat storage first
+            const storedValue = readVarFromChatStorage(context, def.name);
 
-    // Remove stale local variables
-    for (const key of localKeys) {
-        if (!definedNames.has(key)) {
-            if (localStore instanceof Map) {
-                localStore.delete(key);
-            } else {
-                delete localStore[key];
+            // If chat storage has a value, use it
+            if (storedValue !== undefined) {
+                setVarValue(context, def, storedValue);
+                continue;
             }
-            deleteVarFromChatStorage(context, key);
-        }
-    }
 
-    // Remove stale global variables
-    for (const key of globalKeys) {
-        if (!definedNames.has(key)) {
-            if (globalStore instanceof Map) {
-                globalStore.delete(key);
-            } else {
-                delete globalStore[key];
-            }
-            deleteVarFromChatStorage(context, key);
+            // Otherwise apply default
+            setVarValue(context, def, def.defaultValue);
         }
+
+        // 2. Remove stale global entries
+        const localStore = context.variables.local;
+        const globalStore = context.variables.global;
+
+        // Normalize keys for both Map-like and object-like stores
+        const localKeys = localStore instanceof Map
+            ? Array.from(localStore.keys())
+            : Object.keys(localStore);
+
+        const globalKeys = globalStore instanceof Map
+            ? Array.from(globalStore.keys())
+            : Object.keys(globalStore);
+
+        // Remove stale local variables
+        for (const key of localKeys) {
+            if (!definedNames.has(key)) {
+                if (localStore instanceof Map) {
+                    localStore.delete(key);
+                } else {
+                    delete localStore[key];
+                }
+                deleteVarFromChatStorage(context, key);
+            }
+        }
+
+        // Remove stale global variables
+        for (const key of globalKeys) {
+            if (!definedNames.has(key)) {
+                if (globalStore instanceof Map) {
+                    globalStore.delete(key);
+                } else {
+                    delete globalStore[key];
+                }
+                deleteVarFromChatStorage(context, key);
+            }
+        }
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
     }
 }

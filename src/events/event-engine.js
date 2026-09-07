@@ -1,5 +1,6 @@
 // State Engine — event wiring
 
+import { LOG_PREFIX } from '../core/settings-core.js';
 import { applyResetOnNewChat, runStartupOnce } from '../core/initialization-engine.js';
 import { runPromptedStateUpdate } from '../core/prompted-engine.js';
 import { runDeterministicIncrements } from '../core/increment-engine.js';
@@ -18,42 +19,118 @@ export function registerEvents() {
     // APP_READY has already fired; runStartupOnce() guards against firing twice.
     eventSource.on(eventTypes.APP_READY, runStartupOnce);
 
+    // Every statement below is wrapped in its own try/catch. A failure in
+    // one State Engine step (e.g. a prompted update) must never prevent the
+    // next step (especially syncVarStoreToChat, which persists/loads chat
+    // variables) from running, and must never propagate out of this event
+    // handler into SillyTavern's own event dispatch / generation pipeline.
     eventSource.on(eventTypes.CHAT_CREATED, () => {
         const context = SillyTavern.getContext();
-        applyResetOnNewChat();
-        syncVarStoreToChat(context);
-        runPromptedStateUpdate('new_chat');
-        refreshPanelIfOpen();
-        refreshManagerButtonLater();
+
+        try {
+            applyResetOnNewChat();
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
+
+        try {
+            syncVarStoreToChat(context);
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
+
+        try {
+            runPromptedStateUpdate('new_chat');
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
+
+        try {
+            refreshPanelIfOpen();
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
+
+        try {
+            refreshManagerButtonLater();
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
     });
 
     eventSource.on(eventTypes.CHAT_CHANGED, () => {
         const context = SillyTavern.getContext();
-        syncVarStoreToChat(context);
-        runPromptedStateUpdate('chat_change');
-        refreshPanelIfOpen();
-        refreshManagerButtonLater();
+
+        try {
+            syncVarStoreToChat(context);
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
+
+        try {
+            runPromptedStateUpdate('chat_change');
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
+
+        try {
+            refreshPanelIfOpen();
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
+
+        try {
+            refreshManagerButtonLater();
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
     });
 
     eventSource.on(eventTypes.USER_MESSAGE_RENDERED, () => {
         //runCounters('user');
-        runDeterministicIncrements('user');
-        runPromptedStateUpdate('user');
+        try {
+            runDeterministicIncrements('user');
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
+
+        try {
+            runPromptedStateUpdate('user');
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
     });
 
     eventSource.on(eventTypes.CHARACTER_MESSAGE_RENDERED, () => {
         //runCounters('ai');
-        runDeterministicIncrements('ai');
-        runPromptedStateUpdate('ai');
+        try {
+            runDeterministicIncrements('ai');
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
+
+        try {
+            runPromptedStateUpdate('ai');
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
     });
 
     eventSource.on(eventTypes.GENERATION_AFTER_COMMANDS, () => {
-        runPromptedStateUpdate('pre_generation');
+        try {
+            runPromptedStateUpdate('pre_generation');
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
     });
 
     if (eventTypes.GROUP_MEMBER_DRAFTED) {
         eventSource.on(eventTypes.GROUP_MEMBER_DRAFTED, () => {
-            runPromptedStateUpdate('group_draft');
+            try {
+                runPromptedStateUpdate('group_draft');
+            } catch (err) {
+                console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+            }
         });
     }
 
@@ -69,10 +146,20 @@ export function registerEvents() {
     for (const key of ['CONNECTION_PROFILE_CREATED', 'CONNECTION_PROFILE_UPDATED', 'CONNECTION_PROFILE_DELETED', 'CONNECTION_PROFILE_LOADED']) {
         const evt = eventTypes[key];
         if (evt) {
-            eventSource.on(evt, () => populateConnectionProfileDropdown());
+            eventSource.on(evt, () => {
+                try {
+                    populateConnectionProfileDropdown();
+                } catch (err) {
+                    console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+                }
+            });
         }
     }
 
     // Start monitoring WI editor for condition UI injection
-    observeWIEditorChanges();
+    try {
+        observeWIEditorChanges();
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+    }
 }

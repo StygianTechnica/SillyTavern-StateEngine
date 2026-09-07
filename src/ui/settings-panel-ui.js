@@ -82,7 +82,13 @@ export function bindPanelEvents() {
         persistSettings();
     });
 
-    $('#se_run_now').on('click', () => runPromptedStateUpdate('manual-all'));
+    $('#se_run_now').on('click', () => {
+        try {
+            runPromptedStateUpdate('manual-all');
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
+    });
 
     $('#se_open_manager').on('click', () => openManagerIfReady());
     updateManagerButtonState();
