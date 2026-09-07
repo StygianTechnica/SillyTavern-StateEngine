@@ -59,9 +59,9 @@ export function registerEvents() {
 
     // Hook into world info to apply conditional filtering
     if (eventTypes.WORLD_INFO_ACTIVATED) {
-        eventSource.on(eventTypes.WORLD_INFO_ACTIVATED, () => {
-            applyWorldInfoConditionalFiltering();
-        });
+        // eventSource.on(eventTypes.WORLD_INFO_ACTIVATED, () => {
+        //     applyWorldInfoConditionalFiltering();
+        // });
     }
 
     // Keep the connection-profile dropdown in sync if profiles are
