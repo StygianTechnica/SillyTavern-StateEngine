@@ -47,7 +47,7 @@ export async function runPromptedStateUpdate(triggerType) {
         for (const def of Object.values(variables)) {
             if (!def?.name) continue;
 
-            const isPrmoptedUpdate = 
+            const isPromptedUpdate = 
                 def.behaviors?.prompted === true &&
                 def.behaviors?.increment !== true &&
                 !shouldSkipPromptedRefresh(def);
