@@ -2,7 +2,7 @@
 
 import { LOG_PREFIX, EXT_TEMPLATE_PATH, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED_VARIABLE_RULES, getSettings, persistSettings } from '../core/settings-core.js';
 import { runPromptedStateUpdate } from '../core/prompted-engine.js';
-import { populateConnectionProfileDropdown } from './connection-profile-ui.js';
+import { populateConnectionProfileDropdown, populateStateEngineBackendDropdown, populateStateEngineModelDropdown } from './connection-profile-ui.js';
 import { renderVarTable } from './manager-modal-ui.js';
 import { setTrackerPanelVisible } from './tracker-panel-ui.js';
 import { openManagerIfReady, updateManagerButtonState, getCurrentChatId } from './wand-ui.js';
@@ -31,6 +31,9 @@ export function loadGeneralSettingsIntoForm() {
     $('#se_prompted_header').val(settings.promptedHeader || DEFAULT_PROMPTED_HEADER);
     $('#se_prompted_variable_rules').val(settings.promptedRules || DEFAULT_UNIFIED_VARIABLE_RULES);
     populateConnectionProfileDropdown();
+    populateStateEngineBackendDropdown();
+    $('#se_state_engine_temperature').val(settings.stateEngineTemperature ?? '');
+    $('#se_state_engine_max_tokens').val(settings.stateEngineMaxTokens ?? '');
 }
 
 export function bindPanelEvents() {
@@ -50,6 +53,28 @@ export function bindPanelEvents() {
     });
     $('#se_connection_profile').on('change', function () {
         getSettings().connectionProfileId = $(this).val() || '';
+        persistSettings();
+    });
+    $('#se_state_engine_backend').on('change', function () {
+        const backend = $(this).val() || null;
+        const settings = getSettings();
+        settings.stateEngineBackend = backend;
+        settings.stateEngineModel = null;
+        persistSettings();
+        populateStateEngineModelDropdown(backend);
+    });
+    $('#se_state_engine_model').on('change', function () {
+        getSettings().stateEngineModel = $(this).val() || null;
+        persistSettings();
+    });
+    $('#se_state_engine_temperature').on('change', function () {
+        const raw = $(this).val();
+        getSettings().stateEngineTemperature = raw === '' ? null : Number(raw);
+        persistSettings();
+    });
+    $('#se_state_engine_max_tokens').on('change', function () {
+        const raw = $(this).val();
+        getSettings().stateEngineMaxTokens = raw === '' ? null : Number(raw);
         persistSettings();
     });
     $('#se_context_count').on('change', function () {

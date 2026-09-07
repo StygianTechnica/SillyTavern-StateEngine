@@ -37,6 +37,29 @@
             </div>
 
             <div class="se-row">
+                <label for="se_state_engine_backend">State Engine LLM backend</label>
+                <select id="se_state_engine_backend" class="text_pole"></select>
+                <small>Backends come from your saved Connection Profiles. Leave on "Use chat model" to use whatever backend/model the chat itself is using.</small>
+            </div>
+
+            <div class="se-row">
+                <label for="se_state_engine_model">State Engine model</label>
+                <select id="se_state_engine_model" class="text_pole"></select>
+                <small>If set, background State Engine calls (prompted variable updates) use this model instead of the chat model.</small>
+            </div>
+
+            <div class="se-row se-grid2">
+                <div>
+                    <label for="se_state_engine_temperature">Temperature</label>
+                    <input id="se_state_engine_temperature" type="number" class="text_pole" min="0" max="2" step="0.01" placeholder="default" />
+                </div>
+                <div>
+                    <label for="se_state_engine_max_tokens">Max tokens</label>
+                    <input id="se_state_engine_max_tokens" type="number" class="text_pole" min="1" step="1" placeholder="default" />
+                </div>
+            </div>
+
+            <div class="se-row">
                 <div class="se-header-row">
                     <label for="se_prompted_header">Prompted update header prompt</label>
                     <button id="se_prompted_header_reset" class="menu_button menu_button_icon" type="button" title="Revert to default">
