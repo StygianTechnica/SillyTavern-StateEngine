@@ -106,12 +106,12 @@ export function setVar(chatId, varName, value, def) {
         // 1. Update the separate State Engine store.
         const state = loadChatState(chatId);
         state.variables[varName] = {
-            ...(state.variables[varName] || {}),
             value,
-            type: def?.type || state.variables[varName]?.type || typeof value,
-            behaviors: def?.behaviors || state.variables[varName]?.behaviors || {},
-            increment: def?.increment || state.variables[varName]?.increment || null,
+            type: def.type,
+            behaviors: def.behaviors,
+            increment: def.increment,
         };
+
         saveChatState(chatId, state);
 
         // 2. Mirror into the macro-visible var store ({{getvar::name}}).
