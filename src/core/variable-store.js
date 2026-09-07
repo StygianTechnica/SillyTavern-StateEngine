@@ -133,21 +133,33 @@ export function applyIncrement(chatId, varName, delta, def) {
         const state = loadChatState(chatId);
         const entry = state.variables[varName];
 
-        if (!entry || typeof entry.value !== 'number') {
-            console.warn(LOG_PREFIX, `applyIncrement: no numeric value for "${varName}"`);
+        if (!entry) {
+            console.warn(LOG_PREFIX, `applyIncrement: missing entry for "${varName}"`);
             return;
         }
 
-        const next = entry.value + delta;
+        // Convert current value to number safely
+        let current = Number(entry.value);
+        if (Number.isNaN(current)) {
+            console.warn(LOG_PREFIX, `applyIncrement: non-numeric value for "${varName}", defaulting to 0`);
+            current = 0;
+        }
+
+        const next = current + delta;
         entry.value = next;
         saveChatState(chatId, state);
 
         // Mirror into macro-visible var store
-        setVarValue(SillyTavern.getContext(), def || { name: varName, type: 'number' }, next);
+        setVarValue(
+            SillyTavern.getContext(),
+            def || { name: varName, type: 'number' },
+            next
+        );
     } catch (err) {
         console.warn(LOG_PREFIX, 'applyIncrement failed (gracefully handled)', err);
     }
 }
+
 
 // Seeds any preset variable that doesn't yet have an entry in this chat's
 // isolated state, so the store (and the macro mirror) is never empty for a
