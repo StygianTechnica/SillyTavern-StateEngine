@@ -5,6 +5,8 @@
 
 import { LOG_PREFIX } from './settings-core.js';
 import { loadChatState } from './variable-store.js';
+import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
+import { getDefaultValue } from './variable-definition.js';
 
 export function loadStateForChat(chatId) {
     try {
