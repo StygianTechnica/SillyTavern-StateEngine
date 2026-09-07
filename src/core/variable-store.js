@@ -20,6 +20,7 @@
 import { LOG_PREFIX, getSettings, persistSettings } from './settings-core.js';
 import { setVarValue, deleteVarValue } from './variable-storage.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
+import { loadStateForChat } from './state-loader.js';
 
 const SCHEMA_VERSION = 1;
 
@@ -130,7 +131,7 @@ export function setVar(chatId, varName, value, def) {
 // that increment-engine.js's (separate, varStore-based) applyIncrement has.
 export function applyIncrement(chatId, varName, delta, def) {
     try {
-        const state = loadChatState(chatId);
+        const state = loadStateForChat(chatId);
         const entry = state.variables[varName];
 
         if (!entry) {
