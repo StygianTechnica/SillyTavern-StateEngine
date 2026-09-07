@@ -4,7 +4,7 @@
 import { LOG_PREFIX } from './settings-core.js';
 import { getDefaultValue } from './variable-definition.js';
 import { validateValueStrict } from './variable-validation.js';
-import { getPresetsForChat, getAllVariablesFromPresets, getVarValueFromPresetStorage } from '../core/preset-manager.js';
+import { getPresetsForChat, getAllVariablesFromPresets } from '../core/preset-manager.js';
 import { getSettings } from '../core/settings-core.js';
 import { shouldSkipPromptedRefresh } from './prompted-engine.js';
 
@@ -40,6 +40,41 @@ export function setVarValue(context, def, rawValue) {
     return validation.value;
 }
 
+// ---------------------------------------------------------------------------
+// Persistent per-chat variable storage (chat metadata)
+// ---------------------------------------------------------------------------
+
+export function readVarFromChatStorage(context, varName) {
+    const store = context.chatExtensions?.stateEngine?.variables;
+    if (!store) return undefined;
+    return store[varName];
+}
+
+export function writeVarToChatStorage(context, varName, value) {
+    if (!context.chatExtensions) {
+        context.chatExtensions = {};
+    }
+    if (!context.chatExtensions.stateEngine) {
+        context.chatExtensions.stateEngine = {};
+    }
+    if (!context.chatExtensions.stateEngine.variables) {
+        context.chatExtensions.stateEngine.variables = {};
+    }
+    context.chatExtensions.stateEngine.variables[varName] = value;
+}
+
+export function deleteVarFromChatStorage(context, varName) {
+    const store = context.chatExtensions?.stateEngine?.variables;
+    if (store) {
+        delete store[varName];
+    }
+}
+
+export function listVarsInChatStorage(context) {
+    const store = context.chatExtensions?.stateEngine?.variables;
+    return store ? Object.keys(store) : [];
+}
+
 export function syncVarStoreToChat(context) {
     const chatId = context.chatId;
     const activePresetIds = getPresetsForChat(chatId);
@@ -61,7 +96,7 @@ export function syncVarStoreToChat(context) {
         if (!def.name || shouldSkipPromptedRefresh(def)) continue;
 
         // Read from chat storage first
-        const storedValue = getVarValueFromPresetStorage(context, def);
+        const storedValue = readVarFromChatStorage(context, def.name);
 
         // If chat storage has a value, use it
         if (storedValue !== undefined) {
@@ -94,6 +129,7 @@ export function syncVarStoreToChat(context) {
             } else {
                 delete localStore[key];
             }
+            deleteVarFromChatStorage(context, key);
         }
     }
 
@@ -105,6 +141,7 @@ export function syncVarStoreToChat(context) {
             } else {
                 delete globalStore[key];
             }
+            deleteVarFromChatStorage(context, key);
         }
     }
 }

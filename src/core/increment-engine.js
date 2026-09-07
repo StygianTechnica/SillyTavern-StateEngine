@@ -2,13 +2,14 @@
 
 import { LOG_PREFIX, getSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
-import { getVarValue, setVarValue } from './variable-storage.js';
+import { getVarValue, setVarValue, writeVarToChatStorage } from './variable-storage.js';
 import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
 
 export function applyIncrement(context, def, delta) {
     const current = getVarValue(context, def);
     let next;
     console.log(LOG_PREFIX, "Incrementing Variable: ", def.name, " by ", delta);
+
     switch (def.type) {
         case 'number':
             next = current + delta;
@@ -21,19 +22,17 @@ export function applyIncrement(context, def, delta) {
         case 'enum':
             next = cycleEnum(def, current);
             break;
-
     }
 
-    //enforceConstraints is the future place where you’ll clamp values, validate enums, enforce min/max, and guarantee type correctness.
-    //next = enforceConstraints(def, next);
-
     setVarValue(context, def, next);
+    writeVarToChatStorage(context, def.name, next);
 
-    //triggerHooks would be It’s the future place where you fire side‑effects when a variable changes.
-    //triggerHooks(def, current, next);
+    // *** THIS WAS MISSING ***
+    //setVarValueInPresetStorage(context, def, next);
 
     refreshPanelIfOpen();
 }
+
 
 export function cycleEnum(def, current) {
     const values = def.enumValues || [];

@@ -2,7 +2,7 @@
 
 import { LOG_PREFIX, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED_VARIABLE_RULES, getSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
-import { getVarValue, setVarValue } from './variable-storage.js';
+import { getVarValue, setVarValue, writeVarToChatStorage } from './variable-storage.js';
 import { applyIncrement } from './increment-engine.js';
 import { callBackgroundLLM } from './background-llm.js';
 import { extractJsonObject, stripHtml, describeConstraint } from '../ui/formatting-utils.js';
@@ -114,6 +114,7 @@ export async function runPromptedStateUpdate(triggerType) {
         for (const def of updateVars) {
             if (Object.prototype.hasOwnProperty.call(parsed, def.name)) {
                 setVarValue(context, def, parsed[def.name]);
+                writeVarToChatStorage(context, def.name, parsed[def.name]);
                 updatedCount++;
             }
         }
