@@ -109,12 +109,6 @@ export function registerEvents() {
         }
 
         try {
-            seedVariablesForChat(chatId);
-        } catch (err) {
-            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
-        }
-
-        try {
             runPromptedStateUpdate('chat_change');
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
