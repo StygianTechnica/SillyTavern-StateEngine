@@ -3,7 +3,7 @@
 import { LOG_PREFIX } from './settings-core.js';
 
 export async function callBackgroundLLM(context, settings, messages, maxTokens) {
-    if (settings.stateEngineModel) {
+    if (settings.stateEngineProfileId) {
         const overrideResult = await callWithStateEngineOverride(context, settings, messages, maxTokens);
         if (overrideResult !== null) return overrideResult;
     }
@@ -27,15 +27,16 @@ export async function callBackgroundLLM(context, settings, messages, maxTokens) 
     return await context.generateRaw({ prompt: messages, responseLength: maxTokens });
 }
 
-// Looks up the Connection Profile matching settings.stateEngineBackend +
-// settings.stateEngineModel and routes the request through it, so State
-// Engine background calls can use a different backend/model than chat.
-// Returns null (not a string) when the override cannot be applied, so the
-// caller falls back to the existing connectionProfileId/chat-model path.
+// Looks up the Connection Profile matching settings.stateEngineProfileId and
+// routes the request through it, so State Engine background calls can use a
+// different connection (backend + model, as configured in that profile)
+// than chat. Returns null (not a string) when the override cannot be
+// applied, so the caller falls back to the existing
+// connectionProfileId/chat-model path.
 async function callWithStateEngineOverride(context, settings, messages, maxTokens) {
     const svc = context.ConnectionManagerRequestService;
     if (!svc || typeof svc.getSupportedProfiles !== 'function' || typeof svc.sendRequest !== 'function') {
-        console.warn(LOG_PREFIX, 'ConnectionManagerRequestService unavailable, cannot apply State Engine model override');
+        console.warn(LOG_PREFIX, 'ConnectionManagerRequestService unavailable, cannot apply State Engine profile override');
         return null;
     }
 
@@ -43,16 +44,13 @@ async function callWithStateEngineOverride(context, settings, messages, maxToken
     try {
         profiles = svc.getSupportedProfiles() || [];
     } catch (err) {
-        console.warn(LOG_PREFIX, 'could not read connection profiles for State Engine model override', err);
+        console.warn(LOG_PREFIX, 'could not read connection profiles for State Engine profile override', err);
         return null;
     }
 
-    const match = profiles.find((p) => p
-        && (p.api || 'unknown') === (settings.stateEngineBackend || 'unknown')
-        && (p.model || p.name || p.id) === settings.stateEngineModel);
-
+    const match = profiles.find((p) => p && p.id === settings.stateEngineProfileId);
     if (!match) {
-        console.warn(LOG_PREFIX, `no connection profile found for State Engine backend "${settings.stateEngineBackend}" / model "${settings.stateEngineModel}", falling back`);
+        console.warn(LOG_PREFIX, `connection profile "${settings.stateEngineProfileId}" not found for State Engine override, falling back`);
         return null;
     }
 
@@ -66,9 +64,9 @@ async function callWithStateEngineOverride(context, settings, messages, maxToken
         const result = await svc.sendRequest(match.id, messages, overrideMaxTokens, overrideOptions);
         const text = extractTextFromServiceResult(result);
         if (text) return text;
-        console.warn(LOG_PREFIX, 'State Engine model override request returned no usable text, falling back', result);
+        console.warn(LOG_PREFIX, 'State Engine profile override request returned no usable text, falling back', result);
     } catch (err) {
-        console.warn(LOG_PREFIX, 'State Engine model override request failed, falling back', err);
+        console.warn(LOG_PREFIX, 'State Engine profile override request failed, falling back', err);
     }
     return null;
 }

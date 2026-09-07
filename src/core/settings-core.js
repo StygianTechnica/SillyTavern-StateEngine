@@ -85,8 +85,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
     contextMessageCount: 10,
     responseLength: 300,
     connectionProfileId: '',
-    stateEngineModel: null,
-    stateEngineBackend: null,
+    stateEngineProfileId: null,
     stateEngineTemperature: null,
     stateEngineMaxTokens: null,
     showTrackerPanel: false,
@@ -116,8 +115,7 @@ export function getSettings() {
     if (settings.contextMessageCount === undefined) settings.contextMessageCount = 10;
     if (settings.responseLength === undefined) settings.responseLength = 300;
     if (settings.connectionProfileId === undefined) settings.connectionProfileId = '';
-    if (settings.stateEngineModel === undefined) settings.stateEngineModel = null;
-    if (settings.stateEngineBackend === undefined) settings.stateEngineBackend = null;
+    if (settings.stateEngineProfileId === undefined) settings.stateEngineProfileId = null;
     if (settings.stateEngineTemperature === undefined) settings.stateEngineTemperature = null;
     if (settings.stateEngineMaxTokens === undefined) settings.stateEngineMaxTokens = null;
     if (settings.showTrackerPanel === undefined) settings.showTrackerPanel = false;

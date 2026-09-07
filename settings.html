@@ -37,15 +37,9 @@
             </div>
 
             <div class="se-row">
-                <label for="se_state_engine_backend">State Engine LLM backend</label>
-                <select id="se_state_engine_backend" class="text_pole"></select>
-                <small>Backends come from your saved Connection Profiles. Leave on "Use chat model" to use whatever backend/model the chat itself is using.</small>
-            </div>
-
-            <div class="se-row">
-                <label for="se_state_engine_model">State Engine model</label>
-                <select id="se_state_engine_model" class="text_pole"></select>
-                <small>If set, background State Engine calls (prompted variable updates) use this model instead of the chat model.</small>
+                <label for="se_state_engine_profile">State Engine Connection Profile</label>
+                <select id="se_state_engine_profile" class="text_pole"></select>
+                <small>If set, background State Engine calls (prompted variable updates) use this Connection Profile instead of the chat model.</small>
             </div>
 
             <div class="se-row se-grid2">
