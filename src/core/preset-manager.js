@@ -70,7 +70,7 @@ function getStarterPresetBlueprints() {
                 makeVar({
                     name: 'current_location',
                     label: 'Current Location',
-                    type: 'enum',
+                    type: 'string',
                     defaultValue: 'unknown',
                     behaviors: { prompted: true, increment: false },
                     prompted: { instructions: 'Infer location from narrative context.' },

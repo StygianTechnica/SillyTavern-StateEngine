@@ -23,6 +23,7 @@ export const DEFAULT_UNIFIED_VARIABLE_RULES = [
             '- The object must contain exactly one key per listed variable.',
             '- For update variables: return the new value. If no change is needed, repeat the current value unchanged.',
             '- For boolean-condition variables: return true if the condition is met, otherwise false.',
+            '- The JSON object MUST contain one key for every update variable AND every boolean-condition variable.'
         ].join('\n');
 
 // Debug mode - session-only, not persisted
