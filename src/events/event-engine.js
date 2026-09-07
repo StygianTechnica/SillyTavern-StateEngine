@@ -3,13 +3,13 @@
 import { LOG_PREFIX } from '../core/settings-core.js';
 import { applyResetOnNewChat, runStartupOnce } from '../core/initialization-engine.js';
 import { runPromptedStateUpdate } from '../core/prompted-engine.js';
-import { runDeterministicIncrements } from '../core/increment-engine.js';
+import { runDeterministicIncrements } from '../core/deterministic-engine.js';
+import { loadStateForChat } from '../core/state-loader.js';
 import { applyWorldInfoConditionalFiltering } from '../world-info/wi-filtering.js';
 import { observeWIEditorChanges } from '../world-info/wi-condition-ui.js';
 import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
 import { refreshManagerButtonLater } from '../ui/wand-ui.js';
 import { populateConnectionProfileDropdown } from '../ui/connection-profile-ui.js';
-import { syncVarStoreToChat } from '../core/variable-storage.js';
 
 export function registerEvents() {
     const context = SillyTavern.getContext();
@@ -21,11 +21,13 @@ export function registerEvents() {
 
     // Every statement below is wrapped in its own try/catch. A failure in
     // one State Engine step (e.g. a prompted update) must never prevent the
-    // next step (especially syncVarStoreToChat, which persists/loads chat
-    // variables) from running, and must never propagate out of this event
+    // next step from running, and must never propagate out of this event
     // handler into SillyTavern's own event dispatch / generation pipeline.
+    // Nothing here reads or writes SillyTavern chat metadata — chat state
+    // lives exclusively in variable-store.js (via loadStateForChat).
     eventSource.on(eventTypes.CHAT_CREATED, () => {
         const context = SillyTavern.getContext();
+        const chatId = context.chatId;
 
         try {
             applyResetOnNewChat();
@@ -34,7 +36,7 @@ export function registerEvents() {
         }
 
         try {
-            syncVarStoreToChat(context);
+            loadStateForChat(chatId);
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
         }
@@ -60,9 +62,10 @@ export function registerEvents() {
 
     eventSource.on(eventTypes.CHAT_CHANGED, () => {
         const context = SillyTavern.getContext();
+        const chatId = context.chatId;
 
         try {
-            syncVarStoreToChat(context);
+            loadStateForChat(chatId);
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
         }
@@ -87,9 +90,10 @@ export function registerEvents() {
     });
 
     eventSource.on(eventTypes.USER_MESSAGE_RENDERED, () => {
-        //runCounters('user');
+        const chatId = SillyTavern.getContext().chatId;
+
         try {
-            runDeterministicIncrements('user');
+            runDeterministicIncrements(chatId, 'user');
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
         }
@@ -102,9 +106,10 @@ export function registerEvents() {
     });
 
     eventSource.on(eventTypes.CHARACTER_MESSAGE_RENDERED, () => {
-        //runCounters('ai');
+        const chatId = SillyTavern.getContext().chatId;
+
         try {
-            runDeterministicIncrements('ai');
+            runDeterministicIncrements(chatId, 'ai');
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
         }

@@ -2,8 +2,8 @@
 
 import { LOG_PREFIX, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED_VARIABLE_RULES, getSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
-import { getVarValue, setVarValue, writeVarToChatStorage } from './variable-storage.js';
-import { applyIncrement } from './increment-engine.js';
+import { loadStateForChat } from './state-loader.js';
+import { getVar, setVar, applyIncrement } from './variable-store.js';
 import { callBackgroundLLM } from './background-llm.js';
 import { extractJsonObject, stripHtml, describeConstraint } from '../ui/formatting-utils.js';
 import { setStatus } from '../ui/settings-panel-ui.js';
@@ -25,6 +25,7 @@ export async function runPromptedStateUpdate(triggerType) {
         if (!settings.enabled) return;
 
         const chatId = context.chatId;
+        loadStateForChat(chatId); // ensure this chat's state exists before anything else runs
         const activePresetIds = getPresetsForChat(chatId);
 
         // Filter presets that have this trigger enabled
@@ -38,7 +39,6 @@ export async function runPromptedStateUpdate(triggerType) {
             });
         }
 
-        // Collect variables from presets that should update, and classify them
         // Collect variables from presets that should update, and classify them
         const variables = getAllVariablesFromPresets(presetsToUpdate);
         const updateVars = [];
@@ -72,8 +72,8 @@ export async function runPromptedStateUpdate(triggerType) {
             }
 
             if (isDeterministicIncrement) {
-                // Deterministic increments are NOT part of prompted updates
-                // They are handled exclusively by runDeterministicIncrements()
+                // Deterministic increments are NOT part of prompted updates.
+                // They are handled exclusively by deterministic-engine.js.
                 continue;
             }
 
@@ -99,7 +99,7 @@ export async function runPromptedStateUpdate(triggerType) {
 
             const updateVarLines = updateVars
                 .map((def) => {
-                    const current = getVarValue(context, def);
+                    const current = getVar(chatId, def.name)?.value ?? def.defaultValue;
                     const instructions = (def.prompted?.instructions || def.description || '').trim();
                     return `- "${def.name}" [${describeConstraint(def)}] currently ${JSON.stringify(current)}.${instructions ? ` ${instructions}` : ''}`;
                 })
@@ -107,7 +107,7 @@ export async function runPromptedStateUpdate(triggerType) {
 
             const incrementVarLines = incrementVars
                 .map((def) => {
-                    const current = getVarValue(context, def);
+                    const current = getVar(chatId, def.name)?.value ?? def.defaultValue;
                     const instructions = (def.prompted?.instructions || def.description || '').trim();
                     return `- "${def.name}" (${def.type}, current: ${current}): ${instructions}`;
                 })
@@ -160,8 +160,7 @@ export async function runPromptedStateUpdate(triggerType) {
                         let updatedCount = 0;
                         for (const def of updateVars) {
                             if (Object.prototype.hasOwnProperty.call(parsed, def.name)) {
-                                setVarValue(context, def, parsed[def.name]);
-                                writeVarToChatStorage(context, def.name, parsed[def.name]);
+                                setVar(chatId, def.name, parsed[def.name], def);
                                 updatedCount++;
                             }
                         }
@@ -169,7 +168,7 @@ export async function runPromptedStateUpdate(triggerType) {
                         let incrementedCount = 0;
                         for (const def of incrementVars) {
                             if (parsed[def.name] === true) {
-                                applyIncrement(context, def, def.increment.delta);
+                                applyIncrement(chatId, def.name, def.increment.delta, def);
                                 incrementedCount++;
                             }
                         }

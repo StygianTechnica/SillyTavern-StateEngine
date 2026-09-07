@@ -99,6 +99,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
     wiConditions: {}, // Maps "worldbook.uid" -> array of {variable, operator, value}
     promptedHeader: DEFAULT_PROMPTED_HEADER,
     chatVariables: {},
+    // Isolated State Engine data store (src/core/variable-store.js). Never
+    // read from or written to SillyTavern chat metadata - this is its own
+    // key inside the extension's own settings blob.
+    variableStore: { chats: {} },
 });
 
 // ---------------------------------------------------------------------------
@@ -118,6 +122,8 @@ export function getSettings() {
     if (settings.stateEngineProfileId === undefined) settings.stateEngineProfileId = null;
     if (settings.stateEngineTemperature === undefined) settings.stateEngineTemperature = null;
     if (settings.stateEngineMaxTokens === undefined) settings.stateEngineMaxTokens = null;
+    if (!settings.variableStore || typeof settings.variableStore !== 'object') settings.variableStore = { chats: {} };
+    if (!settings.variableStore.chats || typeof settings.variableStore.chats !== 'object') settings.variableStore.chats = {};
     if (settings.showTrackerPanel === undefined) settings.showTrackerPanel = false;
     if (!settings.trackerPanelPos || typeof settings.trackerPanelPos !== 'object') settings.trackerPanelPos = { top: 100, left: 100 };
     if (settings.trackerPanelCollapsed === undefined) settings.trackerPanelCollapsed = false;
