@@ -295,6 +295,7 @@ export function clearMacroVarsForChat(chatId) {
 export function cleanupDeadChats() {
     try {
         const context = SillyTavern.getContext();
+        console.log(LOG_PREFIX, 'cleanupDeadChats fired. chatList:', context.chatList, 'stored chats:', Object.keys(getStore().chats));
 
         // NOTE: context.chatList is assumed to be [{ chatId }]. 
         // If SillyTavern changes this structure, update comparison logic accordingly.
