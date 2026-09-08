@@ -145,6 +145,8 @@ export function applyIncrement(chatId, varName, delta, def) {
         // Ensure entry exists
         let entry = state.variables[varName];
         console.log(LOG_PREFIX, "Applying increment to: ", varName);
+        console.log(LOG_PREFIX, "variables keys: ", state.variables.keys());
+        console.log(LOG_PREFIX, "Variables has this key: ", state.variables.hasOwnProperty(varName));
         console.log(LOG_PREFIX, "state.variables[", varName, "]: ", state.variables[varName]);
         console.log(LOG_PREFIX, "Variable Entry: ", entry);
         if (!entry) {
