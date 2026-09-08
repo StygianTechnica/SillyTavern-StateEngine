@@ -179,9 +179,9 @@ SECTION 3 — LIFECYCLE RULES
 
 CHAT_CHANGED must NOT seed.  It must load stored values only.
 
-Seeding must occur only on:
+CHAT_CREATED must NOT seed. New chats will not have any presets active in them so there is no need.
 
-CHAT_CREATED
+Seeding must occur only on:
 
 engine enable
 

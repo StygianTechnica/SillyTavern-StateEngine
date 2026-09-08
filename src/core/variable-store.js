@@ -140,24 +140,31 @@ export function setVar(chatId, varName, value, def) {
 export function applyIncrement(chatId, varName, delta, def) {
     try {
         const state = loadChatState(chatId);
-
+        console.log(LOG_PREFIX, "****************************");
+        console.log(LOG_PREFIX, "state.variables: ", state.variables);
         // Ensure entry exists
         let entry = state.variables[varName];
+        console.log(LOG_PREFIX, "Applying increment to: ", varName);
+        console.log(LOG_PREFIX, "Variable Entry: ", entry);
         if (!entry) {
             state.variables[varName] = { value: 0 };
-            entry = state.variables[varName];   // ← REQUIRED FIX
+            entry = state.variables[varName];
         }
 
         // Convert current value to number safely
         let current = Number(entry.value);
         if (Number.isNaN(current)) {
+            console.log(LOG_PREFIX, "non-numeric value detectied!!!");
             console.warn(LOG_PREFIX, `applyIncrement: non-numeric value for "${varName}", defaulting to 0`);
             current = 0;
         }
 
         const next = current + delta;
+        console.log(LOG_PREFIX, "Variable next: ", next);
+
         entry.value = next;
         saveChatState(chatId, state);
+        console.log(LOG_PREFIX, "****************************");
 
         // Mirror into macro-visible var store
         setVarValue(

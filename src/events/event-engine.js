@@ -49,25 +49,7 @@ export function registerEvents() {
         }
 
         try {
-            applyResetOnNewChat();
-        } catch (err) {
-            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
-        }
-
-        try {
             loadChatState(chatId);
-        } catch (err) {
-            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
-        }
-
-        try {
-            seedVariablesForChat(chatId);
-        } catch (err) {
-            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
-        }
-
-        try {
-            runPromptedStateUpdate('new_chat');
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
         }
