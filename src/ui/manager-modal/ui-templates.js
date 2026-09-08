@@ -380,6 +380,53 @@ export function buildWorldInfoTabContainer(conditionRows, conditionCount) {
     `;
 }
 
+export function buildVariableManagementRow(chatId, state, isActiveChat) {
+    const variables = state?.variables || {};
+    const varCount = Object.keys(variables).length;
+    const snippetFull = JSON.stringify(variables);
+    const snippet = escapeHtml(snippetFull.slice(0, 200)) + (snippetFull.length > 200 ? '…' : '');
+
+    return `
+        <div class="se-manager-varmgmt-row" data-chat-id="${escapeHtml(chatId)}">
+            <div class="se-manager-varmgmt-info">
+                <div class="se-manager-varmgmt-chat-id">
+                    ${escapeHtml(chatId)}
+                    ${isActiveChat ? '<span class="se-manager-varmgmt-active-badge">Active</span>' : ''}
+                </div>
+                <small>Variables: ${varCount}</small>
+                <pre class="se-manager-varmgmt-snippet">${snippet}</pre>
+            </div>
+            <div class="se-manager-varmgmt-actions">
+                <button type="button" class="menu_button se-varmgmt-export" data-chat-id="${escapeHtml(chatId)}" title="Copy this chat's stored variables as JSON">
+                    <i class="fa-solid fa-copy"></i> Export
+                </button>
+                <button type="button" class="menu_button se-varmgmt-import" data-chat-id="${escapeHtml(chatId)}" title="Overwrite this chat's stored variables from pasted JSON">
+                    <i class="fa-solid fa-file-import"></i> Import
+                </button>
+                <button type="button" class="menu_button se-varmgmt-delete" data-chat-id="${escapeHtml(chatId)}" title="Delete this chat's stored variables">
+                    <i class="fa-solid fa-trash"></i> Delete
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+export function buildVariableManagementTab(rowsHtml) {
+    return `
+        <div class="se-manager-section">
+            <h3>Variable Management</h3>
+            <small>
+                Every chat's stored State Engine variables, independent of which chat is currently open.
+                Export copies a chat's stored data as JSON. Import overwrites a chat's stored data from
+                pasted JSON. Delete permanently removes a chat's stored data.
+            </small>
+            <div class="se-manager-varmgmt-list">
+                ${rowsHtml || '<div class="se-empty">No stored chat data.</div>'}
+            </div>
+        </div>
+    `;
+}
+
 export function buildDebugTabContainer(activePresetsHtml, variablesHtml, isEnabled, debugInfo) {
     return `
         <div class="se-manager-section">

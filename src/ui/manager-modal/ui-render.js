@@ -124,6 +124,22 @@ export function renderWorldInfoTab(managerApi) {
     $tab.html(html);
 }
 
+export function renderVariableManagementTab(managerApi) {
+    const settings = managerApi.getSettings();
+    const $tab = $('#se-manager-varmgmt-tab');
+    if (!$tab.length) return;
+
+    const store = settings.variableStore?.chats || {};
+    const currentChatId = managerApi.getCurrentChatId();
+
+    const rowsHtml = Object.entries(store)
+        .sort(([, a], [, b]) => (b?.lastUpdated || 0) - (a?.lastUpdated || 0))
+        .map(([chatId, state]) => uiTemplates.buildVariableManagementRow(chatId, state, chatId === currentChatId))
+        .join('');
+
+    $tab.html(uiTemplates.buildVariableManagementTab(rowsHtml));
+}
+
 export function renderDebugTab(managerApi) {
     const $tab = $('#se-manager-debug-tab');
     if (!$tab.length) return;

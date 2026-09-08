@@ -682,3 +682,67 @@
 .se-manager-enum-delete {
     flex: 0 0 auto;
 }
+
+/* Variable Management tab */
+.se-manager-varmgmt-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.se-manager-varmgmt-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px;
+    background-color: var(--bg-secondary, #222);
+    border: 1px solid var(--border-color, #333);
+    border-radius: 4px;
+}
+
+.se-manager-varmgmt-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.se-manager-varmgmt-chat-id {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-color, #fff);
+    font-weight: 500;
+    font-family: monospace;
+    word-break: break-all;
+}
+
+.se-manager-varmgmt-active-badge {
+    font-family: inherit;
+    font-size: 0.75em;
+    font-weight: normal;
+    color: var(--accent-color, #4a9eff);
+    background-color: rgba(74, 158, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 3px;
+    white-space: nowrap;
+}
+
+.se-manager-varmgmt-snippet {
+    margin: 6px 0 0;
+    padding: 6px 8px;
+    background-color: var(--bg-color, #1a1a1a);
+    border-radius: 3px;
+    font-size: 12px;
+    color: var(--text-color, #999);
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 80px;
+    overflow-y: auto;
+}
+
+.se-manager-varmgmt-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 0 0 auto;
+}

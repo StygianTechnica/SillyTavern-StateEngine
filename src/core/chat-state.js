@@ -125,19 +125,6 @@ export function getVar(chatId, varName) {
 // chat-scoped variable named varName.
 export function setVar(chatId, varName, value, def) {
     try {
-        // TEMP DIAGNOSTIC - filter console on "SE_SETVAR_DIAG". Read-only,
-        // does not change any behavior. Every write to the isolated store
-        // goes through this function (spec 1.6), so this catches every
-        // caller that touches a variable's value, including whoever writes
-        // it right before an increment tick reads it.
-        console.warn('SE_SETVAR_DIAG', 'setVar called', {
-            chatId,
-            varName,
-            value,
-            defType: def?.type,
-            callerLine: (new Error().stack || '').split('\n')[2]?.trim(),
-        });
-
         const state = loadChatState(chatId);
 
         // 1. Update the isolated store: the value, plus a snapshot of the
@@ -172,16 +159,6 @@ export function applyIncrement(chatId, varName, delta, def) {
         // Ensure entry exists
         let entry = state.variables[varName];
         if (!entry) {
-            // TEMP DIAGNOSTIC - filter console on "SE_APPLYINCREMENT_DIAG".
-            // Read-only aside from the console.warn itself; the fresh-entry
-            // creation on the next line is existing behavior, unchanged.
-            console.warn('SE_APPLYINCREMENT_DIAG', 'entry missing for this variable - creating a fresh one at value 0 before incrementing', {
-                chatId,
-                varName,
-                defType: def?.type,
-                wholeChatEntryExistedInStore: !!getStore().chats[chatId],
-                otherVarsAlreadyInThisState: Object.keys(state.variables),
-            });
             state.variables[varName] = { value: 0, def: def ?? null };
             entry = state.variables[varName];
         } else if (def) {
@@ -191,19 +168,6 @@ export function applyIncrement(chatId, varName, delta, def) {
             // call, never from this (or any) stored snapshot.
             entry.def = def;
         }
-
-        // TEMP DIAGNOSTIC - filter console on "SE_APPLYINCREMENT_DIAG".
-        // Read-only. Shows the value this tick actually read, before any
-        // conversion/cycling - if this is already wrong, something else
-        // wrote it before this tick ran (check SE_SETVAR_DIAG for who).
-        console.warn('SE_APPLYINCREMENT_DIAG', 'applyIncrement read this entry before computing next value', {
-            chatId,
-            varName,
-            delta,
-            defType: def?.type,
-            entryValueBeforeIncrement: entry.value,
-            entryDefTypeBeforeIncrement: entry.def?.type,
-        });
 
         let next;
         if (def?.type === 'enum') {
@@ -366,170 +330,6 @@ export function clearMacroVarsForChat(chatId) {
                 console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
             }
         }
-    } catch (err) {
-        console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
-    }
-}
-
-// Fetches the real, current list of chat ids that exist on disk for a
-// character avatar, via the same server endpoint SillyTavern's own "past
-// chats" UI calls internally (getPastCharacterChats() in script.js) -
-// there is no such list on getContext() itself. Confirmed against a live
-// getContext() dump that no chatList (or equivalent) property exists there.
-//
-// Returns null - not an empty array - when the check itself couldn't be
-// completed (network error, non-ok response), so callers can tell
-// "verified: this character has zero chats" apart from "couldn't verify
-// right now" and never delete on the latter. Only a 200 response whose
-// body is exactly `{ error: true }` (character has no chat folder at all)
-// counts as a verified empty list.
-async function fetchExistingChatIdsForAvatar(context, avatar) {
-    try {
-        const response = await fetch('/api/characters/chats', {
-            method: 'POST',
-            headers: context.getRequestHeaders(),
-            body: JSON.stringify({ avatar_url: avatar, simple: true }),
-        });
-        if (!response.ok) return null;
-        const data = await response.json();
-        if (data && data.error === true) return [];
-        return Object.values(data).map(c => c.file_id ?? String(c.file_name || '').replace(/\.jsonl$/, ''));
-    } catch (err) {
-        console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
-        return null;
-    }
-}
-
-// Removes isolated-store entries for chats that no longer exist.
-//
-// context.chatList is not a real SillyTavern API - confirmed absent from a
-// live getContext() dump. The only real way to check whether a chat still
-// exists is POST /api/characters/chats, which is scoped to one character's
-// avatar_url; there is no global "every chat that exists" endpoint. So:
-//
-//   1. Stored chats are grouped by the character avatar recorded on them
-//      (state.characterAvatar, stamped by loadChatState when a chat's
-//      entry is first created).
-//   2. A recorded character that no longer appears in context.characters
-//      at all has its chats deleted outright - that character (and so
-//      those chats) can never again be reached through SillyTavern's UI or
-//      re-verified through this API, so keeping the data serves no purpose.
-//   3. A character that still exists has its real chat list fetched, and
-//      only stored chats confirmed absent from it are deleted. A failed
-//      fetch returns null, not an empty list, so a network hiccup is never
-//      treated as "no chats live" - that was the exact shape of the bug
-//      that used to wipe everything off an unreliable context.chatList.
-//   4. Group chats follow the same pattern via state.groupId instead of
-//      characterAvatar, using context.groups instead of context.characters.
-//      A group's .chats field (an array of chat ids) is already present on
-//      the group object with no server round-trip needed - confirmed
-//      against SillyTavern's own source: context.groups is refreshed on
-//      the same cadence as context.characters (both via getCharacters()),
-//      so "group id no longer in context.groups" is exactly as reliable a
-//      "this group is gone" signal as it is for characters.
-//   5. Entries with neither characterAvatar nor groupId recorded (created
-//      before these fields existed) are left alone, except the currently
-//      active chat, which gets backfilled with whichever applies (the
-//      active group, or the active character) so it becomes eligible for
-//      verification on a future pass.
-export async function cleanupDeadChats() {
-    try {
-        const context = SillyTavern.getContext();
-        const store = getStore();
-
-        // An empty context.characters is ambiguous between "this install
-        // genuinely has zero characters" and "SillyTavern hasn't finished
-        // loading them yet" - this function can run before that resolves
-        // depending on extension-vs-core-app load timing (registerEvents()
-        // listens for APP_READY, but index.js also calls runStartupOnce()
-        // directly right after registering, with no check for whether
-        // APP_READY has actually fired - so this can still run early).
-        // Never treat that ambiguity as "confirmed no characters exist" -
-        // same rule this function already applies to a failed/non-ok
-        // /api/characters/chats response. If characters really is
-        // permanently empty (a fresh install), nothing in store.chats could
-        // have a real characterAvatar stamped on it anyway, so skipping
-        // here is always safe, not just safe in the race case.
-        if (!Array.isArray(context.characters) || context.characters.length === 0) {
-            console.warn(LOG_PREFIX, 'cleanupDeadChats: context.characters not populated yet - skipping this pass rather than treating every stored chat as dead');
-            return;
-        }
-
-        const knownAvatars = new Set(context.characters.map(c => c.avatar));
-        const groupsById = new Map((context.groups || []).map(g => [g.id, g]));
-
-        const chatsByAvatar = new Map();
-        const chatsByGroup = new Map();
-        for (const [chatId, state] of Object.entries(store.chats)) {
-            if (state?.groupId) {
-                if (!chatsByGroup.has(state.groupId)) chatsByGroup.set(state.groupId, []);
-                chatsByGroup.get(state.groupId).push(chatId);
-                continue;
-            }
-            const avatar = state?.characterAvatar;
-            if (!avatar) continue;
-            if (!chatsByAvatar.has(avatar)) chatsByAvatar.set(avatar, []);
-            chatsByAvatar.get(avatar).push(chatId);
-        }
-
-        for (const [avatar, chatIds] of chatsByAvatar) {
-            let live;
-            if (!knownAvatars.has(avatar)) {
-                // Character no longer exists - its chats are unreachable, delete all of them.
-                live = [];
-            } else {
-                live = await fetchExistingChatIdsForAvatar(context, avatar);
-                if (live === null) continue; // couldn't verify this pass - leave alone, try again later
-            }
-
-            const liveSet = new Set(live);
-            for (const chatId of chatIds) {
-                if (liveSet.has(chatId)) continue;
-
-                try {
-                    clearMacroVarsForChat(chatId);
-                } catch (err) {
-                    console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
-                }
-
-                delete store.chats[chatId];
-            }
-        }
-
-        for (const [groupId, chatIds] of chatsByGroup) {
-            const group = groupsById.get(groupId);
-            // Group gone entirely -> its chats are unreachable, delete all of them.
-            // Group still exists -> group.chats is its authoritative chat-id list, no fetch needed.
-            const liveSet = new Set(group ? (group.chats || []) : []);
-
-            for (const chatId of chatIds) {
-                if (liveSet.has(chatId)) continue;
-
-                try {
-                    clearMacroVarsForChat(chatId);
-                } catch (err) {
-                    console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
-                }
-
-                delete store.chats[chatId];
-            }
-        }
-
-        // Backfill characterAvatar/groupId on the active chat if its entry
-        // predates these fields, so it becomes eligible for verification later.
-        const activeEntry = context.chatId ? store.chats[context.chatId] : null;
-        if (activeEntry && !activeEntry.characterAvatar && !activeEntry.groupId) {
-            if (context.groupId) {
-                activeEntry.groupId = context.groupId;
-            } else {
-                const activeAvatar = context.characters?.[context.characterId]?.avatar;
-                if (activeAvatar) {
-                    activeEntry.characterAvatar = activeAvatar;
-                }
-            }
-        }
-
-        persistSettings();
     } catch (err) {
         console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
     }

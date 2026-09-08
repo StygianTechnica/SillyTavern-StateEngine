@@ -120,92 +120,32 @@ no unhandled promise rejections
 
 no thrown errors inside update engines
 
-1.8 Dead Chat Cleanup Rule
-Dead chat IDs must be removed from both isolated store and macro store.
+1.8 Dead Chat Cleanup Rule [REMOVED]
+cleanupDeadChats() and fetchExistingChatIdsForAvatar() have been removed
+entirely from chat-state.js, and no longer run from anywhere (they were
+previously invoked once from runStartupOnce() in initialization-engine.js).
 
-context.chatList does not exist. It was never a real SillyTavern API -
-confirmed absent from a live getContext() dump, and from SillyTavern's own
-st-context.js source. Claude must not reference context.chatList or treat
-its absence as "no chats are live" - doing so previously wiped the entire
-isolated store on every page reload, since every stored chat looked dead
-the moment that property was undefined.
+This automated cleanup went through several rounds of hardening in this
+document's history (an unreliable context.chatList property, then a
+context.characters-not-yet-loaded race that made every character look
+"no longer exists" and deleted every chat's isolated-store entry on every
+page load - including whatever chat the user had open at the time) and was
+ultimately judged not worth the risk: any automated pass that can delete a
+user's chat data based on an inference about app-readiness timing is a
+liability, no matter how many edge cases get patched. Claude must not
+reintroduce automatic dead-chat deletion.
 
-The only real way to verify a chat still exists is
-POST /api/characters/chats (headers: context.getRequestHeaders(), body:
-{ avatar_url, simple: true }), which is scoped to a single character's
-avatar_url - there is no global "every chat that exists" endpoint. A
-non-ok response or a thrown error from this call means "could not verify"
-and must never be treated as "no chats exist for this character."
+In its place, chat data cleanup is now a manual, explicit, per-chat action
+the user performs themselves via the Variable Management tab (1.14) -
+Delete never runs automatically, only on a user's own button click, on
+exactly the chat they clicked it for.
 
-cleanupDeadChats must run only once, on extension load/startup - NOT on
-CHAT_CREATED or CHAT_CHANGED. Now that verification makes real network
-calls (one per distinct character/group represented in the store), running
-it on every chat switch is repeated, unnecessary work for a check whose
-result does not change between chat switches within the same session.
-
-"On extension load" means only after SillyTavern's own app state - in
-particular context.characters - has actually populated, not merely as soon
-as this extension's own script has finished evaluating. Calling
-cleanupDeadChats() bare, synchronously, at the top of registerEvents() ran
-it while context.characters was still empty, which made knownAvatars an
-empty Set, which made every character in the store look "no longer exists"
-and deleted every chat's isolated-store entry outright on every single
-page load - including the chat the user had open.
-
-Moving the call into runStartupOnce() (initialization-engine.js) does NOT
-by itself fix this. index.js calls registerEvents() (which subscribes
-runStartupOnce to APP_READY) and then, in the same synchronous startup,
-unconditionally calls runStartupOnce() directly right after - with no check
-for whether APP_READY has actually fired yet. Because runStartupOnce's
-startupRan guard is a plain boolean with no timing awareness, whichever
-call reaches it first consumes the guard; if this extension's own async
-setup (registerTemplates/initPanel) resolves before SillyTavern's core
-getCharacters() does, the direct call runs everything - including
-cleanupDeadChats - just as early as the original bare call did, and the
-APP_READY listener never gets to run it at all (startupRan is already
-true). So this is still not a reliable readiness signal on its own.
-
-The actual fix is inside cleanupDeadChats() itself: treat an empty/missing
-context.characters the same way a failed /api/characters/chats response is
-already treated - as "cannot verify right now," never as "confirmed no
-characters exist" - and skip the entire pass rather than deleting anything.
-This is always safe, not just safe in the race case: if a character list
-is genuinely, permanently empty, nothing in store.chats could have a real
-characterAvatar stamped on it anyway, so there is nothing a skipped pass
-could have correctly cleaned up. The tradeoff is that a pass which bails
-out this way never runs again this session (runStartupOnce only fires
-once) - dead chats simply accumulate until a future session's startup
-happens to run after context.characters is populated. That is an
-acceptable cost against the alternative of deleting live, in-use chat
-data.
-
-Claude must:
-
-record which character a chat belongs to at the moment its isolated-store
-entry is first created (state.characterAvatar), since the store itself is
-not otherwise scoped by character
-
-delete a stored chat's entry when either: (a) its recorded character no
-longer appears in context.characters at all (that chat can never again be
-reached or re-verified, so retaining it serves no purpose), or (b) its
-recorded character still exists and a successful /api/characters/chats
-call confirms that chat id is no longer present
-
-leave a stored chat's entry untouched when its liveness cannot currently
-be verified (fetch failure, non-ok response), and retry on a future
-cleanup pass rather than deleting on incomplete information
-
-clear macro variables for a chat before deleting its isolated store entry
-
-Group chats follow the same rule via a separate field, state.groupId,
-stamped instead of state.characterAvatar when the chat's entry is first
-created while context.groupId is set. Verification needs no server call:
-context.groups[i].chats is already the group's authoritative chat-id list,
-and context.groups is refreshed on the same cadence as context.characters
-(both driven by SillyTavern's getCharacters()), so "group id no longer in
-context.groups" is exactly as reliable a "this group is gone, purge its
-chats" signal as the character case. A chat entry has exactly one of
-characterAvatar or groupId set, never both.
+state.characterAvatar and state.groupId (stamped on a chat's isolated-store
+entry at creation time - see loadChatState) still exist and are still
+maintained; they are just no longer consumed by an automatic cleanup pass.
+They are now used by offerCopyFromPreviousChat (1.14.1) to find candidate
+source chats for the same character/group. clearMacroVarsForChat (used on
+engine disable) is unaffected by this removal.
 
 1.9 Pseudocode Declaration Rule
 Claude must:
@@ -287,6 +227,51 @@ Preset changes must not reset stored variable values.
 - Hydration must only mirror already-stored values into the macro store; it must never invent or seed new values.
 - When a variable's type changes, its stored value for that chat must be reset to the new type's defaultValue immediately upon variable-definition save.
 - No module may trigger full-store reseeding on preset save.
+
+1.14 Manual Variable Management Rule
+
+The Manager Modal has a "Variable Management" tab (manager-modal.js /
+ui-templates.js / ui-render.js / ui-events.js, all under
+src/ui/manager-modal/) listing every chat's stored isolated-store entry,
+independent of which chat is currently open. Each row shows the chatId, its
+variable count, a truncated JSON preview, and three actions:
+
+- Export: copies that chat's full stored entry (JSON.stringify(state, null,
+  2)) to the clipboard, via the same navigator.clipboard.writeText pattern
+  already used by the Debug tab's "Copy JSON" button. Read-only.
+- Import: prompts for pasted JSON (window.prompt, matching this codebase's
+  existing preset rename/clone dialogs) and, after validating it has a
+  `variables` object and confirming if it would overwrite existing data,
+  replaces settings.variableStore.chats[chatId] with the parsed object
+  outright. Only re-mirrors into macro store (hydrateMacroStoreForChat) when
+  the imported chatId is the currently active chat (context.chatId) -
+  context.variables.local only ever reflects the chat SillyTavern currently
+  has open (1.2), so hydrating any other chatId would be a no-op at best.
+- Delete: removes settings.variableStore.chats[chatId] outright, after a
+  confirm(). This is the replacement for the automated cleanup removed in
+  1.8 - the same destructive action, but user-initiated and scoped to
+  exactly the chat they clicked, never inferred from app-readiness timing.
+
+All three actions target whichever chatId is on the clicked row, never
+"whichever chat happens to be open" - a user managing this tab may be
+looking at many chats at once.
+
+1.14.1 Copy From Previous Chat Rule
+
+On CHAT_CREATED (only - never CHAT_CHANGED), offerCopyFromPreviousChat()
+(initialization-engine.js) looks for another stored chat belonging to the
+same character (state.characterAvatar) or group (state.groupId) as the new
+chat, with at least one stored variable. If one or more exist, the most
+recently updated candidate is offered via a single confirm() dialog; on
+acceptance, that source chat's variables are copied into the new chat one
+at a time through setVar() - never by assigning the whole stored state
+object wholesale, since that would also overwrite the new chat's own
+characterAvatar/groupId/seeded stamps with the source chat's.
+
+This is a new-chat convenience only, not automatic hydration, and must not
+be confused with seeding: 3.1 still forbids seeding on CHAT_CREATED, and
+this function never invents values or reads from preset defaults - it only
+ever copies values that were already stored for a different, real chat.
 
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:

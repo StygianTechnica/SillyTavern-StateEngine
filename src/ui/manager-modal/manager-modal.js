@@ -56,6 +56,9 @@ export function buildManagerModal() {
             <button class="se-manager-tab-btn" data-tab="worldinfo">
                 <i class="fa-solid fa-book"></i> World Info
             </button>
+            <button class="se-manager-tab-btn" data-tab="varmgmt">
+                <i class="fa-solid fa-database"></i> Variable Management
+            </button>
             <button class="se-manager-tab-btn" data-tab="debug">
                 <i class="fa-solid fa-bug"></i> Debug
             </button>
@@ -68,6 +71,7 @@ export function buildManagerModal() {
             <div class="se-manager-tab-pane se-manager-tab-active" data-tab="presets" id="se-manager-presets-tab"></div>
             <div class="se-manager-tab-pane" data-tab="variables" id="se-manager-variables-tab"></div>
             <div class="se-manager-tab-pane" data-tab="worldinfo" id="se-manager-worldinfo-tab"></div>
+            <div class="se-manager-tab-pane" data-tab="varmgmt" id="se-manager-varmgmt-tab"></div>
             <div class="se-manager-tab-pane" data-tab="debug" id="se-manager-debug-tab"></div>
         `);
 

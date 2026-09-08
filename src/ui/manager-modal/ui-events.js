@@ -6,7 +6,7 @@ import * as variableSchema from './variable-ui-schema.js';
 import * as uiTemplates from './ui-templates.js';
 import * as uiRender from './ui-render.js';
 import { generateUUID } from './utils.js';
-import { resetValueIfTypeChanged } from '../../core/chat-state.js';
+import { resetValueIfTypeChanged, hydrateMacroStoreForChat } from '../../core/chat-state.js';
 
 export function wireEvents(managerApi, managerState) {
     const $overlay = $('#se-manager-overlay');
@@ -36,6 +36,7 @@ export function wireEvents(managerApi, managerState) {
         if (tab === 'presets') uiRender.renderPresetsTab(managerApi, managerState.currentPresetId);
         else if (tab === 'variables') managerState.currentPresetId = uiRender.renderVariablesTab(managerApi, managerState.currentPresetId);
         else if (tab === 'worldinfo') uiRender.renderWorldInfoTab(managerApi);
+        else if (tab === 'varmgmt') uiRender.renderVariableManagementTab(managerApi);
         else if (tab === 'debug') uiRender.renderDebugTab(managerApi);
     });
 
@@ -296,6 +297,80 @@ export function wireEvents(managerApi, managerState) {
         uiRender.renderPresetsTab(managerApi, managerState.currentPresetId);
 
         managerApi.setStatus(`Description updated for "${preset.name}".`);
+    });
+
+    // Variable Management tab: delete / export / import a chat's stored
+    // data. Each action targets whichever chatId is on the clicked row -
+    // never "whichever chat happens to be open" - since a user managing
+    // this tab is looking at potentially many chats at once.
+    $overlay.on('click', '.se-varmgmt-delete', function () {
+        const chatId = $(this).attr('data-chat-id');
+        const settings = managerApi.getSettings();
+        if (!settings.variableStore?.chats?.[chatId]) return;
+
+        if (!window.confirm(`Delete all stored State Engine variables for chat "${chatId}"? This cannot be undone.`)) return;
+
+        delete settings.variableStore.chats[chatId];
+        managerApi.persistSettings(settings);
+        uiRender.renderVariableManagementTab(managerApi);
+        managerApi.setStatus(`Deleted stored variables for "${chatId}".`);
+        managerApi.renderTrackerPanel();
+    });
+
+    $overlay.on('click', '.se-varmgmt-export', function () {
+        const chatId = $(this).attr('data-chat-id');
+        const settings = managerApi.getSettings();
+        const state = settings.variableStore?.chats?.[chatId];
+        if (!state) return;
+
+        const json = JSON.stringify(state, null, 2);
+        navigator.clipboard.writeText(json).then(() => {
+            managerApi.setStatus(`Copied stored variables for "${chatId}" to clipboard.`);
+        }).catch(err => {
+            console.error('Failed to copy:', err);
+            managerApi.setStatus('Failed to copy to clipboard.', true);
+        });
+    });
+
+    $overlay.on('click', '.se-varmgmt-import', function () {
+        const chatId = $(this).attr('data-chat-id');
+        const settings = managerApi.getSettings();
+        const hasExisting = !!settings.variableStore?.chats?.[chatId];
+
+        const raw = window.prompt(`Paste JSON to import for chat "${chatId}". This will overwrite this chat's stored variables.`, '');
+        if (raw === null || raw.trim() === '') return;
+
+        let parsed;
+        try {
+            parsed = JSON.parse(raw);
+        } catch (err) {
+            alert('Invalid JSON - import cancelled.');
+            return;
+        }
+
+        if (!parsed || typeof parsed !== 'object' || typeof parsed.variables !== 'object' || parsed.variables === null) {
+            alert('That JSON does not look like stored chat data (expected an object with a "variables" field) - import cancelled.');
+            return;
+        }
+
+        if (hasExisting && !window.confirm(`Chat "${chatId}" already has stored variables. Overwrite them with the pasted data?`)) return;
+
+        if (!settings.variableStore) settings.variableStore = { chats: {} };
+        if (!settings.variableStore.chats) settings.variableStore.chats = {};
+        settings.variableStore.chats[chatId] = parsed;
+        managerApi.persistSettings(settings);
+
+        // Only re-mirror into macro store if this is the chat currently open -
+        // context.variables.local only ever reflects whichever chat is active
+        // (spec 1.2), so hydrating any other chatId here would be a no-op at
+        // best and a misdirected write at worst.
+        if (SillyTavern.getContext().chatId === chatId) {
+            hydrateMacroStoreForChat(chatId);
+        }
+
+        uiRender.renderVariableManagementTab(managerApi);
+        managerApi.setStatus(`Imported stored variables for "${chatId}".`);
+        managerApi.renderTrackerPanel();
     });
 
     // Debug mode controls

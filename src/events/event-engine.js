@@ -1,7 +1,7 @@
 // State Engine — event wiring
 
 import { LOG_PREFIX } from '../core/settings-core.js';
-import { applyResetOnNewChat, runStartupOnce } from '../core/initialization-engine.js';
+import { applyResetOnNewChat, runStartupOnce, offerCopyFromPreviousChat } from '../core/initialization-engine.js';
 import { runPromptedStateUpdate } from '../core/prompted-engine.js';
 import { runDeterministicIncrements } from '../core/deterministic-engine.js';
 import { seedVariablesForChat, hydrateMacroStoreForChat, loadChatState } from '../core/chat-state.js';
@@ -15,12 +15,8 @@ export function registerEvents() {
     const context = SillyTavern.getContext();
     const { eventSource, eventTypes } = context;
 
-    // runStartupOnce() (called on APP_READY below, and covers the case where
-    // this extension finishes loading only after APP_READY has already
-    // fired) is what actually runs cleanupDeadChats() now - not here. Doing
-    // it unconditionally at this point used to run cleanupDeadChats() before
-    // context.characters had loaded, making every character look "no longer
-    // existing" and wiping every chat's isolated-store entry on every load.
+    // Covers the case where this extension finishes loading only after
+    // APP_READY has already fired; runStartupOnce() guards against firing twice.
     eventSource.on(eventTypes.APP_READY, runStartupOnce);
 
     // Every statement below is wrapped in its own try/catch. A failure in
@@ -35,6 +31,12 @@ export function registerEvents() {
 
         try {
             loadChatState(chatId);
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
+
+        try {
+            offerCopyFromPreviousChat(chatId);
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
         }
