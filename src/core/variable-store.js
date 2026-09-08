@@ -141,12 +141,13 @@ export function setVar(chatId, varName, value, def) {
 export function applyIncrement(chatId, varName, delta, def) {
     try {
         const state = loadStateForChat(chatId);
-        const entry = state.variables[varName];
-        if (!entry) {
-            // Create missing entry with default value 0
-            state.variables[varName] = { value: 0 };
-        }
 
+        // Ensure entry exists
+        let entry = state.variables[varName];
+        if (!entry) {
+            state.variables[varName] = { value: 0 };
+            entry = state.variables[varName];   // ← REQUIRED FIX
+        }
 
         // Convert current value to number safely
         let current = Number(entry.value);
@@ -169,6 +170,7 @@ export function applyIncrement(chatId, varName, delta, def) {
         console.warn(LOG_PREFIX, 'applyIncrement failed (gracefully handled)', err);
     }
 }
+
 
 
 // Seeds any preset variable that doesn't yet have an entry in this chat's
