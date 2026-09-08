@@ -95,6 +95,20 @@ export function showManagerModal() {
     const $overlay = $('#se-manager-overlay');
     if ($overlay.length) {
         $overlay.fadeIn(200);
+        // Always reflects the latest variableStore contents, even if the
+        // user switched chats or variable data changed while the modal was
+        // closed - never left stale from whenever the modal was last built.
+        uiRender.renderVariableManagementTab(managerApi);
+    }
+}
+
+// Lets other modules (ui-entrypoints.js's refreshPanelIfOpen, called on
+// CHAT_CHANGED) ask this one to refresh the Variable Management tab only
+// when the modal is actually visible - without exposing managerApi itself
+// outside this file.
+export function refreshVariableManagementTabIfOpen() {
+    if ($('#se-manager-overlay').is(':visible')) {
+        uiRender.renderVariableManagementTab(managerApi);
     }
 }
 

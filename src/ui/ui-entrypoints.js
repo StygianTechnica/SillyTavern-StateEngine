@@ -5,6 +5,7 @@ import { LOG_PREFIX, EXT_TEMPLATE_PATH } from '../core/settings-core.js';
 import { renderVarTable } from './manager-modal-ui.js';
 import { renderTrackerPanel } from './tracker-panel-ui.js';
 import { updateManagerButtonState } from './wand-ui.js';
+import { refreshVariableManagementTabIfOpen } from './manager-modal/manager-modal.js';
 
 export function refreshPanelIfOpen() {
     if ($('#state_engine_settings').length) {
@@ -12,6 +13,11 @@ export function refreshPanelIfOpen() {
     }
     if ($('#se_tracker_panel').length) {
         renderTrackerPanel();
+    }
+    try {
+        refreshVariableManagementTabIfOpen();
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
     }
     updateManagerButtonState();
 }
