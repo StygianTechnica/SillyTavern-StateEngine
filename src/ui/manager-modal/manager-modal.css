@@ -683,37 +683,47 @@
     flex: 0 0 auto;
 }
 
-/* Variable Management tab */
-.se-manager-varmgmt-list {
+/* Variable Management tab - compact row layout */
+.se-varmgmt-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
 }
 
-.se-manager-varmgmt-row {
+.se-varmgmt-row {
+    padding: 8px 4px;
+    border-bottom: 1px solid var(--border-color, #333);
+    transition: background-color 0.15s ease;
+}
+
+.se-varmgmt-row:last-child {
+    border-bottom: none;
+}
+
+.se-varmgmt-row:hover {
+    background-color: rgba(255, 255, 255, 0.03);
+}
+
+.se-varmgmt-row-main {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 12px;
-    background-color: var(--bg-secondary, #222);
-    border: 1px solid var(--border-color, #333);
-    border-radius: 4px;
 }
 
-.se-manager-varmgmt-info {
-    flex: 1;
+.se-varmgmt-row-info {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
     min-width: 0;
 }
 
-.se-manager-varmgmt-chat-id {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+.se-varmgmt-name {
     color: var(--text-color, #fff);
-    font-weight: 500;
-    font-family: monospace;
-    word-break: break-all;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .se-manager-varmgmt-active-badge {
@@ -727,22 +737,65 @@
     white-space: nowrap;
 }
 
-.se-manager-varmgmt-snippet {
+.se-varmgmt-meta {
+    color: #aaa;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.se-varmgmt-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 0 0 auto;
+}
+
+.se-varmgmt-icon-btn {
+    background: none;
+    border: none;
+    color: #aaa;
+    cursor: pointer;
+    padding: 4px 6px;
+    font-size: 13px;
+    line-height: 1;
+    border-radius: 3px;
+    transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.se-varmgmt-icon-btn:hover {
+    color: #fff;
+    background-color: rgba(255, 255, 255, 0.06);
+}
+
+.se-varmgmt-snippet-line {
+    margin-top: 2px;
+    font-family: var(--monoFontFamily, monospace);
+    font-size: 11px;
+    color: #888;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.se-varmgmt-json-detail {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.2s ease;
+}
+
+.se-varmgmt-json-detail.se-varmgmt-json-expanded {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.se-varmgmt-json {
     margin: 6px 0 0;
     padding: 6px 8px;
     background-color: var(--bg-color, #1a1a1a);
     border-radius: 3px;
-    font-size: 12px;
+    font-family: var(--monoFontFamily, monospace);
+    font-size: 11px;
     color: var(--text-color, #999);
     white-space: pre-wrap;
     word-break: break-all;
-    max-height: 80px;
-    overflow-y: auto;
-}
-
-.se-manager-varmgmt-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    flex: 0 0 auto;
 }

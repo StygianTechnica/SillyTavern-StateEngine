@@ -299,6 +299,20 @@ export function wireEvents(managerApi, managerState) {
         managerApi.setStatus(`Description updated for "${preset.name}".`);
     });
 
+    // Variable Management tab: expand/collapse the JSON detail panel for a
+    // row. Presentation only - reads no data and writes nothing.
+    $overlay.on('click', '.se-varmgmt-toggle-json', function () {
+        const $btn = $(this);
+        const $row = $btn.closest('.se-varmgmt-row');
+        const $detail = $row.find('.se-varmgmt-json-detail');
+        const expanded = $detail.toggleClass('se-varmgmt-json-expanded').hasClass('se-varmgmt-json-expanded');
+
+        $btn.attr('title', expanded ? 'Hide details' : 'Show details')
+            .find('i')
+            .toggleClass('fa-chevron-down', !expanded)
+            .toggleClass('fa-chevron-up', expanded);
+    });
+
     // Variable Management tab: delete / export / import a chat's stored
     // data. Each action targets whichever chatId is on the clicked row -
     // never "whichever chat happens to be open" - since a user managing

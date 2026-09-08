@@ -380,32 +380,67 @@ export function buildWorldInfoTabContainer(conditionRows, conditionCount) {
     `;
 }
 
+// SillyTavern solo-chat ids are conventionally "${characterName} - ${timestamp}"
+// (see script.js: characters[this_chid].chat = `${name2} - ${humanizedDateTime()}`).
+// Group chat ids don't follow this shape at all. Best-effort split only -
+// falls back to the full chatId when it doesn't match, so a group chat (or
+// any legacy/odd id) still renders correctly, just without a split name.
+function splitChatDisplayName(chatId) {
+    const match = /^(.*)\s-\s\d.*$/.exec(chatId || '');
+    return match ? match[1] : (chatId || '');
+}
+
+// state.lastUpdated (a real Date.now() timestamp maintained on every write -
+// see defaultChatState()/saveChatState() in chat-state.js) is a more
+// reliable, format-agnostic timestamp than trying to parse one back out of
+// the chatId string, and "last updated" is more useful here anyway - it
+// tells you how stale a chat's stored data is, which is the point of this
+// tab.
+function formatLastUpdated(ms) {
+    if (!ms) return '';
+    const d = new Date(ms);
+    if (Number.isNaN(d.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export function buildVariableManagementRow(chatId, state, isActiveChat) {
     const variables = state?.variables || {};
     const varCount = Object.keys(variables).length;
-    const snippetFull = JSON.stringify(variables);
-    const snippet = escapeHtml(snippetFull.slice(0, 200)) + (snippetFull.length > 200 ? '…' : '');
+    const oneLineRaw = JSON.stringify(variables);
+    const oneLine = escapeHtml(oneLineRaw.slice(0, 140)) + (oneLineRaw.length > 140 ? '…' : '');
+    const fullJson = escapeHtml(JSON.stringify(variables, null, 2));
+
+    const displayName = escapeHtml(splitChatDisplayName(chatId));
+    const timestamp = formatLastUpdated(state?.lastUpdated);
+    const metaText = `${timestamp ? escapeHtml(timestamp) + ' • ' : ''}${varCount} var${varCount === 1 ? '' : 's'}`;
 
     return `
-        <div class="se-manager-varmgmt-row" data-chat-id="${escapeHtml(chatId)}">
-            <div class="se-manager-varmgmt-info">
-                <div class="se-manager-varmgmt-chat-id">
-                    ${escapeHtml(chatId)}
+        <div class="se-varmgmt-row" data-chat-id="${escapeHtml(chatId)}">
+            <div class="se-varmgmt-row-main">
+                <div class="se-varmgmt-row-info">
+                    <span class="se-varmgmt-name">${displayName}</span>
                     ${isActiveChat ? '<span class="se-manager-varmgmt-active-badge">Active</span>' : ''}
+                    <span class="se-varmgmt-meta">${metaText}</span>
                 </div>
-                <small>Variables: ${varCount}</small>
-                <pre class="se-manager-varmgmt-snippet">${snippet}</pre>
+                <div class="se-varmgmt-actions">
+                    <button type="button" class="se-varmgmt-icon-btn se-varmgmt-toggle-json" title="Show details">
+                        <i class="fa-solid fa-chevron-down"></i>
+                    </button>
+                    <button type="button" class="se-varmgmt-icon-btn se-varmgmt-export" data-chat-id="${escapeHtml(chatId)}" title="Export variable data">
+                        <i class="fa-solid fa-file-export"></i>
+                    </button>
+                    <button type="button" class="se-varmgmt-icon-btn se-varmgmt-import" data-chat-id="${escapeHtml(chatId)}" title="Import variable data for this chat">
+                        <i class="fa-solid fa-file-import"></i>
+                    </button>
+                    <button type="button" class="se-varmgmt-icon-btn se-varmgmt-delete" data-chat-id="${escapeHtml(chatId)}" title="Delete stored data for this chat">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </div>
             </div>
-            <div class="se-manager-varmgmt-actions">
-                <button type="button" class="menu_button se-varmgmt-export" data-chat-id="${escapeHtml(chatId)}" title="Copy this chat's stored variables as JSON">
-                    <i class="fa-solid fa-copy"></i> Export
-                </button>
-                <button type="button" class="menu_button se-varmgmt-import" data-chat-id="${escapeHtml(chatId)}" title="Overwrite this chat's stored variables from pasted JSON">
-                    <i class="fa-solid fa-file-import"></i> Import
-                </button>
-                <button type="button" class="menu_button se-varmgmt-delete" data-chat-id="${escapeHtml(chatId)}" title="Delete this chat's stored variables">
-                    <i class="fa-solid fa-trash"></i> Delete
-                </button>
+            <div class="se-varmgmt-snippet-line">${oneLine}</div>
+            <div class="se-varmgmt-json-detail">
+                <pre class="se-varmgmt-json">${fullJson}</pre>
             </div>
         </div>
     `;
@@ -420,7 +455,7 @@ export function buildVariableManagementTab(rowsHtml) {
                 Export copies a chat's stored data as JSON. Import overwrites a chat's stored data from
                 pasted JSON. Delete permanently removes a chat's stored data.
             </small>
-            <div class="se-manager-varmgmt-list">
+            <div class="se-varmgmt-list">
                 ${rowsHtml || '<div class="se-empty">No stored chat data.</div>'}
             </div>
         </div>
