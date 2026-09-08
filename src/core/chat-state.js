@@ -159,6 +159,16 @@ export function applyIncrement(chatId, varName, delta, def) {
         // Ensure entry exists
         let entry = state.variables[varName];
         if (!entry) {
+            // TEMP DIAGNOSTIC - filter console on "SE_APPLYINCREMENT_DIAG".
+            // Read-only aside from the console.warn itself; the fresh-entry
+            // creation on the next line is existing behavior, unchanged.
+            console.warn('SE_APPLYINCREMENT_DIAG', 'entry missing for this variable - creating a fresh one at value 0 before incrementing', {
+                chatId,
+                varName,
+                defType: def?.type,
+                wholeChatEntryExistedInStore: !!getStore().chats[chatId],
+                otherVarsAlreadyInThisState: Object.keys(state.variables),
+            });
             state.variables[varName] = { value: 0, def: def ?? null };
             entry = state.variables[varName];
         } else if (def) {
