@@ -4,7 +4,7 @@ import { LOG_PREFIX } from '../core/settings-core.js';
 import { applyResetOnNewChat, runStartupOnce } from '../core/initialization-engine.js';
 import { runPromptedStateUpdate } from '../core/prompted-engine.js';
 import { runDeterministicIncrements } from '../core/deterministic-engine.js';
-import { seedVariablesForChat, clearMacroVarsForChat, cleanupDeadChats, hydrateMacroStoreForChat, loadChatState } from '../core/variable-store.js';
+import { seedVariablesForChat, cleanupDeadChats, hydrateMacroStoreForChat, loadChatState } from '../core/variable-store.js';
 import { applyWorldInfoConditionalFiltering } from '../world-info/wi-filtering.js';
 import { observeWIEditorChanges } from '../world-info/wi-condition-ui.js';
 import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
@@ -37,18 +37,6 @@ export function registerEvents() {
         const chatId = context.chatId;
 
         try {
-            clearMacroVarsForChat(chatId);
-        } catch (err) {
-            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
-        }
-
-        try {
-            cleanupDeadChats();
-        } catch (err) {
-            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
-        }
-
-        try {
             loadChatState(chatId);
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
@@ -70,18 +58,6 @@ export function registerEvents() {
     eventSource.on(eventTypes.CHAT_CHANGED, () => {
         const context = SillyTavern.getContext();
         const chatId = context.chatId;
-
-        try {
-            clearMacroVarsForChat(chatId);
-        } catch (err) {
-            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
-        }
-
-        try {
-            cleanupDeadChats();
-        } catch (err) {
-            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
-        }
 
         try {
             loadChatState(chatId);

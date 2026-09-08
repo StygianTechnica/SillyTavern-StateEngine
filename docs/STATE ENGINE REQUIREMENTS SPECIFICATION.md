@@ -30,11 +30,15 @@ macro store is updated only via setVarValue
 
 macro store is cleared on:
 
-chat change
-
-chat creation
-
 engine disable
+
+Macro store is NOT cleared on chat change or chat creation. SillyTavern's
+own local-scope macro variables live in chat_metadata.variables, which is
+already chat-scoped and swaps automatically when the active chat changes -
+there is nothing to manually clear. Deliberately clearing it on every chat
+switch, only to immediately repopulate it via hydrateMacroStoreForChat(),
+was pointless churn and the surface where the store.delete-vs-store.del
+bug actually showed up.
 
 macro store is never seeded directly
 
@@ -133,6 +137,12 @@ avatar_url - there is no global "every chat that exists" endpoint. A
 non-ok response or a thrown error from this call means "could not verify"
 and must never be treated as "no chats exist for this character."
 
+cleanupDeadChats must run only once, on extension load/startup - NOT on
+CHAT_CREATED or CHAT_CHANGED. Now that verification makes real network
+calls (one per distinct character/group represented in the store), running
+it on every chat switch is repeated, unnecessary work for a check whose
+result does not change between chat switches within the same session.
+
 Claude must:
 
 record which character a chat belongs to at the moment its isolated-store
@@ -224,11 +234,13 @@ preset add/remove
 Seeding must not occur inside update engines.
 
 3.2 Macro Cleanup
-Macro cleanup must occur:
+Macro cleanup (clearMacroVarsForChat) must occur only on engine disable.
 
-before seeding on chat creation
-
-on engine disable
+It must NOT occur on CHAT_CREATED or CHAT_CHANGED. Local-scope macro
+variables live in chat_metadata, which SillyTavern already swaps per-chat
+automatically - there is nothing to clear on a chat switch, and doing so
+anyway just to immediately repopulate it via hydrateMacroStoreForChat()
+was pure churn (see 1.2).
 
 3.3 Update Engines
 Update engines must run only when:
