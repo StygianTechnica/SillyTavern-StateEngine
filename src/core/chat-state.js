@@ -403,17 +403,6 @@ export async function cleanupDeadChats() {
         const knownAvatars = new Set((context.characters || []).map(c => c.avatar));
         const groupsById = new Map((context.groups || []).map(g => [g.id, g]));
 
-        // TEMP DIAGNOSTIC - filter console on "SE_CLEANUP_DIAG". Read-only,
-        // does not change any behavior. Remove once the active-chat deletion
-        // bug is root-caused.
-        console.log('SE_CLEANUP_DIAG', 'cleanupDeadChats starting', {
-            activeChatId: context.chatId,
-            activeCharacterId: context.characterId,
-            activeCharacterAvatar: context.characters?.[context.characterId]?.avatar ?? null,
-            activeGroupId: context.groupId ?? null,
-            activeChatStoredEntry: context.chatId ? store.chats[context.chatId] : null,
-        });
-
         const chatsByAvatar = new Map();
         const chatsByGroup = new Map();
         for (const [chatId, state] of Object.entries(store.chats)) {
@@ -433,38 +422,14 @@ export async function cleanupDeadChats() {
             if (!knownAvatars.has(avatar)) {
                 // Character no longer exists - its chats are unreachable, delete all of them.
                 live = [];
-                console.log('SE_CLEANUP_DIAG', 'avatar not in knownAvatars - treating all its chats as dead', {
-                    avatar,
-                    chatIds,
-                    knownAvatars: Array.from(knownAvatars),
-                });
             } else {
                 live = await fetchExistingChatIdsForAvatar(context, avatar);
-                console.log('SE_CLEANUP_DIAG', 'fetched live chat ids for avatar', {
-                    avatar,
-                    storedChatIdsForThisAvatar: chatIds,
-                    live,
-                    isActiveChatInThisBucket: chatIds.includes(context.chatId),
-                });
-                if (live === null) {
-                    console.log('SE_CLEANUP_DIAG', 'fetch failed/unverifiable - skipping this avatar this pass', { avatar });
-                    continue; // couldn't verify this pass - leave alone, try again later
-                }
+                if (live === null) continue; // couldn't verify this pass - leave alone, try again later
             }
 
             const liveSet = new Set(live);
             for (const chatId of chatIds) {
                 if (liveSet.has(chatId)) continue;
-
-                if (chatId === context.chatId) {
-                    console.log('SE_CLEANUP_DIAG', '*** ABOUT TO DELETE THE ACTIVE CHAT ***', {
-                        chatId,
-                        avatarCheckedAgainst: avatar,
-                        activeCharacterAvatar: context.characters?.[context.characterId]?.avatar ?? null,
-                        liveListReceived: live,
-                        storedEntryBeingDeleted: store.chats[chatId],
-                    });
-                }
 
                 try {
                     clearMacroVarsForChat(chatId);
@@ -482,26 +447,8 @@ export async function cleanupDeadChats() {
             // Group still exists -> group.chats is its authoritative chat-id list, no fetch needed.
             const liveSet = new Set(group ? (group.chats || []) : []);
 
-            console.log('SE_CLEANUP_DIAG', 'checking group chats', {
-                groupId,
-                groupFound: !!group,
-                storedChatIdsForThisGroup: chatIds,
-                groupChatsLiveList: group?.chats ?? null,
-                isActiveChatInThisBucket: chatIds.includes(context.chatId),
-            });
-
             for (const chatId of chatIds) {
                 if (liveSet.has(chatId)) continue;
-
-                if (chatId === context.chatId) {
-                    console.log('SE_CLEANUP_DIAG', '*** ABOUT TO DELETE THE ACTIVE (GROUP) CHAT ***', {
-                        chatId,
-                        groupId,
-                        groupFound: !!group,
-                        groupChatsLiveList: group?.chats ?? null,
-                        storedEntryBeingDeleted: store.chats[chatId],
-                    });
-                }
 
                 try {
                     clearMacroVarsForChat(chatId);
@@ -512,11 +459,6 @@ export async function cleanupDeadChats() {
                 delete store.chats[chatId];
             }
         }
-
-        console.log('SE_CLEANUP_DIAG', 'cleanupDeadChats finished', {
-            activeChatId: context.chatId,
-            activeChatStillStored: context.chatId ? !!store.chats[context.chatId] : null,
-        });
 
         // Backfill characterAvatar/groupId on the active chat if its entry
         // predates these fields, so it becomes eligible for verification later.

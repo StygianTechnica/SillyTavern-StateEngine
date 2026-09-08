@@ -4,7 +4,7 @@ import { LOG_PREFIX } from '../core/settings-core.js';
 import { applyResetOnNewChat, runStartupOnce } from '../core/initialization-engine.js';
 import { runPromptedStateUpdate } from '../core/prompted-engine.js';
 import { runDeterministicIncrements } from '../core/deterministic-engine.js';
-import { seedVariablesForChat, cleanupDeadChats, hydrateMacroStoreForChat, loadChatState } from '../core/chat-state.js';
+import { seedVariablesForChat, hydrateMacroStoreForChat, loadChatState } from '../core/chat-state.js';
 import { applyWorldInfoConditionalFiltering } from '../world-info/wi-filtering.js';
 import { observeWIEditorChanges } from '../world-info/wi-condition-ui.js';
 import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
@@ -15,15 +15,12 @@ export function registerEvents() {
     const context = SillyTavern.getContext();
     const { eventSource, eventTypes } = context;
 
-    // On extension load.
-    try {
-        cleanupDeadChats();
-    } catch (err) {
-        console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
-    }
-
-    // Covers the case where this extension finishes loading only after
-    // APP_READY has already fired; runStartupOnce() guards against firing twice.
+    // runStartupOnce() (called on APP_READY below, and covers the case where
+    // this extension finishes loading only after APP_READY has already
+    // fired) is what actually runs cleanupDeadChats() now - not here. Doing
+    // it unconditionally at this point used to run cleanupDeadChats() before
+    // context.characters had loaded, making every character look "no longer
+    // existing" and wiping every chat's isolated-store entry on every load.
     eventSource.on(eventTypes.APP_READY, runStartupOnce);
 
     // Every statement below is wrapped in its own try/catch. A failure in

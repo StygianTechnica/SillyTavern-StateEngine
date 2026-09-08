@@ -1,8 +1,8 @@
 // State Engine — initialization / reset
 
-import { getSettings, migrateAllSettings } from './settings-core.js';
+import { LOG_PREFIX, getSettings, migrateAllSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
-import { setVar } from './chat-state.js';
+import { setVar, cleanupDeadChats } from './chat-state.js';
 import { getDefaultValue } from './variable-schema.js';
 import { shouldSkipPromptedRefresh, runPromptedStateUpdate } from './prompted-engine.js';
 
@@ -26,5 +26,18 @@ export function runStartupOnce() {
     startupRan = true;
     const settings = getSettings();
     migrateAllSettings(settings);
+
+    // Deliberately run here, not bare at extension-script-load time: this
+    // fires on/after APP_READY (or immediately if APP_READY already fired -
+    // see registerEvents()), by which point context.characters is actually
+    // populated. Running it any earlier meant knownAvatars was empty on
+    // every load, so every character looked "no longer existing" and
+    // cleanupDeadChats deleted every chat's isolated-store entry outright.
+    try {
+        cleanupDeadChats();
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+    }
+
     runPromptedStateUpdate('startup');
 }

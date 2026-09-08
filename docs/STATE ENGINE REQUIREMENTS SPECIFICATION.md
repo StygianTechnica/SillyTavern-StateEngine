@@ -143,6 +143,21 @@ calls (one per distinct character/group represented in the store), running
 it on every chat switch is repeated, unnecessary work for a check whose
 result does not change between chat switches within the same session.
 
+"On extension load" means only after SillyTavern's own app state - in
+particular context.characters - has actually populated, not merely as soon
+as this extension's own script has finished evaluating. Calling
+cleanupDeadChats() bare, synchronously, at the top of registerEvents() ran
+it while context.characters was still empty, which made knownAvatars an
+empty Set, which made every character in the store look "no longer exists"
+and deleted every chat's isolated-store entry outright on every single
+page load - including the chat the user had open. This is why
+cleanupDeadChats() is invoked from inside runStartupOnce()
+(initialization-engine.js) instead: that function is already the
+established, idempotent (startupRan guard) mechanism for "run this once,
+whenever APP_READY actually fires or has already fired" - reusing it here
+means cleanupDeadChats gets the same readiness guarantee as the other
+startup-only logic, rather than a separate, weaker one.
+
 Claude must:
 
 record which character a chat belongs to at the moment its isolated-store
