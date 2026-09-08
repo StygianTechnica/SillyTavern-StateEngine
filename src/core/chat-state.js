@@ -125,6 +125,19 @@ export function getVar(chatId, varName) {
 // chat-scoped variable named varName.
 export function setVar(chatId, varName, value, def) {
     try {
+        // TEMP DIAGNOSTIC - filter console on "SE_SETVAR_DIAG". Read-only,
+        // does not change any behavior. Every write to the isolated store
+        // goes through this function (spec 1.6), so this catches every
+        // caller that touches a variable's value, including whoever writes
+        // it right before an increment tick reads it.
+        console.warn('SE_SETVAR_DIAG', 'setVar called', {
+            chatId,
+            varName,
+            value,
+            defType: def?.type,
+            callerLine: (new Error().stack || '').split('\n')[2]?.trim(),
+        });
+
         const state = loadChatState(chatId);
 
         // 1. Update the isolated store: the value, plus a snapshot of the
@@ -178,6 +191,19 @@ export function applyIncrement(chatId, varName, delta, def) {
             // call, never from this (or any) stored snapshot.
             entry.def = def;
         }
+
+        // TEMP DIAGNOSTIC - filter console on "SE_APPLYINCREMENT_DIAG".
+        // Read-only. Shows the value this tick actually read, before any
+        // conversion/cycling - if this is already wrong, something else
+        // wrote it before this tick ran (check SE_SETVAR_DIAG for who).
+        console.warn('SE_APPLYINCREMENT_DIAG', 'applyIncrement read this entry before computing next value', {
+            chatId,
+            varName,
+            delta,
+            defType: def?.type,
+            entryValueBeforeIncrement: entry.value,
+            entryDefTypeBeforeIncrement: entry.def?.type,
+        });
 
         let next;
         if (def?.type === 'enum') {
