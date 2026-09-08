@@ -148,11 +148,11 @@ export function setVar(chatId, varName, value, def) {
 }
 
 
-// Reads the current value, adds delta, writes it back — AND mirrors the
-// resulting value into the macro-visible var store the same way setVar
-// does. Numeric only, per spec ("read current value, add delta, write
-// back") - this does not reproduce the boolean-toggle / enum-cycle behavior
-// that increment-engine.js's (separate, macroStore-based) applyIncrement has.
+// Reads the current value and writes back the next one — AND mirrors the
+// result into the macro-visible var store the same way setVar does. For
+// def.type === 'enum' this cycles through def.enumValues instead of adding
+// delta (enum values are never coerced to numbers); every other type keeps
+// the original numeric "read current value, add delta, write back" behavior.
 export function applyIncrement(chatId, varName, delta, def) {
     try {
         const state = loadChatState(chatId);
@@ -169,14 +169,25 @@ export function applyIncrement(chatId, varName, delta, def) {
             entry.def = def;
         }
 
-        // Convert current value to number safely
-        let current = Number(entry.value);
-        if (Number.isNaN(current)) {
-            console.warn(LOG_PREFIX, `applyIncrement: non-numeric value for "${varName}", defaulting to 0`);
-            current = 0;
+        let next;
+        if (def?.type === 'enum') {
+            const list = Array.isArray(def.enumValues) ? def.enumValues : [];
+            if (list.length === 0) {
+                // Nothing to cycle through - leave the value untouched.
+                saveChatState(chatId, state);
+                return;
+            }
+            const idx = list.indexOf(entry.value);
+            next = idx === -1 ? list[0] : list[(idx + 1) % list.length];
+        } else {
+            // Convert current value to number safely
+            let current = Number(entry.value);
+            if (Number.isNaN(current)) {
+                console.warn(LOG_PREFIX, `applyIncrement: non-numeric value for "${varName}", defaulting to 0`);
+                current = 0;
+            }
+            next = current + delta;
         }
-
-        const next = current + delta;
 
         entry.value = next;
         saveChatState(chatId, state);

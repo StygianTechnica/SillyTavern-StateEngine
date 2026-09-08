@@ -109,6 +109,9 @@ export function buildVariablesListRow(varId, varDef, index, total, selectedPrese
 }
 
 export function buildInlineVariableEditor(d, canIncrement) {
+    // Collected values round-trip enumValues.N fields through collectInlineVariableValues()
+    // as an object with numeric keys rather than a real array - accept either shape here.
+    const enumValues = Array.isArray(d.enumValues) ? d.enumValues : Object.values(d.enumValues || {});
     return `
         <div class="se-manager-variable-editor-fields">
 
@@ -135,6 +138,29 @@ export function buildInlineVariableEditor(d, canIncrement) {
                 data-field="defaultValue"
                 placeholder="Default value"
                 value="${escapeHtml(d.defaultValue)}" />
+
+            <!-- Enum values editor -->
+            ${d.type === 'enum' ? `
+                <div class="se-manager-enum-values">
+                    <label>Enum values</label>
+                    <div class="se-manager-enum-values-list">
+                        ${enumValues.map((val, i) => `
+                            <div class="se-manager-enum-value-row">
+                                <input class="text_pole se-manager-var-field se-manager-enum-value-input"
+                                    data-field="enumValues.${i}"
+                                    placeholder="Value ${i + 1}"
+                                    value="${escapeHtml(val)}" />
+                                <button type="button" class="menu_button se-manager-action-btn se-manager-remove-enum-value" data-index="${i}" title="Remove value">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <button type="button" id="se-manager-add-enum-value" class="menu_button" title="Add enum value">
+                        <i class="fa-solid fa-plus"></i> Add value
+                    </button>
+                </div>
+            ` : ''}
 
             <!-- Behavior toggles -->
             <div class="se-manager-variable-behaviors">

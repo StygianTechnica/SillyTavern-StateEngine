@@ -24,7 +24,21 @@ export function normalizeCollectedValues(values) {
     if (values.label !== undefined) out.label = String(values.label).trim();
     if (values.description !== undefined) out.description = values.description;
 
-    if (values.enumValues !== undefined) out.enumValues = values.enumValues;
+    if (values.enumValues !== undefined) {
+        // collectInlineVariableValues() builds enumValues.N fields into an
+        // object keyed by index (assignNested has no array notion), not a
+        // real array - accept either shape here.
+        const raw = Array.isArray(values.enumValues) ? values.enumValues : Object.values(values.enumValues || {});
+        const seen = new Set();
+        const cleaned = [];
+        for (const v of raw) {
+            const s = String(v ?? '').trim();
+            if (!s || seen.has(s)) continue;
+            seen.add(s);
+            cleaned.push(s);
+        }
+        out.enumValues = cleaned;
+    }
     if (values.defaultValue !== undefined) out.defaultValue = values.defaultValue;
 
     if (values.min !== undefined) out.min = values.min;

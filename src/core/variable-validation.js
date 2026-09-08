@@ -61,6 +61,9 @@ export function validateValueStrict(def, raw) {
             }
 
             case 'enum': {
+                // Guard against legacy/malformed defs missing enumValues so this
+                // never throws (Section 1.7 error-handling rule).
+                if (!Array.isArray(def.enumValues)) def.enumValues = [];
                 const s = String(raw);
                 if (!def.enumValues.includes(s)) {
                     errors.push(`"${s}" not in allowed values: [${def.enumValues.join(', ')}]`);
@@ -125,6 +128,7 @@ export function coerceValue(def, raw) {
             return ['true', 'yes', '1', 'on'].includes(s);
         }
         case 'enum': {
+            if (!Array.isArray(def.enumValues)) def.enumValues = [];
             const s = String(raw);
             return def.enumValues.includes(s) ? s : getDefaultValue(def);
         }

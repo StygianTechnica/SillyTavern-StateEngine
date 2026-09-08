@@ -198,6 +198,30 @@ Claude must ensure:
 - The cap must not be implemented using chat metadata.
 - The cap must not modify stored chat messages; only the prompt copy.
 
+1.11 Enum Definition Rule
+
+Enum variables must define their allowed values using the enumValues array.
+Claude must ensure:
+
+- enumValues is always an array of strings.
+- The inline editor must allow adding, removing, and editing enum values.
+- defaultValue must be validated against enumValues.
+- No module outside the manager modal may modify enumValues.
+- No computed enum behavior may be implemented at this stage.
+- No new schema fields may be invented for enum support.
+- Increment behavior for enums must cycle through enumValues in order.
+
+1.11.1 Enum Increment Engine Rule
+
+The deterministic increment engine must cycle enum variables through their enumValues array in order.
+
+- Incrementing an enum must never coerce the value to a number.
+- If the current value is not present in enumValues, the first element must be used.
+- If enumValues is empty, the increment must be a no-op.
+- The increment engine must not modify enumValues.
+- The increment engine must not modify defaultValue.
+- The increment engine must not write numeric values into enum variables.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 

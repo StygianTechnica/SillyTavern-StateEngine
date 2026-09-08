@@ -68,8 +68,11 @@ export function getDefaultValue(def) {
         }
         case 'boolean':
             return String(def.defaultValue).trim().toLowerCase() === 'true';
-        case 'enum':
-            return def.enumValues.includes(def.defaultValue) ? def.defaultValue : (def.enumValues[0] ?? '');
+        case 'enum': {
+            const list = Array.isArray(def.enumValues) ? def.enumValues : [];
+            if (list.includes(def.defaultValue)) return def.defaultValue;
+            return list[0] ?? '';
+        }
         case 'array':
             if (Array.isArray(def.defaultValue)) return [...def.defaultValue];
             if (typeof def.defaultValue === 'string' && def.defaultValue.trim()) {
