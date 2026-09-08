@@ -18,7 +18,6 @@ export function runDeterministicIncrements(chatId, triggerType) {
 
         const activePresetIds = getPresetsForChat(chatId);
         const variables = getAllVariablesFromPresets(activePresetIds);
-        const state = loadStateForChat(chatId);
 
         for (const def of Object.values(variables)) {
             try {

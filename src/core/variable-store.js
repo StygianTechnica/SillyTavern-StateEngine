@@ -200,6 +200,35 @@ export function seedVariablesForChat(chatId) {
     }
 }
 
+// Mirrors this chat's already-stored isolated values into the macro-visible
+// var store ({{getvar::name}}) via setVar() - never setVarValue() directly.
+// Used on CHAT_CHANGED, where (per spec 3.1) seeding is forbidden: this only
+// republishes what's already in the isolated store, and skips any preset
+// variable that has no stored entry yet - no defaults, no seeding, no new
+// isolated-store entries are created.
+export function hydrateMacroStoreForChat(chatId) {
+    try {
+        if (!chatId) return;
+        const state = loadChatState(chatId);
+        const activePresetIds = getPresetsForChat(chatId);
+        const variables = getAllVariablesFromPresets(activePresetIds);
+
+        for (const def of Object.values(variables)) {
+            try {
+                if (!def.name) continue;
+                const stored = state.variables[def.name];
+                if (!stored) continue; // not seeded yet - do not invent a value
+
+                setVar(chatId, def.name, stored.value, def);
+            } catch (err) {
+                console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+            }
+        }
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+    }
+}
+
 // Deletes every macro-visible variable this chat's isolated state knows
 // about, via deleteVarValue() (the same varStore mechanism setVar/
 // applyIncrement already mirror through) - never chat metadata.
