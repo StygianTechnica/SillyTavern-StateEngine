@@ -1,6 +1,6 @@
 // State Engine — UI settings panel
 
-import { LOG_PREFIX, EXT_TEMPLATE_PATH, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED_VARIABLE_RULES, getSettings, persistSettings } from '../core/settings-core.js';
+import { LOG_PREFIX, EXT_TEMPLATE_PATH, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED_VARIABLE_RULES, getSettings, persistSettings, computeDefaultMaxPromptHistoryMessages } from '../core/settings-core.js';
 import { runPromptedStateUpdate } from '../core/prompted-engine.js';
 import { seedVariablesForChat, clearMacroVarsForChat } from '../core/chat-state.js';
 import { populateConnectionProfileDropdown, populateStateEngineProfileDropdown } from './connection-profile-ui.js';
@@ -29,6 +29,8 @@ export function loadGeneralSettingsIntoForm() {
     $('#se_show_tracker_panel').prop('checked', !!settings.showTrackerPanel);
     $('#se_context_count').val(settings.contextMessageCount);
     $('#se_response_length').val(settings.responseLength);
+    $('#se_max_prompt_history').val(settings.maxPromptHistoryMessages ?? '');
+    $('#se_max_message_length').val(settings.maxMessageLength ?? '');
     $('#se_prompted_header').val(settings.promptedHeader || DEFAULT_PROMPTED_HEADER);
     $('#se_prompted_variable_rules').val(settings.promptedRules || DEFAULT_UNIFIED_VARIABLE_RULES);
     populateConnectionProfileDropdown();
@@ -92,6 +94,21 @@ export function bindPanelEvents() {
         const n = Math.max(50, Math.min(2000, Number($(this).val()) || 300));
         getSettings().responseLength = n;
         $(this).val(n);
+        persistSettings();
+    });
+    $('#se_max_prompt_history').on('change', function () {
+        const raw = $(this).val();
+        const settings = getSettings();
+        settings.maxPromptHistoryMessages = raw === ''
+            ? computeDefaultMaxPromptHistoryMessages(SillyTavern.getContext())
+            : Math.max(1, Math.round(Number(raw)) || 1);
+        $(this).val(settings.maxPromptHistoryMessages);
+        persistSettings();
+    });
+    $('#se_max_message_length').on('change', function () {
+        const raw = $(this).val();
+        const settings = getSettings();
+        settings.maxMessageLength = raw === '' ? null : Math.max(1, Math.round(Number(raw)) || 1);
         persistSettings();
     });
 

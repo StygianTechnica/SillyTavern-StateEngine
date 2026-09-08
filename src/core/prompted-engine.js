@@ -87,12 +87,22 @@ export async function runPromptedStateUpdate(triggerType) {
         setStatus('Updating state…');
 
         try {
-            const count = Math.max(1, Number(settings.contextMessageCount) || 10);
+            const userRequestedCount = Math.max(1, Number(settings.contextMessageCount) || 10);
+            // Hard cap: never send more messages than maxPromptHistoryMessages,
+            // regardless of what contextMessageCount asks for.
+            const historyCap = Math.max(1, Number(settings.maxPromptHistoryMessages) || userRequestedCount);
+            const count = Math.min(historyCap, userRequestedCount);
             const recent = context.chat.slice(-count);
+            const maxMessageLength = Number(settings.maxMessageLength) || 0;
             const transcript = recent
                 .map((m) => {
                     const speaker = m.is_user ? (context.name1 || 'User') : (m.name || context.name2 || 'Character');
-                    return `${speaker}: ${stripHtml(m.mes)}`;
+                    let text = stripHtml(m.mes);
+                    // Trims only this local prompt copy - m.mes (the stored message) is never touched.
+                    if (maxMessageLength > 0 && text.length > maxMessageLength) {
+                        text = text.slice(0, maxMessageLength) + '…';
+                    }
+                    return `${speaker}: ${text}`;
                 })
                 .filter((line) => line.trim().length > 0)
                 .join('\n');

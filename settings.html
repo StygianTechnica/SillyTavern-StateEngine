@@ -53,6 +53,19 @@
                 </div>
             </div>
 
+            <div class="se-row se-grid2">
+                <div>
+                    <label for="se_max_prompt_history">Max prompt history (messages)</label>
+                    <input id="se_max_prompt_history" type="number" class="text_pole" min="1" step="1" placeholder="auto" />
+                    <small>Hard cap on chat messages sent to the background state-update LLM call. Leave blank to auto-derive from SillyTavern's context size.</small>
+                </div>
+                <div>
+                    <label for="se_max_message_length">Max message length (chars)</label>
+                    <input id="se_max_message_length" type="number" class="text_pole" min="1" step="1" placeholder="unlimited" />
+                    <small>Trims each included message to this many characters in the prompt only. Stored chat history is never modified.</small>
+                </div>
+            </div>
+
             <div class="se-row">
                 <div class="se-header-row">
                     <label for="se_prompted_header">Prompted update header prompt</label>

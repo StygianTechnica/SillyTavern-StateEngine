@@ -182,6 +182,22 @@ ask for real code before referencing structures
 
 avoid hallucinating schema fields
 
+1.10 Prompt Size Limitation Rule
+
+The prompted-engine must enforce a hard cap on the number of chat messages
+included in prompted updates. This cap is defined by the user-configurable
+setting maxPromptHistoryMessages, which defaults to a value derived from
+SillyTavern's configured context size.
+
+Claude must ensure:
+
+- The prompt builder never exceeds maxPromptHistoryMessages.
+- The cap is applied before assembling the LLM prompt.
+- Oversized individual messages may be trimmed if maxMessageLength is set.
+- No other module may override or bypass this cap.
+- The cap must not be implemented using chat metadata.
+- The cap must not modify stored chat messages; only the prompt copy.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 

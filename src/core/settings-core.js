@@ -89,6 +89,13 @@ export const DEFAULT_SETTINGS = Object.freeze({
     stateEngineProfileId: null,
     stateEngineTemperature: null,
     stateEngineMaxTokens: null,
+    // Hard cap on chat messages sent to the prompted-update LLM call. null
+    // means "not yet computed" - getSettings() backfills it from SillyTavern's
+    // configured context size (see computeDefaultMaxPromptHistoryMessages).
+    maxPromptHistoryMessages: null,
+    // Optional per-message character trim applied only to the prompt copy of
+    // each message, never to the stored chat. null means no trimming.
+    maxMessageLength: null,
     showTrackerPanel: false,
     trackerPanelPos: { top: 100, left: 100 },
     trackerPanelCollapsed: false,
@@ -110,6 +117,17 @@ export const DEFAULT_SETTINGS = Object.freeze({
 // Settings helpers
 // ---------------------------------------------------------------------------
 
+// context.maxContext is SillyTavern's own configured context size, in tokens
+// (public/scripts/st-context.js: `maxContext: Number(max_context)`). There is
+// no API for "tokens per message", so this converts it to a message count
+// with a rough ~100-tokens/message heuristic, clamped to a sane range so a
+// tiny or huge context size still yields a usable default.
+export function computeDefaultMaxPromptHistoryMessages(context) {
+    const maxContext = Number(context?.maxContext);
+    if (!Number.isFinite(maxContext) || maxContext <= 0) return 50;
+    return Math.max(20, Math.min(100, Math.round(maxContext / 100)));
+}
+
 export function getSettings() {
     const context = SillyTavern.getContext();
     if (!context.extensionSettings[MODULE_NAME]) {
@@ -123,6 +141,10 @@ export function getSettings() {
     if (settings.stateEngineProfileId === undefined) settings.stateEngineProfileId = null;
     if (settings.stateEngineTemperature === undefined) settings.stateEngineTemperature = null;
     if (settings.stateEngineMaxTokens === undefined) settings.stateEngineMaxTokens = null;
+    if (settings.maxPromptHistoryMessages === undefined || settings.maxPromptHistoryMessages === null) {
+        settings.maxPromptHistoryMessages = computeDefaultMaxPromptHistoryMessages(context);
+    }
+    if (settings.maxMessageLength === undefined) settings.maxMessageLength = null;
     if (!settings.variableStore || typeof settings.variableStore !== 'object') settings.variableStore = { chats: {} };
     if (!settings.variableStore.chats || typeof settings.variableStore.chats !== 'object') settings.variableStore.chats = {};
     if (settings.showTrackerPanel === undefined) settings.showTrackerPanel = false;
