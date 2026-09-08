@@ -4,7 +4,7 @@ import { setManagerApi } from './manager-modal.js';
 import { getSettings, persistSettings, toggleDebugMode, debugLog } from '../../core/settings-core.js';
 import { createPreset, renamePreset, deletePreset, getPresetsForChat, addPresetToChat, removePresetFromChat, restoreDefaultPresets } from '../../core/preset-manager.js';
 import { getDebugInfo } from '../../core/debug-engine.js';
-import { blankDefinition } from '../../core/variable-definition.js';
+import { blankDefinition } from '../../core/variable-schema.js';
 import { isReservedVariable } from '../../core/validation-utils.js';
 import { renderVarTable } from '../manager-modal-ui.js';
 import { renderTrackerPanel } from '../tracker-panel-ui.js';

@@ -2,7 +2,7 @@
 
 import { LOG_PREFIX, getSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
-import { getVarValue } from './variable-storage.js';
+import { getMacroValue } from './macro-store.js';
 import { getCurrentChatId } from '../ui/wand-ui.js';
 
 // ---------------------------------------------------------------------------
@@ -31,7 +31,7 @@ export function getDebugInfo() {
         // Collect all variables and their current values
         const variables = getAllVariablesFromPresets(activePresetIds);
         const variablesWithValues = Object.entries(variables).map(([varId, varDef]) => {
-            const value = getVarValue(context, varDef);
+            const value = getMacroValue(context, varDef);
             return {
                 id: varId,
                 name: varDef.name,

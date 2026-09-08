@@ -2,7 +2,7 @@
 
 import { LOG_PREFIX, getSettings } from '../core/settings-core.js';
 import { getPresetsForChat } from '../core/preset-manager.js';
-import { getVarValue } from '../core/variable-storage.js';
+import { getMacroValue } from '../core/macro-store.js';
 
 // World Info conditional display operators
 const CONDITION_OPERATORS = {
@@ -113,7 +113,7 @@ export function clearWIConditionsForEntry(entryKey) {
 
 export function evaluateCondition(varName, operator, condValue) {
     try {
-        const varValue = getVarValue(varName);
+        const varValue = getMacroValue(varName);
         const operatorFunc = CONDITION_OPERATORS[operator];
 
         if (!operatorFunc) {

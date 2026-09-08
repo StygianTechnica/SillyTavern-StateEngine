@@ -3,7 +3,7 @@
 import { buildManagerModal } from '../ui/manager-modal/manager-modal.js';
 import { LOG_PREFIX } from '../core/settings-core.js';
 import { runPromptedStateUpdate } from '../core/prompted-engine.js';
-import { migrateStateStore } from '../core/variable-store.js';
+import { migrateStateStore } from '../core/chat-state.js';
 
 export function registerSlashCommand() {
     // Best-effort: slash command registration APIs vary a little between

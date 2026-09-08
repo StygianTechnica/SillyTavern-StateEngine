@@ -2,7 +2,7 @@
 
 import { getSettings, persistSettings, debugLog } from '../core/settings-core.js';
 import { getPresetLoadOrder, getAllVariablesFromPresets, getTrackerPresets, addPresetToTracker, removePresetFromTracker } from '../core/preset-manager.js';
-import { getVarValue } from '../core/variable-storage.js';
+import { getMacroValue } from '../core/macro-store.js';
 import { formatValueForDisplay } from './formatting-utils.js';
 import { setStatus } from './settings-panel-ui.js';
 
@@ -42,7 +42,7 @@ export function renderTrackerPanel() {
     }
 
     for (const def of defs) {
-        const value = getVarValue(context, def);
+        const value = getMacroValue(context, def);
         const $row = $('<div></div>').addClass('se-tracker-row');
         if (def.showInTracker === false) $row.addClass('se-tracker-row-hidden');
         $row.append($('<span></span>').addClass('se-tracker-label').text(def.label || def.name));

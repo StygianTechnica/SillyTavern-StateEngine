@@ -3,7 +3,7 @@
 // Uses ES6 modules - imported by manager-modal.js
 
 import { escapeHtml } from './utils.js';
-import * as variableSchema from './variable-schema.js';
+import * as variableSchema from './variable-ui-schema.js';
 
 export function buildPresetRow(presetId, preset, chatPresets, TRIGGER_KEYS, currentChatId) {
     const isActive = chatPresets.includes(presetId);

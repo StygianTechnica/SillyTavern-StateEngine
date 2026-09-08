@@ -1,16 +1,21 @@
 // State Engine — reading/writing variable values in SillyTavern's native
 // chat/global variable store.
+//
+// These are named "macro" (not "var") deliberately: this store is the
+// {{getvar::name}}/{{setvar::name}} macro mirror, not the source of truth.
+// Nothing outside chat-state.js should call these directly - reach for
+// setVar()/applyIncrement()/getVar() in chat-state.js instead.
 
 import { LOG_PREFIX } from './settings-core.js';
-import { getDefaultValue } from './variable-definition.js';
+import { getDefaultValue } from './variable-schema.js';
 import { validateValueStrict } from './variable-validation.js';
 
-export function varStore(context, def) {
+export function macroStore(context, def) {
     return def.scope === 'global' ? context.variables.global : context.variables.local;
 }
 
-export function getVarValue(context, def) {
-    const store = varStore(context, def);
+export function getMacroValue(context, def) {
+    const store = macroStore(context, def);
     try {
         if (store.has(def.name)) {
             return store.get(def.name);
@@ -21,8 +26,8 @@ export function getVarValue(context, def) {
     return getDefaultValue(def);
 }
 
-export function setVarValue(context, def, rawValue) {
-    const store = varStore(context, def);
+export function setMacroValue(context, def, rawValue) {
+    const store = macroStore(context, def);
     const validation = validateValueStrict(def, rawValue);
 
     if (!validation.valid && validation.error) {
@@ -37,8 +42,8 @@ export function setVarValue(context, def, rawValue) {
     return validation.value;
 }
 
-export function deleteVarValue(context, def) {
-    const store = varStore(context, def);
+export function deleteMacroValue(context, def) {
+    const store = macroStore(context, def);
     try {
         store.del(def.name);
     } catch (err) {

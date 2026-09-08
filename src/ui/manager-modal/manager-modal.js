@@ -3,7 +3,7 @@
 // Uses ES6 modules - imported by index.js
 
 import * as presetManager from './preset-manager.js';
-import * as variableSchema from './variable-schema.js';
+import * as variableSchema from './variable-ui-schema.js';
 import * as uiTemplates from './ui-templates.js';
 import * as uiRender from './ui-render.js';
 import * as uiEvents from './ui-events.js';

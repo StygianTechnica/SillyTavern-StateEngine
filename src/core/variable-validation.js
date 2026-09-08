@@ -1,6 +1,6 @@
 // State Engine — variable value validation and coercion
 
-import { getDefaultValue, clampNumber } from './variable-definition.js';
+import { getDefaultValue, clampNumber } from './variable-schema.js';
 
 // Validate a value against type constraints; return {valid: boolean, value: coerced, error?: string}
 export function validateValueStrict(def, raw) {

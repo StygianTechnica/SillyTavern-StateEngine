@@ -1,8 +1,8 @@
 // State Engine — preset and preset-scoped variable operations
 
 import { LOG_PREFIX, getSettings, persistSettings, debugLog } from './settings-core.js';
-import { genId, blankDefinition } from './variable-definition.js';
-import { seedVariablesForChat } from './variable-store.js';
+import { genId, blankDefinition } from './variable-schema.js';
+import { seedVariablesForChat } from './chat-state.js';
 
 function getStarterPresetBlueprints() {
     const makeVar = (overrides) => {

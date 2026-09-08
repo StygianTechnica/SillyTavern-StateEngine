@@ -26,7 +26,7 @@ Macro store ({{getvar::name}}) is a mirror, not a source of truth.
 
 Claude must ensure:
 
-macro store is updated only via setVarValue
+macro store is updated only via setMacroValue
 
 macro store is cleared on:
 
@@ -185,7 +185,13 @@ avoid hallucinating schema fields
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 
-variable-store.js
+Renamed for clarity: variable-store.js is now chat-state.js,
+variable-storage.js is now macro-store.js, variable-definition.js is now
+variable-schema.js (canonical engine schema), and the UI-only schema
+helpers under src/ui/manager-modal/ moved from variable-schema.js to
+variable-ui-schema.js. References below use the current names.
+
+chat-state.js
 isolated store management
 
 seeding
@@ -196,8 +202,11 @@ write‑path (setVar, applyIncrement)
 
 macro mirroring
 
-variable-storage.js
-macro store operations (getVarValue, setVarValue, deleteVarValue)
+macro-store.js
+macro store operations (getMacroValue, setMacroValue, deleteMacroValue,
+macroStore). Named "macro", not "var", deliberately - this is the
+{{getvar}}/{{setvar}} mirror, never the source of truth, and nothing
+outside chat-state.js should call these directly.
 
 prompted-engine.js
 classification of prompted variables
@@ -287,6 +296,19 @@ preserve type, behaviors, increment
 never invent new fields
 
 never rename schema fields
+
+setVar() and applyIncrement() (chat-state.js) snapshot the caller's live
+def onto the stored entry as entry.def, so a later read always has the
+canonical schema that was live at write time instead of hand-copied
+individual fields that could drift out of sync with variable-schema.js.
+This is additive to the existing value write, not a replacement of it.
+
+entry.def must never be used to source applyIncrement()'s delta or any
+other live increment decision. delta is always the caller's argument,
+read fresh from the current preset definitions (getAllVariablesFromPresets)
+before the call - entry.def exists for snapshot/inspection purposes only,
+and using it to drive live behavior would reintroduce the exact schema
+staleness this snapshot exists to avoid.
 
 SECTION 7 — CLAUDE EXECUTION RULE
 Before performing any modification, Claude must:

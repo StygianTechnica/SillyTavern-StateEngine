@@ -1,14 +1,14 @@
 // State Engine — deterministic (non-LLM) variable increments, isolated
 // store version.
 //
-// Reads/writes exclusively through variable-store.js. Never touches
+// Reads/writes exclusively through chat-state.js. Never touches
 // SillyTavern chat metadata, never touches prompt-building code, and never
 // contributes anything to the prompted-update pipeline (that separation is
 // enforced in prompted-engine.js's own classification step).
 
 import { LOG_PREFIX, getSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
-import { setVar, applyIncrement } from './variable-store.js';
+import { setVar, applyIncrement } from './chat-state.js';
 
 export function runDeterministicIncrements(chatId, triggerType) {
     try {

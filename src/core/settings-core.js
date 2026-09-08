@@ -100,7 +100,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
     wiConditions: {}, // Maps "worldbook.uid" -> array of {variable, operator, value}
     promptedHeader: DEFAULT_PROMPTED_HEADER,
     chatVariables: {},
-    // Isolated State Engine data store (src/core/variable-store.js). Never
+    // Isolated State Engine data store (src/core/chat-state.js). Never
     // read from or written to SillyTavern chat metadata - this is its own
     // key inside the extension's own settings blob.
     variableStore: { chats: {} },

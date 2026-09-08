@@ -2,8 +2,8 @@
 
 import { getSettings, migrateAllSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
-import { setVar } from './variable-store.js';
-import { getDefaultValue } from './variable-definition.js';
+import { setVar } from './chat-state.js';
+import { getDefaultValue } from './variable-schema.js';
 import { shouldSkipPromptedRefresh, runPromptedStateUpdate } from './prompted-engine.js';
 
 

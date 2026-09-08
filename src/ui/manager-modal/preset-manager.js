@@ -1,7 +1,7 @@
 // State Engine — preset and preset-scoped variable operations
 // Uses ES6 modules - imported by manager-modal.js
 
-import {genId} from '../../core/variable-definition.js'
+import {genId} from '../../core/variable-schema.js'
 
 let managerApi = null;
 

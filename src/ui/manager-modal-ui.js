@@ -6,7 +6,7 @@
 
 import { getSettings } from '../core/settings-core.js';
 import { getPresetsForChat } from '../core/preset-manager.js';
-import { getVarValue } from '../core/variable-storage.js';
+import { getMacroValue } from '../core/macro-store.js';
 import { typeLabel, formatValueForDisplay } from './formatting-utils.js';
 
 // Session state (not persisted)
@@ -81,7 +81,7 @@ export function renderVarTable() {
     $empty.toggle(defs.length === 0);
 
     for (const def of defs) {
-        const value = def.name ? getVarValue(context, def) : '';
+        const value = def.name ? getMacroValue(context, def) : '';
         const $row = $('<tr></tr>').attr('data-id', def.id);
         $row.append($('<td></td>').append($('<code></code>').text(def.name || '(unnamed)')));
         // $row.append($('<td></td>').append(

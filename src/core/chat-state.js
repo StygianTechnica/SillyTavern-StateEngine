@@ -18,7 +18,7 @@
 // *values*. It never reads or writes SillyTavern chat storage/metadata.
 
 import { LOG_PREFIX, getSettings, persistSettings } from './settings-core.js';
-import { setVarValue, deleteVarValue } from './variable-storage.js';
+import { setMacroValue, deleteMacroValue } from './macro-store.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
 
 const SCHEMA_VERSION = 1;
@@ -111,25 +111,28 @@ export function getVar(chatId, varName) {
 
 // Updates variables[varName].value and writes the state back — AND mirrors
 // the same value into the macro-visible var store ({{getvar::name}}) via
-// the existing setVarValue()/varStore() mechanism from variable-storage.js.
+// the existing setMacroValue()/macroStore() mechanism from macro-store.js.
 // That mechanism is context.variables.local/global, not chat metadata, so
 // this mirroring does not reintroduce chat storage.
 //
 // `def` is optional and not part of the originally specified 3-argument
 // signature; when a caller passes it (a preset variable definition), it's
-// used both to snapshot type/behaviors/increment into the stored entry and
-// to route the macro-store mirror write to the right def.name/def.scope.
-// Omitting it falls back to whatever type/behaviors/increment were already
-// stored, or sane defaults, and mirrors into the macro store as a
+// snapshotted onto the stored entry as entry.def (the canonical schema at
+// write time, never hand-copied individual fields that could drift out of
+// sync with variable-schema.js) and used to route the macro-store mirror
+// write to the right def.name/def.scope. Omitting it falls back to
+// whatever def was already stored, and mirrors into the macro store as a
 // chat-scoped variable named varName.
 export function setVar(chatId, varName, value, def) {
     try {
         const state = loadChatState(chatId);
 
-        // 1. Update the isolated store: VALUE ONLY
+        // 1. Update the isolated store: the value, plus a snapshot of the
+        // canonical schema (def) that produced it.
         const existing = state.variables[varName] || {};
         state.variables[varName] = {
-            value
+            value,
+            def: def ?? existing.def ?? null,
         };
 
         saveChatState(chatId, state);
@@ -137,7 +140,7 @@ export function setVar(chatId, varName, value, def) {
         // 2. Mirror into macro store ({{getvar::name}})
         // Use the preset definition (def) for type/scope, NOT stored metadata.
         const macroDef = def || { name: varName, type: 'string' };
-        setVarValue(SillyTavern.getContext(), macroDef, value);
+        setMacroValue(SillyTavern.getContext(), macroDef, value);
 
     } catch (err) {
         console.warn(LOG_PREFIX, 'setVar failed (gracefully handled)', err);
@@ -149,15 +152,21 @@ export function setVar(chatId, varName, value, def) {
 // resulting value into the macro-visible var store the same way setVar
 // does. Numeric only, per spec ("read current value, add delta, write
 // back") - this does not reproduce the boolean-toggle / enum-cycle behavior
-// that increment-engine.js's (separate, varStore-based) applyIncrement has.
+// that increment-engine.js's (separate, macroStore-based) applyIncrement has.
 export function applyIncrement(chatId, varName, delta, def) {
     try {
         const state = loadChatState(chatId);
         // Ensure entry exists
         let entry = state.variables[varName];
         if (!entry) {
-            state.variables[varName] = { value: 0 };
+            state.variables[varName] = { value: 0, def: def ?? null };
             entry = state.variables[varName];
+        } else if (def) {
+            // Keep the stored schema snapshot current. This never sources
+            // delta itself - delta is always the caller's live argument,
+            // read fresh from the current preset definitions before this
+            // call, never from this (or any) stored snapshot.
+            entry.def = def;
         }
 
         // Convert current value to number safely
@@ -173,7 +182,7 @@ export function applyIncrement(chatId, varName, delta, def) {
         saveChatState(chatId, state);
 
         // Mirror into macro-visible var store
-        setVarValue(
+        setMacroValue(
             SillyTavern.getContext(),
             def || { name: varName, type: 'number' },
             next
@@ -219,7 +228,7 @@ export function seedVariablesForChat(chatId) {
 }
 
 // Mirrors this chat's already-stored isolated values into the macro-visible
-// var store ({{getvar::name}}) via setVar() - never setVarValue() directly.
+// var store ({{getvar::name}}) via setVar() - never setMacroValue() directly.
 // Used on CHAT_CHANGED, where (per spec 3.1) seeding is forbidden: this only
 // republishes what's already in the isolated store, and skips any preset
 // variable that has no stored entry yet - no defaults, no seeding, no new
@@ -248,7 +257,7 @@ export function hydrateMacroStoreForChat(chatId) {
 }
 
 // Deletes every macro-visible variable this chat's isolated state knows
-// about, via deleteVarValue() (the same varStore mechanism setVar/
+// about, via deleteMacroValue() (the same macroStore mechanism setVar/
 // applyIncrement already mirror through) - never chat metadata.
 //
 // context.variables.local only ever reflects the chat SillyTavern currently
@@ -265,7 +274,7 @@ export function clearMacroVarsForChat(chatId) {
         const state = loadChatState(chatId);
         for (const varName of Object.keys(state.variables || {})) {
             try {
-                deleteVarValue(context, { name: varName });
+                deleteMacroValue(context, { name: varName });
             } catch (err) {
                 console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
             }
