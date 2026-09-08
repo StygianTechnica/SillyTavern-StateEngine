@@ -150,13 +150,34 @@ cleanupDeadChats() bare, synchronously, at the top of registerEvents() ran
 it while context.characters was still empty, which made knownAvatars an
 empty Set, which made every character in the store look "no longer exists"
 and deleted every chat's isolated-store entry outright on every single
-page load - including the chat the user had open. This is why
-cleanupDeadChats() is invoked from inside runStartupOnce()
-(initialization-engine.js) instead: that function is already the
-established, idempotent (startupRan guard) mechanism for "run this once,
-whenever APP_READY actually fires or has already fired" - reusing it here
-means cleanupDeadChats gets the same readiness guarantee as the other
-startup-only logic, rather than a separate, weaker one.
+page load - including the chat the user had open.
+
+Moving the call into runStartupOnce() (initialization-engine.js) does NOT
+by itself fix this. index.js calls registerEvents() (which subscribes
+runStartupOnce to APP_READY) and then, in the same synchronous startup,
+unconditionally calls runStartupOnce() directly right after - with no check
+for whether APP_READY has actually fired yet. Because runStartupOnce's
+startupRan guard is a plain boolean with no timing awareness, whichever
+call reaches it first consumes the guard; if this extension's own async
+setup (registerTemplates/initPanel) resolves before SillyTavern's core
+getCharacters() does, the direct call runs everything - including
+cleanupDeadChats - just as early as the original bare call did, and the
+APP_READY listener never gets to run it at all (startupRan is already
+true). So this is still not a reliable readiness signal on its own.
+
+The actual fix is inside cleanupDeadChats() itself: treat an empty/missing
+context.characters the same way a failed /api/characters/chats response is
+already treated - as "cannot verify right now," never as "confirmed no
+characters exist" - and skip the entire pass rather than deleting anything.
+This is always safe, not just safe in the race case: if a character list
+is genuinely, permanently empty, nothing in store.chats could have a real
+characterAvatar stamped on it anyway, so there is nothing a skipped pass
+could have correctly cleaned up. The tradeoff is that a pass which bails
+out this way never runs again this session (runStartupOnce only fires
+once) - dead chats simply accumulate until a future session's startup
+happens to run after context.characters is populated. That is an
+acceptable cost against the alternative of deleting live, in-use chat
+data.
 
 Claude must:
 

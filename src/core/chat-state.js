@@ -400,7 +400,26 @@ export async function cleanupDeadChats() {
     try {
         const context = SillyTavern.getContext();
         const store = getStore();
-        const knownAvatars = new Set((context.characters || []).map(c => c.avatar));
+
+        // An empty context.characters is ambiguous between "this install
+        // genuinely has zero characters" and "SillyTavern hasn't finished
+        // loading them yet" - this function can run before that resolves
+        // depending on extension-vs-core-app load timing (registerEvents()
+        // listens for APP_READY, but index.js also calls runStartupOnce()
+        // directly right after registering, with no check for whether
+        // APP_READY has actually fired - so this can still run early).
+        // Never treat that ambiguity as "confirmed no characters exist" -
+        // same rule this function already applies to a failed/non-ok
+        // /api/characters/chats response. If characters really is
+        // permanently empty (a fresh install), nothing in store.chats could
+        // have a real characterAvatar stamped on it anyway, so skipping
+        // here is always safe, not just safe in the race case.
+        if (!Array.isArray(context.characters) || context.characters.length === 0) {
+            console.warn(LOG_PREFIX, 'cleanupDeadChats: context.characters not populated yet - skipping this pass rather than treating every stored chat as dead');
+            return;
+        }
+
+        const knownAvatars = new Set(context.characters.map(c => c.avatar));
         const groupsById = new Map((context.groups || []).map(g => [g.id, g]));
 
         const chatsByAvatar = new Map();
