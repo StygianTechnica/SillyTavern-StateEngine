@@ -109,13 +109,13 @@ export function buildVariablesListRow(varId, varDef, index, total, selectedPrese
 }
 
 export function buildInlineVariableEditor(d, canIncrement) {
-    // enumValuesMultiline carries the live (possibly-unsaved) textarea text
+    // enumValuesMultiline carries the live (possibly-unsaved) list-editor rows
     // across editor re-renders (type toggle, prompted/increment toggles both
     // re-render via collectInlineVariableValues -> showInlineVariableEditor).
     // Only fall back to the stored enumValues array when opening fresh.
-    const enumValuesText = d.enumValuesMultiline !== undefined
-        ? String(d.enumValuesMultiline)
-        : (Array.isArray(d.enumValues) ? d.enumValues : Object.values(d.enumValues || {})).join('\n');
+    const enumValuesArray = d.enumValuesMultiline !== undefined
+        ? String(d.enumValuesMultiline).split(/\r?\n/)
+        : (Array.isArray(d.enumValues) ? d.enumValues : Object.values(d.enumValues || {}));
     return `
         <div class="se-manager-variable-editor-fields">
 
@@ -145,11 +145,21 @@ export function buildInlineVariableEditor(d, canIncrement) {
 
             <!-- Enum values editor -->
             ${d.type === 'enum' ? `
-                <textarea class="text_pole se-manager-var-field se-manager-enum-values-textarea"
-                    data-field="enumValuesMultiline"
-                    placeholder="One value per line"
-                    rows="3"
-                >${escapeHtml(enumValuesText)}</textarea>
+                <div class="se-manager-enum-list">
+                    ${enumValuesArray.map((val, i) => `
+                        <div class="se-manager-enum-row" data-index="${i}">
+                            <span class="se-manager-enum-grip"><i class="fa-solid fa-grip-vertical"></i></span>
+                            <input class="text_pole se-manager-enum-item" value="${escapeHtml(val)}" />
+                            <button type="button" class="menu_button se-manager-enum-delete" title="Remove value">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
+                    `).join('')}
+                </div>
+
+                <button type="button" class="menu_button se-manager-enum-add">
+                    <i class="fa-solid fa-plus"></i> Add new entry
+                </button>
             ` : ''}
 
             <!-- Behavior toggles -->

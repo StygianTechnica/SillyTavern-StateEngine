@@ -391,13 +391,30 @@ export function wireEvents(managerApi, managerState) {
         showInlineVariableEditor(values, $row);
     });    
 
-    // Enum values editor: editing the multi-line textarea re-renders the
-    // inline editor from the updated working copy. Never touches presets,
-    // the variable store, or the macro store directly.
-    $overlay.on('change', '[data-field="enumValuesMultiline"]', function () {
+    // Enum values editor: row add/delete edit the DOM directly (no re-render
+    // needed - collectInlineVariableValues() reads current row order/values
+    // at save time). Never touches presets, the variable store, or the
+    // macro store directly.
+    $overlay.on('click', '.se-manager-enum-add', function () {
         const $row = $(this).closest('.se-manager-variable-row');
-        const values = collectInlineVariableValues($row);
-        showInlineVariableEditor(values, $row);
+        const $editor = $row.find('.se-manager-variable-editor-inline');
+        const $list = $editor.find('.se-manager-enum-list');
+
+        const $item = $(`
+            <div class="se-manager-enum-row">
+                <span class="se-manager-enum-grip"><i class="fa-solid fa-grip-vertical"></i></span>
+                <input class="text_pole se-manager-enum-item" value="New Entry" />
+                <button class="menu_button se-manager-enum-delete" title="Remove value">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+            </div>
+        `);
+
+        $list.append($item);
+    });
+
+    $overlay.on('click', '.se-manager-enum-delete', function () {
+        $(this).closest('.se-manager-enum-row').remove();
     });
 
     $overlay.on('click', '#se-manager-new-variable', function () {
@@ -443,9 +460,20 @@ export function wireEvents(managerApi, managerState) {
         const canIncrement = variableSchema.canIncrement(d.type);
 
         const $editor = $row.find('.se-manager-variable-editor-inline');
-        
+
         $editor.html(uiTemplates.buildInlineVariableEditor(d, canIncrement)).data('editing-id', d.id).data('editing-existing', !d._isNew).show();
 
+        // Enable drag-and-drop reordering for the enum list editor, if present.
+        setTimeout(() => {
+            const $list = $editor.find('.se-manager-enum-list');
+            if ($list.length && $list.sortable) {
+                $list.sortable({
+                    handle: '.se-manager-enum-grip',
+                    axis: 'y',
+                    containment: 'parent'
+                });
+            }
+        }, 0);
 
         // Disable other controls
         $('#se-manager-new-variable, #se-manager-variable-search, #se-manager-variable-sort').prop('disabled', true).css('opacity', '0.5');
@@ -487,6 +515,15 @@ export function wireEvents(managerApi, managerState) {
             const value = $field.is(':checkbox') ? $field.is(':checked') : $field.val();
             assignNested(values, field, value);
         });
+
+        // Enum list editor rows serialize into enumValuesMultiline, which the
+        // existing normalization pipeline (normalizeCollectedValues) already
+        // splits on newline, trims, and dedupes.
+        const enumLines = [];
+        $editor.find('.se-manager-enum-item').each(function () {
+            enumLines.push($(this).val());
+        });
+        values.enumValuesMultiline = enumLines.join('\n');
 
         values.showInTracker = true;
         return values;

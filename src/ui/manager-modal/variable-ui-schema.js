@@ -25,6 +25,9 @@ export function normalizeCollectedValues(values) {
     if (values.description !== undefined) out.description = values.description;
 
     if (values.enumValuesMultiline !== undefined) {
+        if (typeof values.enumValuesMultiline !== 'string') {
+            values.enumValuesMultiline = '';
+        }
         const raw = String(values.enumValuesMultiline || '');
         const lines = raw.split(/\r?\n/);
         const seen = new Set();

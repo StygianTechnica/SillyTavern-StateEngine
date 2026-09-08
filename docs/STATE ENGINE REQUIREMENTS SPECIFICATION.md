@@ -227,9 +227,20 @@ The deterministic increment engine must cycle enum variables through their enumV
 Enum variables must use a compact multi-line text field for editing enumValues.
 
 - enumValues must be represented as newline-separated strings.
-- The UI must not use a row-per-value list unless explicitly required by a future computed-enum design.
+- The UI may use either a compact multi-line text field or a structured row-based list editor (see 1.11.3), as long as it serializes into enumValuesMultiline for the existing normalization pipeline.
 - The normalization layer must split on newline, trim whitespace, remove empty lines, and remove duplicates.
 - The UI must remain compact and must not expand vertically beyond reasonable limits.
+
+1.11.3 Enum List Editor Rule
+
+Enum variables may use a structured list editor with:
+- a single "Add new entry" button,
+- inline editable rows,
+- per-row delete controls,
+- drag-and-drop reordering using a handle icon,
+- automatic removal of blank rows on save.
+
+The list editor must serialize its rows into enumValuesMultiline so the existing normalization pipeline remains unchanged.
 
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
