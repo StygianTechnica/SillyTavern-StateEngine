@@ -28,17 +28,15 @@ export function registerSlashCommand() {
             },
             helpString: 'Open the State Engine Manager (tabbed interface for presets, variables, triggers, and world info).',
         }));
+        context.SlashCommandParser.addCommandObject(context.SlashCommand.fromProps({
+            name: 'state-migrate',
+            callback: async () => {
+                migrateStateStore();
+                return '';
+            },
+            helpString: 'Only do this once, migrate stored data to adjust structure',
+        }));
     } catch (err) {
         console.warn(LOG_PREFIX, 'slash command registration skipped', err);
     }
-}
-
-export function registerMigrationCommand() {
-    SillyTavern.addExtensionSlashCommand(
-        'stateengine_migrate',
-        async () => {
-            migrateStateStore();
-            return 'State Engine migration complete.';
-        }
-    );
 }
