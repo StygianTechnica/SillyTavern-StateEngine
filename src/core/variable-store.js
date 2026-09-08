@@ -83,12 +83,19 @@ export function getVar(chatId, varName) {
         const state = loadChatState(chatId);
         const entry = state.variables[varName];
         if (!entry) return undefined;
-        return { value: entry.value, def: entry };
+
+        // Look up the preset definition fresh
+        const presetIds = getPresetsForChat(chatId);
+        const defs = getAllVariablesFromPresets(presetIds);
+        const def = defs[varName];
+
+        return { value: entry.value, def };
     } catch (err) {
         console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
         return undefined;
     }
 }
+
 
 // Updates variables[varName].value and writes the state back — AND mirrors
 // the same value into the macro-visible var store ({{getvar::name}}) via
@@ -107,27 +114,24 @@ export function setVar(chatId, varName, value, def) {
     try {
         const state = loadChatState(chatId);
 
-        // 1. Update the separate State Engine store.
+        // 1. Update the isolated store: VALUE ONLY
         const existing = state.variables[varName] || {};
-
         state.variables[varName] = {
-            value,
-            type: def?.type ?? existing.type ?? 'number',
-            behaviors: def?.behaviors ?? existing.behaviors ?? { increment: false, prompted: false },
-            increment: def?.increment ?? existing.increment ?? {},
+            value
         };
-
 
         saveChatState(chatId, state);
 
-        // 2. Mirror into the macro-visible var store ({{getvar::name}}).
-        // This uses the existing varStore/setVarValue mechanism, never chat
-        // metadata or chat storage.
-        setVarValue(SillyTavern.getContext(), def || { name: varName, type: state.variables[varName].type }, value);
+        // 2. Mirror into macro store ({{getvar::name}})
+        // Use the preset definition (def) for type/scope, NOT stored metadata.
+        const macroDef = def || { name: varName, type: 'string' };
+        setVarValue(SillyTavern.getContext(), macroDef, value);
+
     } catch (err) {
         console.warn(LOG_PREFIX, 'setVar failed (gracefully handled)', err);
     }
 }
+
 
 // Reads the current value, adds delta, writes it back — AND mirrors the
 // resulting value into the macro-visible var store the same way setVar
@@ -138,11 +142,11 @@ export function applyIncrement(chatId, varName, delta, def) {
     try {
         const state = loadStateForChat(chatId);
         const entry = state.variables[varName];
-
         if (!entry) {
-            console.warn(LOG_PREFIX, `applyIncrement: missing entry for "${varName}"`);
-            return;
+            // Create missing entry with default value 0
+            state.variables[varName] = { value: 0 };
         }
+
 
         // Convert current value to number safely
         let current = Number(entry.value);
@@ -298,5 +302,17 @@ export function cleanupDeadChats() {
         persistSettings();
     } catch (err) {
         console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+    }
+}
+
+export function migrateStateStore() {
+    const store = getStore();
+    for (const chatId of Object.keys(store.chats)) {
+        const state = loadChatState(chatId);
+        for (const name of Object.keys(state.variables)) {
+            const value = state.variables[name].value;
+            state.variables[name] = { value };
+        }
+        saveChatState(chatId, state);
     }
 }
