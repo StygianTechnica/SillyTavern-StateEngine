@@ -145,6 +145,7 @@ export function buildInlineVariableEditor(d, canIncrement) {
 
             <!-- Enum values editor -->
             ${d.type === 'enum' ? `
+                <label class="se-manager-label">Allowed values</label>
                 <div class="se-manager-enum-list">
                     ${enumValuesArray.map((val, i) => `
                         <div class="se-manager-enum-row" data-index="${i}">
