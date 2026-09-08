@@ -119,13 +119,47 @@ no thrown errors inside update engines
 1.8 Dead Chat Cleanup Rule
 Dead chat IDs must be removed from both isolated store and macro store.
 
+context.chatList does not exist. It was never a real SillyTavern API -
+confirmed absent from a live getContext() dump, and from SillyTavern's own
+st-context.js source. Claude must not reference context.chatList or treat
+its absence as "no chats are live" - doing so previously wiped the entire
+isolated store on every page reload, since every stored chat looked dead
+the moment that property was undefined.
+
+The only real way to verify a chat still exists is
+POST /api/characters/chats (headers: context.getRequestHeaders(), body:
+{ avatar_url, simple: true }), which is scoped to a single character's
+avatar_url - there is no global "every chat that exists" endpoint. A
+non-ok response or a thrown error from this call means "could not verify"
+and must never be treated as "no chats exist for this character."
+
 Claude must:
 
-compare stored chat IDs against context.chatList
+record which character a chat belongs to at the moment its isolated-store
+entry is first created (state.characterAvatar), since the store itself is
+not otherwise scoped by character
 
-clear macro variables for dead chats
+delete a stored chat's entry when either: (a) its recorded character no
+longer appears in context.characters at all (that chat can never again be
+reached or re-verified, so retaining it serves no purpose), or (b) its
+recorded character still exists and a successful /api/characters/chats
+call confirms that chat id is no longer present
 
-delete isolated store entries for dead chats
+leave a stored chat's entry untouched when its liveness cannot currently
+be verified (fetch failure, non-ok response), and retry on a future
+cleanup pass rather than deleting on incomplete information
+
+clear macro variables for a chat before deleting its isolated store entry
+
+Group chats follow the same rule via a separate field, state.groupId,
+stamped instead of state.characterAvatar when the chat's entry is first
+created while context.groupId is set. Verification needs no server call:
+context.groups[i].chats is already the group's authoritative chat-id list,
+and context.groups is refreshed on the same cadence as context.characters
+(both driven by SillyTavern's getCharacters()), so "group id no longer in
+context.groups" is exactly as reliable a "this group is gone, purge its
+chats" signal as the character case. A chat entry has exactly one of
+characterAvatar or groupId set, never both.
 
 1.9 Pseudocode Declaration Rule
 Claude must:

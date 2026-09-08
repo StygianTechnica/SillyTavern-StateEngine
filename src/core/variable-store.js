@@ -23,12 +23,20 @@ import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.
 
 const SCHEMA_VERSION = 1;
 
-function defaultChatState() {
+function defaultChatState(characterAvatar, groupId) {
     return {
         variables: {},
         lastUpdated: Date.now(),
         version: SCHEMA_VERSION,
-        seeded: false
+        seeded: false,
+        // Which character or group this chat belongs to, so
+        // cleanupDeadChats() can tell chats apart when deciding what's safe
+        // to delete. Exactly one of these is ever set - a chat is either a
+        // solo chat (characterAvatar) or a group chat (groupId). Only known
+        // for certain at the moment a chat's entry is first created (see
+        // loadChatState below) - both null when that can't be determined.
+        characterAvatar: characterAvatar ?? null,
+        groupId: groupId ?? null,
     };
 }
 
@@ -51,7 +59,12 @@ export function loadChatState(chatId) {
         const store = getStore();
         const state = store.chats[chatId];
         if (!state || typeof state !== 'object') {
-            return defaultChatState();
+            const context = SillyTavern.getContext();
+            if (context.groupId) {
+                return defaultChatState(null, context.groupId);
+            }
+            const characterAvatar = context.characters?.[context.characterId]?.avatar ?? null;
+            return defaultChatState(characterAvatar, null);
         }
         return state;
     } catch (err) {
@@ -140,19 +153,8 @@ export function setVar(chatId, varName, value, def) {
 export function applyIncrement(chatId, varName, delta, def) {
     try {
         const state = loadChatState(chatId);
-        console.log(LOG_PREFIX, "****************************");
-        console.log(LOG_PREFIX, '[DEBUG] state id:', state);
-        console.log(LOG_PREFIX, "state.variables (frozen snapshot): ", JSON.stringify(state.variables));
-        console.log(LOG_PREFIX, "state.variables: ", state.variables);
-        console.log(LOG_PREFIX, "variables keys: ", Object.keys(state.variables));
-        console.log(LOG_PREFIX, "Variables has this key: ", state.variables.hasOwnProperty(varName));
         // Ensure entry exists
         let entry = state.variables[varName];
-        console.log(LOG_PREFIX, "Applying increment to: ", varName);
-        console.log(LOG_PREFIX, "variables keys: ", Object.keys(state.variables));
-        console.log(LOG_PREFIX, "Variables has this key: ", state.variables.hasOwnProperty(varName));
-        console.log(LOG_PREFIX, "state.variables[", varName, "]: ", state.variables[varName]);
-        console.log(LOG_PREFIX, "Variable Entry: ", entry);
         if (!entry) {
             state.variables[varName] = { value: 0 };
             entry = state.variables[varName];
@@ -161,17 +163,14 @@ export function applyIncrement(chatId, varName, delta, def) {
         // Convert current value to number safely
         let current = Number(entry.value);
         if (Number.isNaN(current)) {
-            console.log(LOG_PREFIX, "non-numeric value detectied!!!");
             console.warn(LOG_PREFIX, `applyIncrement: non-numeric value for "${varName}", defaulting to 0`);
             current = 0;
         }
 
         const next = current + delta;
-        console.log(LOG_PREFIX, "Variable next: ", next);
 
         entry.value = next;
         saveChatState(chatId, state);
-        console.log(LOG_PREFIX, "****************************");
 
         // Mirror into macro-visible var store
         setVarValue(
@@ -276,43 +275,143 @@ export function clearMacroVarsForChat(chatId) {
     }
 }
 
-// Removes isolated-store entries for chats SillyTavern no longer has.
+// Fetches the real, current list of chat ids that exist on disk for a
+// character avatar, via the same server endpoint SillyTavern's own "past
+// chats" UI calls internally (getPastCharacterChats() in script.js) -
+// there is no such list on getContext() itself. Confirmed against a live
+// getContext() dump that no chatList (or equivalent) property exists there.
 //
-// NOTE: context.chatList is not a confirmed SillyTavern context API from
-// anything verifiable in this environment - if it doesn't exist, or has a
-// different shape than [{ chatId }], the try/catch below turns that into a
-// warning and a no-op rather than a crash, but this should be checked
-// against a live SillyTavern console before being relied on.
+// Returns null - not an empty array - when the check itself couldn't be
+// completed (network error, non-ok response), so callers can tell
+// "verified: this character has zero chats" apart from "couldn't verify
+// right now" and never delete on the latter. Only a 200 response whose
+// body is exactly `{ error: true }` (character has no chat folder at all)
+// counts as a verified empty list.
+async function fetchExistingChatIdsForAvatar(context, avatar) {
+    try {
+        const response = await fetch('/api/characters/chats', {
+            method: 'POST',
+            headers: context.getRequestHeaders(),
+            body: JSON.stringify({ avatar_url: avatar, simple: true }),
+        });
+        if (!response.ok) return null;
+        const data = await response.json();
+        if (data && data.error === true) return [];
+        return Object.values(data).map(c => c.file_id ?? String(c.file_name || '').replace(/\.jsonl$/, ''));
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        return null;
+    }
+}
+
+// Removes isolated-store entries for chats that no longer exist.
 //
-// clearMacroVarsForChat() is called before the isolated entry is deleted
-// (reversed from the literal step order given) because it needs that
-// entry's variable names to know what to delete - deleting the entry first
-// would leave it nothing to clear. In practice, for a genuinely dead chat
-// (chatId not in `live`), that chat is essentially never SillyTavern's
-// currently active chat either, so this call is a safe no-op most of the
-// time (see clearMacroVarsForChat's own active-chat guard) - it's kept for
-// the rare case chatId does match, and for symmetry with the spec.
-export function cleanupDeadChats() {
+// context.chatList is not a real SillyTavern API - confirmed absent from a
+// live getContext() dump. The only real way to check whether a chat still
+// exists is POST /api/characters/chats, which is scoped to one character's
+// avatar_url; there is no global "every chat that exists" endpoint. So:
+//
+//   1. Stored chats are grouped by the character avatar recorded on them
+//      (state.characterAvatar, stamped by loadChatState when a chat's
+//      entry is first created).
+//   2. A recorded character that no longer appears in context.characters
+//      at all has its chats deleted outright - that character (and so
+//      those chats) can never again be reached through SillyTavern's UI or
+//      re-verified through this API, so keeping the data serves no purpose.
+//   3. A character that still exists has its real chat list fetched, and
+//      only stored chats confirmed absent from it are deleted. A failed
+//      fetch returns null, not an empty list, so a network hiccup is never
+//      treated as "no chats live" - that was the exact shape of the bug
+//      that used to wipe everything off an unreliable context.chatList.
+//   4. Group chats follow the same pattern via state.groupId instead of
+//      characterAvatar, using context.groups instead of context.characters.
+//      A group's .chats field (an array of chat ids) is already present on
+//      the group object with no server round-trip needed - confirmed
+//      against SillyTavern's own source: context.groups is refreshed on
+//      the same cadence as context.characters (both via getCharacters()),
+//      so "group id no longer in context.groups" is exactly as reliable a
+//      "this group is gone" signal as it is for characters.
+//   5. Entries with neither characterAvatar nor groupId recorded (created
+//      before these fields existed) are left alone, except the currently
+//      active chat, which gets backfilled with whichever applies (the
+//      active group, or the active character) so it becomes eligible for
+//      verification on a future pass.
+export async function cleanupDeadChats() {
     try {
         const context = SillyTavern.getContext();
-        console.log(LOG_PREFIX, 'cleanupDeadChats fired. chatList:', context.chatList, 'stored chats:', Object.keys(getStore().chats));
-
-        // NOTE: context.chatList is assumed to be [{ chatId }]. 
-        // If SillyTavern changes this structure, update comparison logic accordingly.
-
-        const live = new Set((context.chatList || []).map(c => c.chatId));
         const store = getStore();
+        const knownAvatars = new Set((context.characters || []).map(c => c.avatar));
+        const groupsById = new Map((context.groups || []).map(g => [g.id, g]));
 
-        for (const chatId of Object.keys(store.chats)) {
-            if (live.has(chatId)) continue;
+        const chatsByAvatar = new Map();
+        const chatsByGroup = new Map();
+        for (const [chatId, state] of Object.entries(store.chats)) {
+            if (state?.groupId) {
+                if (!chatsByGroup.has(state.groupId)) chatsByGroup.set(state.groupId, []);
+                chatsByGroup.get(state.groupId).push(chatId);
+                continue;
+            }
+            const avatar = state?.characterAvatar;
+            if (!avatar) continue;
+            if (!chatsByAvatar.has(avatar)) chatsByAvatar.set(avatar, []);
+            chatsByAvatar.get(avatar).push(chatId);
+        }
 
-            try {
-                clearMacroVarsForChat(chatId);
-            } catch (err) {
-                console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        for (const [avatar, chatIds] of chatsByAvatar) {
+            let live;
+            if (!knownAvatars.has(avatar)) {
+                // Character no longer exists - its chats are unreachable, delete all of them.
+                live = [];
+            } else {
+                live = await fetchExistingChatIdsForAvatar(context, avatar);
+                if (live === null) continue; // couldn't verify this pass - leave alone, try again later
             }
 
-            delete store.chats[chatId];
+            const liveSet = new Set(live);
+            for (const chatId of chatIds) {
+                if (liveSet.has(chatId)) continue;
+
+                try {
+                    clearMacroVarsForChat(chatId);
+                } catch (err) {
+                    console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+                }
+
+                delete store.chats[chatId];
+            }
+        }
+
+        for (const [groupId, chatIds] of chatsByGroup) {
+            const group = groupsById.get(groupId);
+            // Group gone entirely -> its chats are unreachable, delete all of them.
+            // Group still exists -> group.chats is its authoritative chat-id list, no fetch needed.
+            const liveSet = new Set(group ? (group.chats || []) : []);
+
+            for (const chatId of chatIds) {
+                if (liveSet.has(chatId)) continue;
+
+                try {
+                    clearMacroVarsForChat(chatId);
+                } catch (err) {
+                    console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+                }
+
+                delete store.chats[chatId];
+            }
+        }
+
+        // Backfill characterAvatar/groupId on the active chat if its entry
+        // predates these fields, so it becomes eligible for verification later.
+        const activeEntry = context.chatId ? store.chats[context.chatId] : null;
+        if (activeEntry && !activeEntry.characterAvatar && !activeEntry.groupId) {
+            if (context.groupId) {
+                activeEntry.groupId = context.groupId;
+            } else {
+                const activeAvatar = context.characters?.[context.characterId]?.avatar;
+                if (activeAvatar) {
+                    activeEntry.characterAvatar = activeAvatar;
+                }
+            }
         }
 
         persistSettings();
