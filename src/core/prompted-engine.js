@@ -111,7 +111,7 @@ export async function runPromptedStateUpdate(triggerType) {
                     const current = getVar(chatId, def.name)?.value ?? def.defaultValue;
                     const instructions = (def.prompted?.instructions || def.description || '').trim();
                     //return `- "${def.name}" (${def.type}, current: ${current}): ${instructions}`;
-                    return `- "${def.name}": ${instructions}`;
+                    return `- "${def.name}"[true or false]: ${instructions}`;
                 })
                 .join('\n');
 
