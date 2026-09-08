@@ -141,6 +141,7 @@ export function applyIncrement(chatId, varName, delta, def) {
     try {
         const state = loadChatState(chatId);
         console.log(LOG_PREFIX, "****************************");
+        console.log(LOG_PREFIX, '[DEBUG] state id:', state);
         console.log(LOG_PREFIX, "state.variables: ", state.variables);
         console.log(LOG_PREFIX, "variables keys: ", Object.keys(state.variables));
         console.log(LOG_PREFIX, "Variables has this key: ", state.variables.hasOwnProperty(varName));
