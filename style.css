@@ -374,6 +374,10 @@
     background: rgba(97, 175, 239, 0.35);
 }
 
+.se-tracker-reset-btn {
+    margin-left: 6px;
+}
+
 #se_tracker_body {
     padding: 6px 8px;
     max-height: 320px;

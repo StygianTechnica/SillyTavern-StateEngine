@@ -212,6 +212,36 @@ export function applyIncrement(chatId, varName, delta, def) {
 // mirror stay in sync through the one write path.
 //
 
+// If a stored variable's snapshotted def.type no longer matches the
+// variable's current type, its value is stale (a number left over from a
+// number/boolean/enum definition, say) and must be reset to the new type's
+// default rather than being reinterpreted. Never touches enumValues or
+// defaultValue - only the stored value/def snapshot for this one chat.
+export function resetValueIfTypeChanged(chatId, def) {
+    try {
+        if (!chatId || !def?.name || !def?.type) return;
+        const state = loadChatState(chatId);
+        const entry = state.variables[def.name];
+        if (!entry) return;
+
+        const oldType = entry.def?.type;
+        const newType = def.type;
+        if (!oldType || oldType === newType) return;
+
+        const next = def.defaultValue ?? null;
+        state.variables[def.name] = {
+            value: next,
+            def,
+        };
+        saveChatState(chatId, state);
+
+        // Mirror into macro store
+        setMacroValue(SillyTavern.getContext(), def, next);
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'resetValueIfTypeChanged failed (gracefully handled)', err);
+    }
+}
+
 export function seedVariablesForChat(chatId) {
     try {
         if (!chatId) return;
@@ -222,15 +252,25 @@ export function seedVariablesForChat(chatId) {
         for (const def of Object.values(variables)) {
             try {
                 if (!def.name) continue;
-                if (state.variables[def.name]) continue;
+                if (Object.prototype.hasOwnProperty.call(state.variables, def.name)) continue;
 
                 const value = def.defaultValue ?? null;
                 setVar(chatId, def.name, value, def);
-                
+
             } catch (err) {
                 console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
             }
         }
+
+        for (const def of Object.values(variables)) {
+            try {
+                if (!def.name) continue;
+                resetValueIfTypeChanged(chatId, def);
+            } catch (err) {
+                console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+            }
+        }
+
         state.seeded = true;
         saveChatState(chatId, state);
     } catch (err) {

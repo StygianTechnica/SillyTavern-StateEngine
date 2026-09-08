@@ -242,6 +242,16 @@ Enum variables may use a structured list editor with:
 
 The list editor must serialize its rows into enumValuesMultiline so the existing normalization pipeline remains unchanged.
 
+1.12 Hydration Stability Rule
+
+Preset changes must not reset stored variable values.
+
+- Saving a preset, editing a variable definition, renaming a variable, or changing behaviors must NOT re-seed or reset values for existing variables.
+- Seeding must only initialize variables that do not yet exist in a chat's isolated store.
+- Hydration must only mirror already-stored values into the macro store; it must never invent or seed new values.
+- When a variable's type changes, its stored value for that chat must be reset to the new type's defaultValue immediately upon variable-definition save.
+- No module may trigger full-store reseeding on preset save.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 

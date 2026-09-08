@@ -3,6 +3,7 @@
 import { getSettings, persistSettings, debugLog } from '../core/settings-core.js';
 import { getPresetLoadOrder, getAllVariablesFromPresets, getTrackerPresets, addPresetToTracker, removePresetFromTracker } from '../core/preset-manager.js';
 import { getMacroValue } from '../core/macro-store.js';
+import { setVar } from '../core/chat-state.js';
 import { formatValueForDisplay } from './formatting-utils.js';
 import { setStatus } from './settings-panel-ui.js';
 
@@ -45,9 +46,40 @@ export function renderTrackerPanel() {
         const value = getMacroValue(context, def);
         const $row = $('<div></div>').addClass('se-tracker-row');
         if (def.showInTracker === false) $row.addClass('se-tracker-row-hidden');
-        $row.append($('<span></span>').addClass('se-tracker-label').text(def.label || def.name));
+
+        const $label = $('<span></span>')
+            .addClass('se-tracker-label')
+            .text(def.label || def.name);
+
+        const $value = $('<span></span>')
+            .addClass('se-tracker-value')
+            .text(formatValueForDisplay(value));
+
         //$row.append($('<span></span>').addClass(`se-badge se-badge-${def.category} se-tracker-badge`).text(categoryLabel(def.category)));//111111111111
-        $row.append($('<span></span>').addClass('se-tracker-value').text(formatValueForDisplay(value)));
+        $row.append($label, $value);
+
+        // Only show reset button for increment variables
+        if (def.behaviors && def.behaviors.increment) {
+            const $reset = $('<button></button>')
+                .addClass('se-tracker-btn se-tracker-reset-btn')
+                .attr('title', 'Reset to default')
+                .html('<i class="fa-solid fa-rotate-left"></i>')
+                .on('click', () => {
+                    try {
+                        const ctx = SillyTavern.getContext();
+                        const chatId = ctx.chatId;
+                        if (!chatId) return;
+                        const next = def.defaultValue ?? null;
+                        setVar(chatId, def.name, next, def);
+                        renderTrackerPanel();
+                    } catch (err) {
+                        console.warn('[State Engine] reset button failed (gracefully handled)', err);
+                    }
+                });
+
+            $row.append($reset);
+        }
+
         $body.append($row);
     }
 }

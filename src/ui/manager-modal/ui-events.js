@@ -6,6 +6,7 @@ import * as variableSchema from './variable-ui-schema.js';
 import * as uiTemplates from './ui-templates.js';
 import * as uiRender from './ui-render.js';
 import { generateUUID } from './utils.js';
+import { resetValueIfTypeChanged } from '../../core/chat-state.js';
 
 export function wireEvents(managerApi, managerState) {
     const $overlay = $('#se-manager-overlay');
@@ -257,6 +258,9 @@ export function wireEvents(managerApi, managerState) {
 
         // ⭐ FIX: Save or update the variable in the preset
         preset.variables[newVariable.id] = newVariable;
+
+        const chatId = managerApi.getCurrentChatId();
+        resetValueIfTypeChanged(chatId, newVariable);
 
         managerApi.persistSettings(settings);
         hideInlineVariableEditor($row);
