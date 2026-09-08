@@ -110,7 +110,8 @@ export async function runPromptedStateUpdate(triggerType) {
                 .map((def) => {
                     const current = getVar(chatId, def.name)?.value ?? def.defaultValue;
                     const instructions = (def.prompted?.instructions || def.description || '').trim();
-                    return `- "${def.name}" (${def.type}, current: ${current}): ${instructions}`;
+                    //return `- "${def.name}" (${def.type}, current: ${current}): ${instructions}`;
+                    return `- "${def.name}": ${instructions}`;
                 })
                 .join('\n');
 
@@ -131,7 +132,7 @@ export async function runPromptedStateUpdate(triggerType) {
                 promptSections.push('', 'Update variables:', updateVarLines);
             }
             if (incrementVarLines) {
-                promptSections.push('', 'Boolean-condition variables:', incrementVarLines);
+                promptSections.push('', 'Boolean-conditional variables (include all in JSON output):', incrementVarLines);
             }
 
             const systemPrompt = promptSections.join('\n');
