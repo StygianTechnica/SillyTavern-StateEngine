@@ -4,8 +4,7 @@ import { LOG_PREFIX } from '../core/settings-core.js';
 import { applyResetOnNewChat, runStartupOnce } from '../core/initialization-engine.js';
 import { runPromptedStateUpdate } from '../core/prompted-engine.js';
 import { runDeterministicIncrements } from '../core/deterministic-engine.js';
-import { loadStateForChat } from '../core/state-loader.js';
-import { seedVariablesForChat, clearMacroVarsForChat, cleanupDeadChats, hydrateMacroStoreForChat } from '../core/variable-store.js';
+import { seedVariablesForChat, clearMacroVarsForChat, cleanupDeadChats, hydrateMacroStoreForChat, loadChatState } from '../core/variable-store.js';
 import { applyWorldInfoConditionalFiltering } from '../world-info/wi-filtering.js';
 import { observeWIEditorChanges } from '../world-info/wi-condition-ui.js';
 import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
@@ -32,7 +31,7 @@ export function registerEvents() {
     // next step from running, and must never propagate out of this event
     // handler into SillyTavern's own event dispatch / generation pipeline.
     // Nothing here reads or writes SillyTavern chat metadata — chat state
-    // lives exclusively in variable-store.js (via loadStateForChat).
+    // lives exclusively in variable-store.js (via loadChatState).
     eventSource.on(eventTypes.CHAT_CREATED, () => {
         const context = SillyTavern.getContext();
         const chatId = context.chatId;
@@ -56,7 +55,7 @@ export function registerEvents() {
         }
 
         try {
-            loadStateForChat(chatId);
+            loadChatState(chatId);
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
         }
@@ -103,7 +102,7 @@ export function registerEvents() {
         }
 
         try {
-            loadStateForChat(chatId);
+            loadChatState(chatId);
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
         }

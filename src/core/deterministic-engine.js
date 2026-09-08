@@ -8,7 +8,6 @@
 
 import { LOG_PREFIX, getSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
-import { loadStateForChat } from './state-loader.js';
 import { setVar, applyIncrement } from './variable-store.js';
 
 export function runDeterministicIncrements(chatId, triggerType) {

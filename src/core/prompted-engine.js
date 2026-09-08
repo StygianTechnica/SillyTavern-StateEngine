@@ -2,8 +2,7 @@
 
 import { LOG_PREFIX, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED_VARIABLE_RULES, getSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
-import { loadStateForChat } from './state-loader.js';
-import { getVar, setVar, applyIncrement } from './variable-store.js';
+import { getVar, setVar, applyIncrement, loadChatState } from './variable-store.js';
 import { callBackgroundLLM } from './background-llm.js';
 import { extractJsonObject, stripHtml, describeConstraint } from '../ui/formatting-utils.js';
 import { setStatus } from '../ui/settings-panel-ui.js';
@@ -25,7 +24,7 @@ export async function runPromptedStateUpdate(triggerType) {
         if (!settings.enabled) return;
 
         const chatId = context.chatId;
-        loadStateForChat(chatId); // ensure this chat's state exists before anything else runs
+        loadChatState(chatId); // ensure this chat's state exists before anything else runs
         const activePresetIds = getPresetsForChat(chatId);
 
         // Filter presets that have this trigger enabled
