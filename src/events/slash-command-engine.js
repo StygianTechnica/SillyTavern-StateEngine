@@ -3,6 +3,7 @@
 import { buildManagerModal } from '../ui/manager-modal/manager-modal.js';
 import { LOG_PREFIX } from '../core/settings-core.js';
 import { runPromptedStateUpdate } from '../core/prompted-engine.js';
+import { migrateStateStore } from '../core/variable-store.js';
 
 export function registerSlashCommand() {
     // Best-effort: slash command registration APIs vary a little between
@@ -30,4 +31,14 @@ export function registerSlashCommand() {
     } catch (err) {
         console.warn(LOG_PREFIX, 'slash command registration skipped', err);
     }
+}
+
+export function registerMigrationCommand() {
+    SillyTavern.addExtensionSlashCommand(
+        'stateengine_migrate',
+        async () => {
+            migrateStateStore();
+            return 'State Engine migration complete.';
+        }
+    );
 }
