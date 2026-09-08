@@ -109,9 +109,13 @@ export function buildVariablesListRow(varId, varDef, index, total, selectedPrese
 }
 
 export function buildInlineVariableEditor(d, canIncrement) {
-    // Collected values round-trip enumValues.N fields through collectInlineVariableValues()
-    // as an object with numeric keys rather than a real array - accept either shape here.
-    const enumValues = Array.isArray(d.enumValues) ? d.enumValues : Object.values(d.enumValues || {});
+    // enumValuesMultiline carries the live (possibly-unsaved) textarea text
+    // across editor re-renders (type toggle, prompted/increment toggles both
+    // re-render via collectInlineVariableValues -> showInlineVariableEditor).
+    // Only fall back to the stored enumValues array when opening fresh.
+    const enumValuesText = d.enumValuesMultiline !== undefined
+        ? String(d.enumValuesMultiline)
+        : (Array.isArray(d.enumValues) ? d.enumValues : Object.values(d.enumValues || {})).join('\n');
     return `
         <div class="se-manager-variable-editor-fields">
 
@@ -141,25 +145,11 @@ export function buildInlineVariableEditor(d, canIncrement) {
 
             <!-- Enum values editor -->
             ${d.type === 'enum' ? `
-                <div class="se-manager-enum-values">
-                    <label>Enum values</label>
-                    <div class="se-manager-enum-values-list">
-                        ${enumValues.map((val, i) => `
-                            <div class="se-manager-enum-value-row">
-                                <input class="text_pole se-manager-var-field se-manager-enum-value-input"
-                                    data-field="enumValues.${i}"
-                                    placeholder="Value ${i + 1}"
-                                    value="${escapeHtml(val)}" />
-                                <button type="button" class="menu_button se-manager-action-btn se-manager-remove-enum-value" data-index="${i}" title="Remove value">
-                                    <i class="fa-solid fa-trash"></i>
-                                </button>
-                            </div>
-                        `).join('')}
-                    </div>
-                    <button type="button" id="se-manager-add-enum-value" class="menu_button" title="Add enum value">
-                        <i class="fa-solid fa-plus"></i> Add value
-                    </button>
-                </div>
+                <textarea class="text_pole se-manager-var-field se-manager-enum-values-textarea"
+                    data-field="enumValuesMultiline"
+                    placeholder="One value per line"
+                    rows="3"
+                >${escapeHtml(enumValuesText)}</textarea>
             ` : ''}
 
             <!-- Behavior toggles -->

@@ -222,6 +222,15 @@ The deterministic increment engine must cycle enum variables through their enumV
 - The increment engine must not modify defaultValue.
 - The increment engine must not write numeric values into enum variables.
 
+1.11.2 Enum UI Rule
+
+Enum variables must use a compact multi-line text field for editing enumValues.
+
+- enumValues must be represented as newline-separated strings.
+- The UI must not use a row-per-value list unless explicitly required by a future computed-enum design.
+- The normalization layer must split on newline, trim whitespace, remove empty lines, and remove duplicates.
+- The UI must remain compact and must not expand vertically beyond reasonable limits.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 

@@ -24,15 +24,13 @@ export function normalizeCollectedValues(values) {
     if (values.label !== undefined) out.label = String(values.label).trim();
     if (values.description !== undefined) out.description = values.description;
 
-    if (values.enumValues !== undefined) {
-        // collectInlineVariableValues() builds enumValues.N fields into an
-        // object keyed by index (assignNested has no array notion), not a
-        // real array - accept either shape here.
-        const raw = Array.isArray(values.enumValues) ? values.enumValues : Object.values(values.enumValues || {});
+    if (values.enumValuesMultiline !== undefined) {
+        const raw = String(values.enumValuesMultiline || '');
+        const lines = raw.split(/\r?\n/);
         const seen = new Set();
         const cleaned = [];
-        for (const v of raw) {
-            const s = String(v ?? '').trim();
+        for (const line of lines) {
+            const s = line.trim();
             if (!s || seen.has(s)) continue;
             seen.add(s);
             cleaned.push(s);

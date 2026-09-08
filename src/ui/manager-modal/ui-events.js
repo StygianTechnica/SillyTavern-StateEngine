@@ -391,29 +391,10 @@ export function wireEvents(managerApi, managerState) {
         showInlineVariableEditor(values, $row);
     });    
 
-    // Enum values editor: add / remove / edit a value, then re-render the
+    // Enum values editor: editing the multi-line textarea re-renders the
     // inline editor from the updated working copy. Never touches presets,
     // the variable store, or the macro store directly.
-    $overlay.on('click', '#se-manager-add-enum-value', function () {
-        const $row = $(this).closest('.se-manager-variable-row');
-        const values = collectInlineVariableValues($row);
-        const enumValues = Array.isArray(values.enumValues) ? values.enumValues : Object.values(values.enumValues || {});
-        enumValues.push('');
-        values.enumValues = enumValues;
-        showInlineVariableEditor(values, $row);
-    });
-
-    $overlay.on('click', '.se-manager-remove-enum-value', function () {
-        const $row = $(this).closest('.se-manager-variable-row');
-        const index = Number($(this).attr('data-index'));
-        const values = collectInlineVariableValues($row);
-        const enumValues = Array.isArray(values.enumValues) ? values.enumValues : Object.values(values.enumValues || {});
-        enumValues.splice(index, 1);
-        values.enumValues = enumValues;
-        showInlineVariableEditor(values, $row);
-    });
-
-    $overlay.on('change', '.se-manager-enum-value-input', function () {
+    $overlay.on('change', '[data-field="enumValuesMultiline"]', function () {
         const $row = $(this).closest('.se-manager-variable-row');
         const values = collectInlineVariableValues($row);
         showInlineVariableEditor(values, $row);
