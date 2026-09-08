@@ -176,11 +176,12 @@ Claude must not move logic across modules unless explicitly instructed.
 
 SECTION 3 — LIFECYCLE RULES
 3.1 Seeding
+
+CHAT_CHANGED must NOT seed.  It must load stored values only.
+
 Seeding must occur only on:
 
 CHAT_CREATED
-
-CHAT_CHANGED
 
 engine enable
 
@@ -190,8 +191,6 @@ Seeding must not occur inside update engines.
 
 3.2 Macro Cleanup
 Macro cleanup must occur:
-
-before seeding on chat change
 
 before seeding on chat creation
 

@@ -1,7 +1,7 @@
 // State Engine — preset and preset-scoped variable operations
 // Uses ES6 modules - imported by manager-modal.js
 
-import { generateUUID } from './utils.js';
+import {genId} from '../../core/variable-definition.js'
 
 let managerApi = null;
 
@@ -35,7 +35,7 @@ export function clonePreset(presetId, newName) {
     const preset = settings.presets[presetId];
     if (!preset) return null;
 
-    const newPresetId = generateUUID();
+    const newPresetId = genId();
     const newPreset = JSON.parse(JSON.stringify(preset));
     newPreset.name = newName;
     settings.presets[newPresetId] = newPreset;

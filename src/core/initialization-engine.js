@@ -2,7 +2,7 @@
 
 import { getSettings, migrateAllSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
-import { setVarValue } from './variable-storage.js';
+import { setVar } from './variable-storage.js';
 import { getDefaultValue } from './variable-definition.js';
 import { shouldSkipPromptedRefresh, runPromptedStateUpdate } from './prompted-engine.js';
 
@@ -16,7 +16,7 @@ export function applyResetOnNewChat() {
 
     for (const def of Object.values(variables)) {
         if (!def.name || !def.resetOnNewChat || shouldSkipPromptedRefresh(def)) continue;
-        setVarValue(context, def, getDefaultValue(def));
+        setVar(context, def, getDefaultValue(def));
     }
 }
 

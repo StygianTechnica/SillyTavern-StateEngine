@@ -106,7 +106,7 @@ export function getVar(chatId, varName) {
 export function setVar(chatId, varName, value, def) {
     try {
         const state = loadChatState(chatId);
-        
+
         // 1. Update the separate State Engine store.
         const existing = state.variables[varName] || {};
 
@@ -247,6 +247,10 @@ export function clearMacroVarsForChat(chatId) {
 export function cleanupDeadChats() {
     try {
         const context = SillyTavern.getContext();
+
+        // NOTE: context.chatList is assumed to be [{ chatId }]. 
+        // If SillyTavern changes this structure, update comparison logic accordingly.
+
         const live = new Set((context.chatList || []).map(c => c.chatId));
         const store = getStore();
 
