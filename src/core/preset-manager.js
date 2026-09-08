@@ -2,6 +2,7 @@
 
 import { LOG_PREFIX, getSettings, persistSettings, debugLog } from './settings-core.js';
 import { genId, blankDefinition } from './variable-definition.js';
+import { seedVariablesForChat } from './variable-store.js';
 
 function getStarterPresetBlueprints() {
     const makeVar = (overrides) => {
@@ -489,6 +490,7 @@ export function addPresetToChat(chatId, presetId) {
     }
 
     persistSettings();
+    seedVariablesForChat(chatId);
     debugLog(`Added preset ${presetId} to chat ${chatId}. Load order:`, binding.presetLoadOrder);
 }
 
@@ -521,7 +523,10 @@ export function removePresetFromChat(chatId, presetId) {
     binding.presetLoadOrder = binding.presetLoadOrder.filter(id => id !== presetId);
 
     persistSettings();
+    seedVariablesForChat(chatId);
+
     debugLog(`Removed preset ${presetId} from chat ${chatId}. Load order:`, binding.presetLoadOrder);
+    
 }
 
 export function getTrackerPresets() {
@@ -573,35 +578,4 @@ export function getAllVariablesFromPresets(presetIds, preserveOrder = true) {
     return allVars;
 }
 
-export function getChatVarValue(chatId, varName) {
-    const settings = getSettings();
-    return settings.chatVariables?.[chatId]?.[varName];
-}
 
-export function setChatVarValue(chatId, varName, value) {
-    const settings = getSettings();
-    if (!settings.chatVariables[chatId]) {
-        settings.chatVariables[chatId] = {};
-    }
-    settings.chatVariables[chatId][varName] = value;
-    persistSettings();
-}
-
-export function deleteChatVar(chatId, varName) {
-    const settings = getSettings();
-    if (settings.chatVariables?.[chatId]) {
-        delete settings.chatVariables[chatId][varName];
-        persistSettings();
-    }
-}
-
-export function getChatVarKeys(chatId) {
-    const settings = getSettings();
-    return Object.keys(settings.chatVariables?.[chatId] || {});
-}
-
-export function getVarValueFromPresetStorage(context, def) {
-    const chatId = context.chatId;
-    const stored = getChatVarValue(chatId, def.name);
-    return stored !== undefined ? stored : def.defaultValue;
-}

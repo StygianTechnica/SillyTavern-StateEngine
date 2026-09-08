@@ -34,12 +34,6 @@ export function runDeterministicIncrements(chatId, triggerType) {
                     continue;
                 }
 
-                // Seed the store the first time this variable is touched so
-                // there's a value to increment from.
-                if (!state.variables[def.name]) {
-                    setVar(chatId, def.name, def.defaultValue, def);
-                }
-
                 applyIncrement(chatId, def.name, def.increment.delta, def);
             } catch (err) {
                 console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);

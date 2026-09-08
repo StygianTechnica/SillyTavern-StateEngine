@@ -98,8 +98,8 @@ export function describeVariable(d) {
 
     // Type + default
     const base = `${d.name || 'This variable'} is a ${d.type} variable`;
-    if (d.default !== '' && d.default !== undefined && d.default !== null) {
-        out.push(`${base} with a default value of "${d.default}".`);
+    if (d.defaultValue !== '' && d.defaultValue !== undefined && d.defaultValue !== null) {
+        out.push(`${base} with a default value of "${d.defaultValue}".`);
     } else {
         out.push(`${base} with no default value.`);
     }

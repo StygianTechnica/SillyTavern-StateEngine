@@ -11,25 +11,10 @@ import { getDefaultValue } from './variable-definition.js';
 export function loadStateForChat(chatId) {
     try {
         // Load whatever persistent state exists
-        const state = loadChatState(chatId) || { variables: {}, lastUpdated: Date.now(), version: 1 };
+        const state = loadChatState(chatId);
 
-        // Get active presets for this chat
-        const activePresetIds = getPresetsForChat(chatId);
-
-        // Get all variable definitions from those presets
-        const variables = getAllVariablesFromPresets(activePresetIds);
-
-        // Ensure every variable exists in persistent state
-        for (const def of Object.values(variables)) {
-            if (!def?.name) continue;
-
-            if (!state.variables[def.name]) {
-                state.variables[def.name] = {
-                    value: getDefaultValue(def)
-                };
-            }
-        }
-
+        // Always return the stored state as-is.
+        // Seeding happens ONLY in lifecycle events (CHAT_CREATED, CHAT_CHANGED, engine enable, preset add/remove).
         return state;
     } catch (err) {
         console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);

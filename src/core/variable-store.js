@@ -29,6 +29,7 @@ function defaultChatState() {
         variables: {},
         lastUpdated: Date.now(),
         version: SCHEMA_VERSION,
+        seeded: false
     };
 }
 
@@ -104,14 +105,18 @@ export function getVar(chatId, varName) {
 // chat-scoped variable named varName.
 export function setVar(chatId, varName, value, def) {
     try {
-        // 1. Update the separate State Engine store.
         const state = loadChatState(chatId);
+        
+        // 1. Update the separate State Engine store.
+        const existing = state.variables[varName] || {};
+
         state.variables[varName] = {
             value,
-            type: def.type,
-            behaviors: def.behaviors,
-            increment: def.increment,
+            type: def?.type ?? existing.type ?? 'number',
+            behaviors: def?.behaviors ?? existing.behaviors ?? { increment: false, prompted: false },
+            increment: def?.increment ?? existing.increment ?? {},
         };
+
 
         saveChatState(chatId, state);
 
@@ -183,10 +188,13 @@ export function seedVariablesForChat(chatId) {
 
                 const value = def.defaultValue ?? null;
                 setVar(chatId, def.name, value, def);
+                
             } catch (err) {
                 console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
             }
         }
+        state.seeded = true;
+        saveChatState(chatId, state);
     } catch (err) {
         console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
     }
