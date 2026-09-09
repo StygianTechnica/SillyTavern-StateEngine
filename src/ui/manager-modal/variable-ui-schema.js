@@ -61,6 +61,14 @@ export function normalizeCollectedValues(values) {
     }
     if (values.defaultValue !== undefined) out.defaultValue = values.defaultValue;
 
+    // Calculated-variable fields. dependencies comes from the editor's
+    // checkbox list (already an array of variable names, not multiline
+    // text); expression is collected like any other plain text field.
+    if (values.dependencies !== undefined) {
+        out.dependencies = Array.isArray(values.dependencies) ? values.dependencies.filter(Boolean) : [];
+    }
+    if (values.expression !== undefined) out.expression = String(values.expression || '');
+
     if (values.min !== undefined) out.min = values.min;
     if (values.max !== undefined) out.max = values.max;
 
@@ -169,6 +177,14 @@ export function describeIncrementTrigger(triggers) {
 }
 
 export function describeVariable(d) {
+    if (d.type === 'calculated') {
+        const deps = Array.isArray(d.dependencies) ? d.dependencies : [];
+        const depsText = deps.length ? deps.join(', ') : '(none selected)';
+        const exprText = (d.expression || '').trim() || '(no expression set)';
+        return `${d.name || 'This variable'} is a calculated variable. It is read-only, recalculates automatically whenever `
+            + `${depsText} changes, and is never updated by prompted or incremented behavior. Expression: ${exprText}`;
+    }
+
     let out = [];
 
     // Type + default

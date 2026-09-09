@@ -137,7 +137,8 @@ function buildArrayItemRow(val, i, itemType, itemEnumValuesArray) {
     `;
 }
 
-export function buildInlineVariableEditor(d, canIncrement) {
+export function buildInlineVariableEditor(d, canIncrement, otherVars) {
+    otherVars = Array.isArray(otherVars) ? otherVars : [];
     // enumValuesMultiline carries the live (possibly-unsaved) list-editor rows
     // across editor re-renders (type toggle, prompted/increment toggles both
     // re-render via collectInlineVariableValues -> showInlineVariableEditor).
@@ -190,6 +191,7 @@ export function buildInlineVariableEditor(d, canIncrement) {
                 <option value="boolean" ${d.type === 'boolean' ? 'selected' : ''}>Boolean</option>
                 <option value="enum" ${d.type === 'enum' ? 'selected' : ''}>Enum</option>
                 <option value="array" ${d.type === 'array' ? 'selected' : ''}>Array</option>
+                <option value="calculated" ${d.type === 'calculated' ? 'selected' : ''}>Calculated</option>
             </select>
 
             ${d.type === 'array' ? `
@@ -201,12 +203,39 @@ export function buildInlineVariableEditor(d, canIncrement) {
                 <button type="button" class="menu_button se-manager-array-add">
                     <i class="fa-solid fa-plus"></i> Add item
                 </button>
+            ` : d.type === 'calculated' ? `
+                <div class="se-empty">Calculated variables have no manually-set default value - they evaluate automatically.</div>
             ` : `
                 <input class="text_pole se-manager-var-field"
                     data-field="defaultValue"
                     placeholder="Default value"
                     value="${escapeHtml(d.defaultValue)}" />
             `}
+
+            <!-- Calculated variable: dependency selector + expression -->
+            ${d.type === 'calculated' ? `
+                <div class="se-manager-calculated-section">
+                    <label class="se-manager-label">Dependencies</label>
+                    <div class="se-manager-calc-deps-list">
+                        ${otherVars.length === 0
+                            ? '<div class="se-empty">No other variables in this preset yet.</div>'
+                            : otherVars.map((v) => `
+                                <label class="checkbox_label se-manager-calc-dep-item">
+                                    <input type="checkbox" class="se-manager-calc-dep-checkbox" value="${escapeHtml(v.name)}"
+                                        ${Array.isArray(d.dependencies) && d.dependencies.includes(v.name) ? 'checked' : ''} />
+                                    <span>${escapeHtml(v.name)}${v.label ? ` (${escapeHtml(v.label)})` : ''} <small>[${escapeHtml(v.type)}]</small></span>
+                                </label>
+                            `).join('')
+                        }
+                    </div>
+
+                    <label class="se-manager-label">Expression</label>
+                    <textarea class="text_pole se-manager-var-field"
+                        data-field="expression"
+                        placeholder="e.g. strength + dexterity * 2">${escapeHtml(d.expression || '')}</textarea>
+                    <div class="se-empty">Tiny Expression DSL. Only the checked dependencies above may be referenced by name.</div>
+                </div>
+            ` : ''}
 
             <!-- Enum values editor -->
             ${d.type === 'enum' ? `
@@ -284,6 +313,7 @@ export function buildInlineVariableEditor(d, canIncrement) {
             <!-- Behavior toggles -->
             <div class="se-manager-variable-behaviors">
 
+                ${d.type !== 'calculated' ? `
                 <!-- Prompted toggle -->
                 <div class="se-manager-toggle-row">
                     <div class="se-row">
@@ -301,6 +331,9 @@ export function buildInlineVariableEditor(d, canIncrement) {
                             data-field="prompted.instructions"
                             placeholder="Prompted variable instructions">${escapeHtml(d.prompted.instructions)}</textarea>
                 </div>
+                ` : `
+                <div class="se-empty">Calculated variables are read-only: prompted and incremented behavior are not available.</div>
+                `}
 
                 <!-- Increment toggle -->
                 ${canIncrement ? `

@@ -1,5 +1,5 @@
 STATE ENGINE REQUIREMENTS SPECIFICATION
-Version 1.0 — Authoritative Architectural Rules
+Version 1.1 — Authoritative Architectural Rules
 This document defines the non‑negotiable invariants, module boundaries, lifecycle rules, and error‑handling requirements for the SillyTavern State Engine.
 Claude must read and obey this document before performing any modification, refactor, or code generation.
 
@@ -620,6 +620,166 @@ fix - there is no longer a single shared text field a whole list can be
 pasted into by mistake, matching how the other two allowed-values editors
 already made that mistake structurally impossible.
 
+1.16 Variable Type Reference
+
+| Type | Value source | Behaviors available |
+|---|---|---|
+| number | manual / prompted / incremented | prompted, increment |
+| string | manual / prompted | prompted |
+| boolean | manual / prompted / incremented (toggles) | prompted, increment |
+| enum | manual / prompted / incremented (cycles enumValues) | prompted, increment |
+| array | manual / prompted (full replace) / incremented (operations, 1.15) | prompted, increment |
+| calculated | evaluated automatically from dependencies via the Tiny Expression DSL - never manual, prompted, or incremented | none (behaviors.prompted and behaviors.increment always false) |
+
+1.17 Calculated Variables
+
+A calculated variable (type: "calculated") is read-only: its value is
+derived deterministically from other variables via the Tiny Expression DSL
+(docs/TINY EXPRESSION DSL SPECIFICATION.md), never from the LLM, never from
+a manual edit, never from applyIncrement. Implemented in
+expression-dsl.js (tokenizer/parser/evaluator) and calculated-engine.js
+(evaluation + re-evaluation triggers).
+
+Schema fields (variable-schema.js blankDefinition(), additive - no existing
+field renamed or repurposed):
+
+- dependencies: string[]. The other variable names (in the same preset)
+  this variable's expression may reference. An identifier used in the
+  expression but absent from dependencies causes evaluation to fail (DSL
+  spec 3.1/9).
+- expression: string. A single-line Tiny Expression DSL expression.
+- defaultValue: the value seeded before this variable's first evaluation
+  (1.4) - never manually editable in the UI (1.17.3) since the variable's
+  real value is always evaluated immediately after seeding (below).
+- behaviors.prompted and behaviors.increment are always false for a
+  calculated variable (1.5) - enforced both by the inline editor never
+  rendering those toggles for type "calculated" and by an explicit force in
+  the save handler (ui-events.js), so a stale or hand-edited working copy
+  can never persist true for either.
+
+1.17.1 Storage Rule
+
+Per 1.1, a calculated variable's evaluated value is stored in
+state.variables[varName].value like any other variable's, through setVar()
+- never a separate location. It mirrors into the macro store via
+setMacroValue() the same way (1.2). validateValueStrict()
+(variable-validation.js) passes a calculated variable's value through
+as-is (its real type - number, string, or boolean; the DSL has no
+array-producing operation) rather than the generic string-coercion
+fallback every other unrecognized type gets, so the macro-store mirror
+never silently stringifies a numeric or boolean calculated result.
+
+1.17.2 Evaluation Timing
+
+Calculated variables are re-evaluated when:
+
+- a dependency variable's value changes (deterministic increment, prompted
+  update or increment, manual reset-on-new-chat, or a copy-from-previous-
+  chat), via calculated-engine.js's recalculateDependents(chatId, varName)
+- the preset definition changes (a variable is created, edited, or renamed
+  in the manager modal), via recalculateAllForChat(chatId)
+- a dependency variable is deleted, via recalculateDependents(chatId,
+  deletedName) - the calculated variable then fails to resolve that
+  identifier (DSL 9) and retains its previous value with a logged warning,
+  per 1.17.4
+- seeding completes (engine enable, preset add/remove, new-chat variable
+  copy - the three seeding triggers in 3.1), via recalculateAllForChat(chatId)
+  run immediately after seedVariablesForChat(chatId). This is a distinct
+  lifecycle step from hydration/chat-load, so it does not conflict with
+  1.12's hydration-stability rule below - it only ever runs at the same
+  moments seeding itself is already permitted to run.
+
+1.17.2a Hydration and Editing Stability
+
+Calculated variables must not be evaluated during:
+
+- chat hydration / load
+- macro-store mirroring
+
+(nor during LLM prompting or UI rendering - neither of those is a trigger
+listed above either). hydrateMacroStoreForChat() only ever mirrors whatever
+value is already stored, calculated variables included - it never calls
+evaluateCalculatedVariable()/recalculateDependents()/recalculateAllForChat().
+
+Editing operations (preset editing, variable editing in the manager modal)
+must not reseed other variables' stored values or reset defaultValue - that
+is what 1.12's hydration-stability rule actually forbids: a sweeping,
+careless reseed-to-default sweep triggered by an unrelated edit. They may
+trigger calculated-variable re-evaluation (the "preset definition changes"
+and "a dependency variable is renamed" triggers above) - that
+re-evaluation reads already-stored dependency values through getVar() and
+writes through setVar() like any other write, the same as a deterministic
+increment or a prompted update would. It never reads or writes
+defaultValue, and never reseeds any variable other than the calculated one
+being evaluated. 1.12 and this section are therefore not in tension: 1.12
+forbids reseeding-from-default on edit, and calculated-variable
+re-evaluation is a different operation (deriving from current values) that
+1.12 never mentions.
+
+Per spec-clarification decision (2026-09-09): every write-path caller
+(deterministic-engine.js, prompted-engine.js, ui-events.js,
+preset-manager.js, initialization-engine.js, settings-panel-ui.js) calls
+recalculateDependents()/recalculateAllForChat() itself, immediately after
+its own setVar()/applyIncrement()/seedVariablesForChat() call.
+calculated-engine.js is never called from inside chat-state.js's setVar/
+applyIncrement - chat-state.js is the write-path module (1.6) and already
+existed; having it call back into calculated-engine.js (which itself needs
+setVar/getVar from chat-state.js) would be a circular trigger. Each caller
+owning its own trigger avoids that, the same way deterministic-engine.js
+already owns triggering applyIncrement on its own schedule.
+
+1.17.3 Dependency Model and UI Rules
+
+A calculated variable's dependencies may include other calculated variables
+(chaining is explicitly allowed by spec-clarification decision, 2026-09-09)
+- e.g. a "total_score" calculated variable may depend on a "danger_score"
+calculated variable. calculated-engine.js topologically sorts every active
+calculated variable so each is evaluated only after everything it depends
+on. A dependency cycle (A depends on B depends on A) is detected and every
+variable in the cycle is excluded from evaluation - treated as an
+evaluation failure per 1.17.4, not a crash.
+
+Manager-modal inline editor (ui-templates.js buildInlineVariableEditor,
+ui-events.js): selecting type "calculated" replaces the default-value input
+with a dependency checkbox list (every other variable in the same preset,
+including other calculated variables) and an expression textarea, and hides
+- entirely, not merely disables - the prompted toggle/section, the
+increment toggle/section (already implied by canIncrement() excluding
+"calculated"), the enum editor, and the typed-array editor, since none of
+those are conditionally rendered for any type other than their own. Renaming
+a dependency does NOT auto-rewrite other variables' dependencies/expression
+text that reference the old name (spec-clarification decision, 2026-09-09)
+- the rename simply triggers re-evaluation, which then fails to resolve the
+now-missing identifier per 1.17.4 until the preset author manually updates
+the expression.
+
+Preset Manager: calculated variables may be renamed, deleted, and reordered
+through the same generic preset-variable operations every other type
+already uses (moveVariable, deleteVariable in
+src/ui/manager-modal/preset-manager.js - no special-casing needed there).
+They may not be manually edited (beyond dependencies/expression), toggled
+prompted, or toggled increment - enforced by the editor never rendering
+those controls for this type, plus an explicit
+`behaviors = { prompted: false, increment: false }` force in the save
+handler as a second line of defense.
+
+Tracker (tracker-panel-ui.js): a calculated variable's row shows a
+calculator-icon badge (title "Calculated variable (read-only, derived from
+other variables)") before its label, and never shows the reset-to-default
+button (already implied - that button only renders when
+behaviors.increment is true, which a calculated variable's is never).
+
+1.17.4 Failure Behavior
+
+Per docs/TINY EXPRESSION DSL SPECIFICATION.md section 10.3 and this
+instruction's own section 6: on any evaluation failure (an identifier not
+in dependencies, a missing/null dependency value, a type mismatch, division
+by zero, a syntax error, or a dependency-cycle member per 1.17.3), the
+calculated variable's stored value is left untouched, a warning is logged
+via console.warn, and nothing throws past evaluateExpression()'s own
+boundary (expression-dsl.js) or evaluateCalculatedVariable()'s own boundary
+(calculated-engine.js) - consistent with 1.7's error-handling rule.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 
@@ -657,6 +817,19 @@ deterministic-engine.js
 deterministic increments
 
 calling applyIncrement
+
+expression-dsl.js
+Tiny Expression DSL tokenizer/parser/evaluator for calculated variables
+(1.17). Pure - no imports from any other State Engine module, no state,
+never throws past evaluateExpression()'s own boundary.
+
+calculated-engine.js
+calculated-variable evaluation (evaluateCalculatedVariable) and
+re-evaluation triggers (recalculateDependents, recalculateAllForChat, 1.17).
+Calls setVar/getVar (chat-state.js) and getPresetsForChat/
+getAllVariablesFromPresets (preset-manager.js). Never called from inside
+chat-state.js itself - every write-path caller triggers it explicitly,
+per 1.17.2.
 
 event-engine.js
 chat lifecycle events

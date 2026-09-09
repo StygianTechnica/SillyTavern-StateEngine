@@ -3,6 +3,7 @@
 import { LOG_PREFIX, getSettings, persistSettings, debugLog } from './settings-core.js';
 import { genId, blankDefinition } from './variable-schema.js';
 import { seedVariablesForChat } from './chat-state.js';
+import { recalculateAllForChat } from './calculated-engine.js';
 
 function getStarterPresetBlueprints() {
     const makeVar = (overrides) => {
@@ -491,6 +492,7 @@ export function addPresetToChat(chatId, presetId) {
 
     persistSettings();
     seedVariablesForChat(chatId);
+    recalculateAllForChat(chatId);
     debugLog(`Added preset ${presetId} to chat ${chatId}. Load order:`, binding.presetLoadOrder);
 }
 
@@ -524,6 +526,7 @@ export function removePresetFromChat(chatId, presetId) {
 
     persistSettings();
     seedVariablesForChat(chatId);
+    recalculateAllForChat(chatId);
 
     debugLog(`Removed preset ${presetId} from chat ${chatId}. Load order:`, binding.presetLoadOrder);
     

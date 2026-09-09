@@ -97,6 +97,18 @@ export function validateValueStrict(def, raw) {
                 break;
             }
 
+            case 'calculated': {
+                // Calculated values are produced deterministically by
+                // expression-dsl.js (always a number, string, or boolean -
+                // the DSL has no array-producing operation) and must pass
+                // through with their real type, not fall into the generic
+                // string-coercion default below - that would silently
+                // stringify a numeric/boolean result in the macro-store
+                // mirror even though the isolated store holds the real type.
+                coerced = raw;
+                break;
+            }
+
             default: {
                 // String type: accept anything, stringify it
                 coerced = String(raw);
@@ -140,6 +152,8 @@ export function coerceValue(def, raw) {
             }
             return getDefaultValue(def);
         }
+        case 'calculated':
+            return raw;
         default:
             return String(raw);
     }

@@ -22,8 +22,16 @@ export function blankDefinition() {
         scope: 'chat', // chat | global
 
         // Type system
-        type: 'number', // number | string | boolean | enum | array
+        type: 'number', // number | string | boolean | enum | array | calculated
         enumValues: [],
+
+        // Calculated-variable configuration (only meaningful when
+        // type === 'calculated'). dependencies names the other variables
+        // (in the same preset) the expression may reference; expression is
+        // a Tiny Expression DSL string (see expression-dsl.js and
+        // docs/TINY EXPRESSION DSL SPECIFICATION.md).
+        dependencies: [],
+        expression: '',
 
         // Typed-array schema (only meaningful when type === 'array')
         itemType: 'any',    // string | number | boolean | enum | object | any

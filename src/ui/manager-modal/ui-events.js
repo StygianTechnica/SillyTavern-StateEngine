@@ -7,6 +7,7 @@ import * as uiTemplates from './ui-templates.js';
 import * as uiRender from './ui-render.js';
 import { generateUUID, escapeHtml } from './utils.js';
 import { resetValueIfTypeChanged, hydrateMacroStoreForChat } from '../../core/chat-state.js';
+import { recalculateAllForChat, recalculateDependents } from '../../core/calculated-engine.js';
 
 export function wireEvents(managerApi, managerState) {
     const $overlay = $('#se-manager-overlay');
@@ -204,11 +205,14 @@ export function wireEvents(managerApi, managerState) {
         if (!preset || !preset.variables[varId]) return;
 
         if (window.confirm(`Delete variable "${preset.variables[varId].name || varId}"?`)) {
+            const deletedName = preset.variables[varId].name;
             presetManager.deleteVariable(presetId, varId);
+            const chatId = managerApi.getCurrentChatId();
+            if (chatId && deletedName) recalculateDependents(chatId, deletedName);
             managerState.currentPresetId = uiRender.renderVariablesTab(managerApi, managerState.currentPresetId);
             managerApi.setStatus(`Variable deleted.`);
         }
-        managerApi.renderTrackerPanel(); 
+        managerApi.renderTrackerPanel();
     });
 
     $overlay.on('click', '.se-manager-cancel-variable-inline', function () {
@@ -257,17 +261,30 @@ export function wireEvents(managerApi, managerState) {
             ...variableSchema.normalizeCollectedValues(values),
         };
 
+        // Calculated variables are read-only - never prompted, never
+        // incremented (instruction doc section 2), regardless of what the
+        // editor DOM did or didn't collect.
+        if (newVariable.type === 'calculated') {
+            newVariable.behaviors = { prompted: false, increment: false };
+        }
+
         // ⭐ FIX: Save or update the variable in the preset
         preset.variables[newVariable.id] = newVariable;
 
         const chatId = managerApi.getCurrentChatId();
         resetValueIfTypeChanged(chatId, newVariable);
 
+        // Preset-definition change (new/edited/renamed variable) - re-run
+        // every calculated variable active for this chat so a newly-created
+        // or just-edited one gets its first real value immediately, and any
+        // calculated variable depending on a renamed variable is retried.
+        if (chatId) recalculateAllForChat(chatId);
+
         managerApi.persistSettings(settings);
         hideInlineVariableEditor($row);
         managerState.currentPresetId = uiRender.renderVariablesTab(managerApi, managerState.currentPresetId);
         managerApi.setStatus(isNew ? 'Variable created.' : 'Variable updated.');
-        managerApi.renderTrackerPanel(); 
+        managerApi.renderTrackerPanel();
     });
 
 
@@ -675,9 +692,16 @@ export function wireEvents(managerApi, managerState) {
         const d = variableSchema.mergeDefinition(defaults, varDef);
         const canIncrement = variableSchema.canIncrement(d.type);
 
+        // Other variables in the current preset, for the calculated-type
+        // dependency checkbox list - excludes the variable being edited.
+        const settings = managerApi.getSettings();
+        const preset = settings.presets[managerState.currentPresetId];
+        const otherVars = Object.values(preset?.variables || {})
+            .filter((v) => v.id !== d.id && v.name);
+
         const $editor = $row.find('.se-manager-variable-editor-inline');
 
-        $editor.html(uiTemplates.buildInlineVariableEditor(d, canIncrement)).data('editing-id', d.id).data('editing-existing', !d._isNew).show();
+        $editor.html(uiTemplates.buildInlineVariableEditor(d, canIncrement, otherVars)).data('editing-id', d.id).data('editing-existing', !d._isNew).show();
 
         // Enable drag-and-drop reordering for the enum, item-enum, and
         // array-default list editors, if present.
@@ -790,6 +814,19 @@ export function wireEvents(managerApi, managerState) {
                 }
             });
             values.defaultValue = JSON.stringify(items);
+        }
+
+        // Calculated-variable dependency checkboxes: only present in the DOM
+        // when type === 'calculated' (see buildInlineVariableEditor). Only
+        // set values.dependencies when the list itself is present, so saving
+        // a non-calculated variable never touches this field.
+        const $depsList = $editor.find('.se-manager-calc-deps-list');
+        if ($depsList.length) {
+            const dependencies = [];
+            $depsList.find('.se-manager-calc-dep-checkbox:checked').each(function () {
+                dependencies.push($(this).val());
+            });
+            values.dependencies = dependencies;
         }
 
         values.showInTracker = true;

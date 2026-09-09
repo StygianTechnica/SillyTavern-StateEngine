@@ -3,6 +3,7 @@
 import { LOG_PREFIX, EXT_TEMPLATE_PATH, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED_VARIABLE_RULES, getSettings, persistSettings, computeDefaultMaxPromptHistoryMessages } from '../core/settings-core.js';
 import { runPromptedStateUpdate } from '../core/prompted-engine.js';
 import { seedVariablesForChat, clearMacroVarsForChat } from '../core/chat-state.js';
+import { recalculateAllForChat } from '../core/calculated-engine.js';
 import { populateConnectionProfileDropdown, populateStateEngineProfileDropdown } from './connection-profile-ui.js';
 import { renderVarTable } from './manager-modal-ui.js';
 import { setTrackerPanelVisible } from './tracker-panel-ui.js';
@@ -49,6 +50,7 @@ export function bindPanelEvents() {
             const chatId = SillyTavern.getContext().chatId;
             if (enabled) {
                 seedVariablesForChat(chatId); // after enabling the engine
+                recalculateAllForChat(chatId);
             } else {
                 clearMacroVarsForChat(chatId); // on engine disable
             }

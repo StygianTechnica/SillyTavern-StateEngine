@@ -9,6 +9,7 @@
 import { LOG_PREFIX, getSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
 import { setVar, applyIncrement } from './chat-state.js';
+import { recalculateDependents } from './calculated-engine.js';
 
 export function runDeterministicIncrements(chatId, triggerType) {
     try {
@@ -33,6 +34,7 @@ export function runDeterministicIncrements(chatId, triggerType) {
                 }
 
                 applyIncrement(chatId, def.name, def.increment.delta, def);
+                recalculateDependents(chatId, def.name);
             } catch (err) {
                 console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
             }

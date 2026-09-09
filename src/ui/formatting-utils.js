@@ -65,6 +65,7 @@ export function typeLabel(type) {
     if (type === 'boolean') return 'True/False';
     if (type === 'enum') return 'Choice';
     if (type === 'array') return 'Array';
+    if (type === 'calculated') return 'Calculated';
     return 'Text';
 }
 

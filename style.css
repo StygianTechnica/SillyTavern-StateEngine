@@ -417,6 +417,12 @@
     font-size: 0.75em;
 }
 
+.se-tracker-calculated-badge {
+    margin-right: 4px;
+    font-size: 0.85em;
+    opacity: 0.75;
+}
+
 .se-tracker-value {
     flex: 1 1 auto;
     min-width: 0;

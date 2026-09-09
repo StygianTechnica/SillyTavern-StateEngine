@@ -3,6 +3,7 @@
 import { LOG_PREFIX, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED_VARIABLE_RULES, getSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
 import { getVar, setVar, applyIncrement, loadChatState } from './chat-state.js';
+import { recalculateDependents } from './calculated-engine.js';
 import { callBackgroundLLM } from './background-llm.js';
 import { extractJsonObject, stripHtml, describeConstraint } from '../ui/formatting-utils.js';
 import { setStatus } from '../ui/settings-panel-ui.js';
@@ -205,6 +206,7 @@ export async function runPromptedStateUpdate(triggerType) {
                                 }
 
                                 setVar(chatId, def.name, rawValue, def);
+                                recalculateDependents(chatId, def.name);
                                 updatedCount++;
                             } catch (err) {
                                 console.warn(LOG_PREFIX, `prompted update failed for variable "${def.name}" (gracefully handled)`, err);
@@ -216,6 +218,7 @@ export async function runPromptedStateUpdate(triggerType) {
                             try {
                                 if (parsed[def.name] === true) {
                                     applyIncrement(chatId, def.name, def.increment.delta, def);
+                                    recalculateDependents(chatId, def.name);
                                     incrementedCount++;
                                 }
                             } catch (err) {

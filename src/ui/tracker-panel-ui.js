@@ -51,6 +51,14 @@ export function renderTrackerPanel() {
             .addClass('se-tracker-label')
             .text(def.label || def.name);
 
+        if (def.type === 'calculated') {
+            $label.prepend(
+                $('<i></i>')
+                    .addClass('fa-solid fa-calculator se-tracker-calculated-badge')
+                    .attr('title', 'Calculated variable (read-only, derived from other variables)'),
+            );
+        }
+
         const $value = $('<span></span>')
             .addClass('se-tracker-value')
             .text(formatValueForDisplay(value));

@@ -5,6 +5,7 @@ import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.
 import { setVar, loadChatState } from './chat-state.js';
 import { getDefaultValue } from './variable-schema.js';
 import { shouldSkipPromptedRefresh, runPromptedStateUpdate } from './prompted-engine.js';
+import { recalculateDependents, recalculateAllForChat } from './calculated-engine.js';
 
 
 export function applyResetOnNewChat() {
@@ -16,6 +17,7 @@ export function applyResetOnNewChat() {
     for (const def of Object.values(variables)) {
         if (!def.name || !def.resetOnNewChat || shouldSkipPromptedRefresh(def)) continue;
         setVar(chatId, def.name, getDefaultValue(def));
+        recalculateDependents(chatId, def.name);
     }
 }
 
@@ -60,6 +62,12 @@ export function offerCopyFromPreviousChat(chatId) {
             if (!varName) continue;
             setVar(chatId, varName, entry?.value, entry?.def);
         }
+        // One pass, after all copied values are in place, rather than a
+        // recalculateDependents() per variable - potentially many variables
+        // just changed at once, and calculated variables should reflect the
+        // fully-copied state, not partial intermediate states from earlier
+        // in this loop.
+        recalculateAllForChat(chatId);
     } catch (err) {
         console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
     }
