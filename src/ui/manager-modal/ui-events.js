@@ -431,6 +431,13 @@ export function wireEvents(managerApi, managerState) {
             values.behaviors.prompted = isOn;
             values.behaviors.increment = $('#se-manager-increment-toggle').is(':checked');
 
+            // A prompted array already receives full array/operation updates
+            // from the model - deterministic increment operations don't
+            // apply, so turning prompted on forces increment off (mirroring
+            // the sorted/increment exclusivity below). Non-array types keep
+            // the existing "prompted decides whether to increment" pairing.
+            if (isOn && values.type === 'array') values.behaviors.increment = false;
+
             showInlineVariableEditor(values, $row);
         }, 0);
     });
@@ -462,20 +469,20 @@ export function wireEvents(managerApi, managerState) {
 
     // Sorted and increment are mutually exclusive for arrays (sorted +
     // rotate/push/unshift/pop/shift all produce ambiguous or contradictory
-    // results) - checking "Keep sorted" forces increment off. The disabled
-    // attributes in the template (ui-templates.js) prevent re-enabling the
-    // other side while one is on, but that alone doesn't retroactively
-    // uncheck an already-on increment when sorted is turned on here, hence
-    // this explicit force + re-render.
+    // results) - checking "Keep sorted" forces increment off. Unchecking it
+    // must ALSO re-render even though nothing needs forcing on that side -
+    // the increment toggle's disabled attribute was computed from the old
+    // (sorted=true) render and won't lift itself without a fresh one. An
+    // earlier version of this handler returned early on uncheck, leaving
+    // increment stuck disabled until the editor was closed and reopened.
     $overlay.on('change', '[data-field="sorted"]', function () {
         const $row = $(this).closest('.se-manager-variable-row');
         const isOn = $(this).is(':checked');
-        if (!isOn) return;
 
         const values = collectInlineVariableValues($row);
-        values.sorted = true;
+        values.sorted = isOn;
         values.behaviors = values.behaviors || {};
-        values.behaviors.increment = false;
+        if (isOn) values.behaviors.increment = false;
 
         showInlineVariableEditor(values, $row);
     });

@@ -59,14 +59,22 @@ export async function runPromptedStateUpdate(triggerType) {
         for (const def of Object.values(variables)) {
             if (!def?.name) continue;
 
-            const isPromptedUpdate = 
+            // Arrays with both behaviors checked still go through the
+            // full-array/operation-object path (isPromptedUpdate), never the
+            // boolean-increment path - a plain "true or false" prompt line
+            // (below) can't communicate array content, so an array-typed
+            // isPromptedIncrement would silently hand the array over to
+            // applyIncrement's deterministic operation/operand instead of
+            // whatever the model actually intended.
+            const isPromptedUpdate =
                 def.behaviors?.prompted === true &&
-                def.behaviors?.increment !== true &&
+                (def.behaviors?.increment !== true || def.type === 'array') &&
                 !shouldSkipPromptedRefresh(def);
 
             const isPromptedIncrement =
                 def.behaviors?.prompted === true &&
-                def.behaviors?.increment === true;
+                def.behaviors?.increment === true &&
+                def.type !== 'array';
 
             const isDeterministicIncrement =
                 def.behaviors?.increment === true &&

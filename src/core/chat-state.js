@@ -457,6 +457,43 @@ export function resetValueIfTypeChanged(chatId, def) {
     }
 }
 
+// Removes one variable's stored value from every chat's isolated-store
+// entry (and its macro mirror, for whichever chat is currently open - the
+// only chat context.variables.local can ever reach). Used when a variable
+// is deleted from a preset: without this, its stored value simply outlives
+// the deletion, and seedVariablesForChat()'s hasOwnProperty check (which
+// exists precisely so seeding never resets an EXISTING variable's value,
+// per 1.12) can't distinguish "this name was never seeded" from "this name
+// belonged to a since-deleted variable" - so a new variable recreated under
+// the same name would silently resurrect the old one's value instead of
+// seeding its own default. This is scoped to an explicit delete action, not
+// a general "reset on definition change" - 1.12 still forbids resetting a
+// value just because a variable was edited/renamed/redefined.
+export function deleteVariableValueEverywhere(varName) {
+    try {
+        if (!varName) return;
+        const store = getStore();
+        const context = SillyTavern.getContext();
+        let changed = false;
+
+        for (const state of Object.values(store.chats)) {
+            if (!state?.variables || !Object.prototype.hasOwnProperty.call(state.variables, varName)) continue;
+            delete state.variables[varName];
+            changed = true;
+        }
+
+        if (changed) persistSettings();
+
+        try {
+            deleteMacroValue(context, { name: varName });
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'deleteVariableValueEverywhere failed (gracefully handled)', err);
+    }
+}
+
 export function seedVariablesForChat(chatId) {
     try {
         if (!chatId) return;

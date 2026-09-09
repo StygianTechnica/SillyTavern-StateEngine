@@ -499,6 +499,40 @@ prompted-engine.js was already confirmed to pass def into every setVar()
 call for every updateVars entry (array and non-array alike); no change was
 needed there.
 
+1.15.2 Prompted/Increment Classification for Arrays, and Delete Cleanup
+
+An array-typed variable with both behaviors.prompted and behaviors.increment
+checked is always classified as isPromptedUpdate (full-array/operation-
+object JSON, 1.15), never isPromptedIncrement (a plain "true or false"
+prompt line, meaningless for array content) - regardless of what
+increment.operation happens to be configured. Checking "Incremented
+Behavior" is disabled in the editor whenever an array already has "Prompted
+Behavior" on (mirroring the sorted/increment exclusivity above), and
+turning prompted on for an array forces increment off live, not just via
+the disabled attribute - a disabled checkbox that stays visually checked
+would otherwise still be collected and saved as true by
+collectInlineVariableValues(). Before this, such a variable's array content
+was silently handed to applyIncrement's deterministic operation/operand
+instead of whatever the model actually returned.
+
+The sorted/increment exclusivity handler ([data-field="sorted"], added in
+1.15.1) must re-render on every change, not only when sorted is being
+checked. An early return on uncheck left the increment toggle's disabled
+attribute stuck from the last render, since nothing recomputes it without a
+fresh render.
+
+Deleting a variable from a preset (deleteVariable(), manager-modal's
+preset-manager.js) also clears its stored value from every chat's isolated
+store (chat-state.js's deleteVariableValueEverywhere()), not just the
+preset definition. Without this, a variable recreated under the same name
+would resurrect the deleted variable's old stored value:
+seedVariablesForChat()'s hasOwnProperty check (1.12) exists so seeding
+never resets an existing variable's value, and has no way to tell "this
+name was never seeded" apart from "this name belonged to a deleted
+variable" once the deleted variable's stored entry is left behind. This is
+scoped to the explicit delete action only - 1.12 still forbids resetting a
+value merely because a definition was edited or redefined.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 

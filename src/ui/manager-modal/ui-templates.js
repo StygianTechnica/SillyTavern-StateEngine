@@ -300,8 +300,12 @@ export function buildInlineVariableEditor(d, canIncrement) {
                 ${canIncrement ? `
                     <div class="se-manager-toggle-row">
                         <div class="se-row">
-                            <label class="checkbox_label" ${d.type === 'array' && d.sorted ? 'title="Sorted arrays cannot use increment operations."' : ''}>
-                                <input id="se-manager-increment-toggle" type="checkbox" class="se-manager-var-field" data-field="behaviors.increment" ${d.behaviors?.increment ? 'checked' : ''} ${d.type === 'array' && d.sorted ? 'disabled' : ''} />
+                            <label class="checkbox_label" ${
+                                d.type === 'array' && d.sorted ? 'title="Sorted arrays cannot use increment operations."'
+                                : d.type === 'array' && d.behaviors?.prompted ? 'title="Prompted arrays already receive full array/operation updates from the model - deterministic increment operations do not apply."'
+                                : ''
+                            }>
+                                <input id="se-manager-increment-toggle" type="checkbox" class="se-manager-var-field" data-field="behaviors.increment" ${d.behaviors?.increment ? 'checked' : ''} ${d.type === 'array' && (d.sorted || d.behaviors?.prompted) ? 'disabled' : ''} />
                                 <span>Incremented Behavior</span>
                             </label>
                         </div>

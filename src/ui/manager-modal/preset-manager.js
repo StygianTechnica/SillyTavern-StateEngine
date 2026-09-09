@@ -2,6 +2,7 @@
 // Uses ES6 modules - imported by manager-modal.js
 
 import {genId} from '../../core/variable-schema.js'
+import { deleteVariableValueEverywhere } from '../../core/chat-state.js';
 
 let managerApi = null;
 
@@ -59,8 +60,16 @@ export function deleteVariable(presetId, varId) {
     const preset = settings.presets[presetId];
     if (!preset || !preset.variables[varId]) return false;
 
+    const varName = preset.variables[varId].name;
     delete preset.variables[varId];
     managerApi.persistSettings(settings);
+
+    // Clear the stored value everywhere too, not just the definition -
+    // otherwise recreating a variable with the same name would silently
+    // resurrect the deleted one's stored value (seeding only seeds names it
+    // doesn't already have an entry for).
+    if (varName) deleteVariableValueEverywhere(varName);
+
     return true;
 }
 
