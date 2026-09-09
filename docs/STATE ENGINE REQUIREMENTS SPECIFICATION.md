@@ -865,6 +865,86 @@ via console.warn, and nothing throws past evaluateExpression()'s own
 boundary (expression-dsl.js) or evaluateCalculatedVariable()'s own boundary
 (calculated-engine.js) - consistent with 1.7's error-handling rule.
 
+1.17.4a Visible Evaluation Errors (2026-09-09)
+
+calculated-engine.js now tracks each calculated variable's most recent
+evaluation failure in-memory (lastEvaluationErrors, keyed by
+"chatId::varName", never persisted - meaningless across a reload), cleared
+on the next successful evaluation. getCalculatedVariableError(chatId,
+varName) exposes it. Surfaced in two places, since a console-only warning
+was not enough for the user to actually find and fix the problem:
+
+- tracker-panel-ui.js: a calculated variable currently in a failed state
+  gets a warning-triangle icon (tooltip = the error) next to its calculator
+  badge, plus a full-width red banner row underneath it in the tracker
+  list - not just a hover tooltip.
+- ui-events.js's save handler: if saving a calculated variable's
+  expression/dependencies results in a failed evaluation, the inline editor
+  is NOT closed (hideInlineVariableEditor is skipped) and the error is
+  shown inside the editor itself (.se-manager-calc-eval-error). The
+  variable's preset definition, seeding, and recalculation attempt still
+  happen normally - only closing the editor is withheld, so the user can
+  fix the expression/dependencies and re-save without losing their place.
+
+1.18 Variable Name Uniqueness (2026-09-09)
+
+Root cause: variable *identity* within a preset is by id (genId()/
+generateUUID() - already always unique, nothing to validate there), but
+the isolated store (state.variables[name]) and the macro-store mirror
+(context.variables.local/global, keyed by def.name) are both keyed by
+*name*. Two variables sharing a name, even across two different presets
+(active or not - an inactive preset can be activated later), silently
+collide in both stores: whichever one seeds/writes most recently wins,
+which looks like a variable randomly showing another preset's default
+value. Confirmed against a real repro: a user-created "weather" variable
+colliding with the built-in "Location and Time" starter preset's own
+"weather" variable.
+
+preset-manager.js's isVariableNameTaken(name, excludeVarId) checks every
+preset (not just active ones, not just the current one) for another
+variable with the same name. generateUniqueVariableName(baseName,
+excludeVarId) appends/increments a numeric suffix ("_2", "_3", ...) until
+unique. Both exposed through managerApi (manager-api.js) for the UI layer.
+
+ui-events.js's save handler blocks a colliding name with a confirm()
+dialog offering the auto-suffixed alternative (accept it, or cancel and
+edit the name manually) - the same pattern already used for preset
+rename/clone. A live, non-blocking warning (.se-manager-name-warning) also
+appears under the name field as the user types, via the same
+isVariableNameTaken() check - not the authoritative check, just early
+feedback.
+
+1.19 Variable Value Macros - {{identifier}} (2026-09-09)
+
+SillyTavern's macro engine exposes context.registerMacro(key, valueOrFn,
+description) / context.unregisterMacro(key) as a public, documented
+extension point (verified against the real running instance's source,
+public/scripts/st-context.js binding these to MacrosParser.registerMacro/
+unregisterMacro; MacrosParser.registerMacro accepts a function as the
+value, resolved live at substitution time - exactly how {{getvar::name}}'s
+own handler already reads ctx.variables.local.get(name) live, per public/
+scripts/macros/definitions/variable-macros.js). No pre-macro interception
+is needed or implemented: SillyTavern's own {{...}} matching already
+handles it once a key is registered.
+
+macro-registration.js's refreshVariableMacros() registers {{name}} for
+every variable in a preset currently active for the chat, each resolving
+live via getMacroValue() at substitution time (so it always reflects the
+current value with no re-registration needed on every write).
+unregisterAllVariableMacros() removes everything this module registered.
+Refreshed on CHAT_CREATED/CHAT_CHANGED (event-engine.js), engine enable/
+disable (settings-panel-ui.js - unregistered entirely on disable, so
+{{name}} does not silently keep resolving once the engine is off, matching
+clearMacroVarsForChat's existing on-disable behavior per 3.2), and every
+variable save/preset add-remove (ui-events.js, preset-manager.js).
+
+Scoped to variables in currently-active presets only - a variable in an
+inactive preset has no current value for this chat to macro-substitute, so
+its {{name}} macro is not registered until that preset is activated.
+Reserved-name protection is inherited from variable creation itself
+(isReservedVariable already blocks creating a variable named after a known
+SillyTavern built-in), not re-validated here.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 
@@ -915,6 +995,12 @@ Calls setVar/getVar (chat-state.js) and getPresetsForChat/
 getAllVariablesFromPresets (preset-manager.js). Never called from inside
 chat-state.js itself - every write-path caller triggers it explicitly,
 per 1.17.2.
+
+macro-registration.js
+registers/unregisters {{name}} macros (1.19) for variables in presets
+active for the current chat, via context.registerMacro/unregisterMacro
+(SillyTavern's own public extension point) - never reimplements macro
+substitution itself.
 
 event-engine.js
 chat lifecycle events

@@ -7,7 +7,8 @@ import * as uiTemplates from './ui-templates.js';
 import * as uiRender from './ui-render.js';
 import { generateUUID, escapeHtml } from './utils.js';
 import { resetValueIfTypeChanged, hydrateMacroStoreForChat, seedVariablesForChat } from '../../core/chat-state.js';
-import { recalculateAllForChat, recalculateDependents } from '../../core/calculated-engine.js';
+import { recalculateAllForChat, recalculateDependents, getCalculatedVariableError } from '../../core/calculated-engine.js';
+import { refreshVariableMacros } from '../../core/macro-registration.js';
 
 export function wireEvents(managerApi, managerState) {
     const $overlay = $('#se-manager-overlay');
@@ -253,6 +254,22 @@ export function wireEvents(managerApi, managerState) {
             return;
         }
 
+        // The isolated store and macro store are both keyed by variable
+        // *name* (not id) - two variables sharing a name, even across
+        // different presets (active or not), silently collide in both
+        // stores. Checked here, not just within the current preset, since
+        // an inactive preset can be activated later.
+        if (managerApi.isVariableNameTaken(values.name, values.id)) {
+            const suggested = managerApi.generateUniqueVariableName(values.name, values.id);
+            const useAlternate = window.confirm(
+                `A variable named "${values.name}" already exists in another preset. Variable names must be unique across all presets - ` +
+                `the stored value and the {{${values.name}}} macro are both keyed by name, so a duplicate would silently collide with it.\n\n` +
+                `OK = rename this one to "${suggested}" and save.\nCancel = go back and edit the name yourself.`
+            );
+            if (!useAlternate) return;
+            values.name = suggested;
+        }
+
         console.log("VALUES BEFORE SAVE:", values);
 
         const newVariable = {
@@ -296,6 +313,26 @@ export function wireEvents(managerApi, managerState) {
         if (chatId) recalculateAllForChat(chatId);
 
         managerApi.persistSettings(settings);
+        refreshVariableMacros();
+
+        // A calculated variable's expression may have just failed to
+        // evaluate (bad identifier, type mismatch, cycle). The user must
+        // see that and be able to fix it before the editor closes - so on
+        // failure, leave the editor open with an inline error instead of
+        // hiding it. The variable IS still saved (preset definition,
+        // seeding, and the failed-evaluation warning already happened
+        // above) - only closing the editor is deferred.
+        const evalError = (chatId && newVariable.type === 'calculated')
+            ? getCalculatedVariableError(chatId, newVariable.name)
+            : null;
+
+        if (evalError) {
+            showCalculatedEvalError($editor, evalError);
+            managerApi.setStatus(`Saved, but "${newVariable.name}" failed to evaluate - see the error below.`, true);
+            managerApi.renderTrackerPanel();
+            return;
+        }
+
         hideInlineVariableEditor($row);
         managerState.currentPresetId = uiRender.renderVariablesTab(managerApi, managerState.currentPresetId);
         managerApi.setStatus(isNew ? 'Variable created.' : 'Variable updated.');
@@ -645,7 +682,10 @@ export function wireEvents(managerApi, managerState) {
         } else if (itemType === 'object') {
             itemHtml = `<span class="se-manager-array-item-placeholder">Object item editor coming soon</span>`;
         } else {
-            itemHtml = `<input class="text_pole se-manager-array-item" value="" />`;
+            // "New Entry" placeholder text, matching the enum/item-enum
+            // add-row pattern above - a blank value made every freshly-added
+            // array item look empty/broken compared to those two.
+            itemHtml = `<input class="text_pole se-manager-array-item" value="New Entry" />`;
         }
 
         const $item = $(`
@@ -665,6 +705,46 @@ export function wireEvents(managerApi, managerState) {
         $(this).closest('.se-manager-array-row').remove();
     });
 
+    // Dependency clipboard icon (item 5, 2026-09-09): copies the exact
+    // variable name to the clipboard, so authoring an expression means
+    // pasting rather than retyping (and mistyping/miscasing) an identifier.
+    // "ID" in the request's wording means the variable's name here, not its
+    // internal UUID - dependencies/expressions reference variables by name
+    // (Tiny Expression DSL), never by id.
+    $overlay.on('click', '.se-manager-calc-dep-copy', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const name = $(this).attr('data-copy-name') || '';
+        if (!name) return;
+        navigator.clipboard.writeText(name).then(() => {
+            managerApi.setStatus(`Copied "${name}" to clipboard.`);
+        }).catch((err) => {
+            console.error('Failed to copy:', err);
+            managerApi.setStatus('Failed to copy to clipboard.', true);
+        });
+    });
+
+    // Live name-uniqueness feedback while typing (item 12, 2026-09-09) -
+    // non-blocking; the authoritative check (and the auto-suffix offer) is
+    // still the one in the save handler below. This is just early warning.
+    $overlay.on('input', '[data-field="name"]', function () {
+        const $field = $(this);
+        const $editor = $field.closest('.se-manager-variable-editor-inline');
+        const editingId = $editor.data('editing-id');
+        const name = $field.val();
+
+        let $warning = $editor.find('.se-manager-name-warning');
+        if (!$warning.length) {
+            $warning = $('<div class="se-manager-name-warning" style="display:none;"></div>').insertAfter($field);
+        }
+
+        if (name && managerApi.isVariableNameTaken(name, editingId)) {
+            $warning.text(`"${name}" is already used by another variable (names must be unique across all presets).`).show();
+        } else {
+            $warning.hide();
+        }
+    });
+
     $overlay.on('click', '#se-manager-new-variable', function () {
         const presetId = managerState.currentPresetId;
         if (!presetId) {
@@ -676,10 +756,13 @@ export function wireEvents(managerApi, managerState) {
         const newVar = managerApi.blankDefinition();
         newVar.id = generateUUID();
 
-        // Insert into preset BEFORE opening editor
+        // Insert into preset BEFORE opening editor, at the TOP of the list -
+        // a plain property assignment would insert it at the end (JS object
+        // key order is insertion order), forcing a scroll to the bottom to
+        // configure the variable that was just created.
         const settings = managerApi.getSettings();
         const preset = settings.presets[presetId];
-        preset.variables[newVar.id] = newVar;
+        preset.variables = { [newVar.id]: newVar, ...preset.variables };
 
         managerApi.persistSettings(settings);
 
@@ -697,6 +780,22 @@ export function wireEvents(managerApi, managerState) {
     // ---------------------------------------------------------------------
     // Helpers used exclusively by the event handlers above
     // ---------------------------------------------------------------------
+
+    // Shows the most recent evaluation-failure message for a calculated
+    // variable directly in its editor (item 3, 2026-09-09) - a type
+    // mismatch, an unresolved dependency, or a dependency cycle must be
+    // visible to the user, not only logged to the console.
+    function showCalculatedEvalError($editor, message) {
+        let $err = $editor.find('.se-manager-calc-eval-error');
+        if (!$err.length) {
+            // Shouldn't happen (the container is only omitted when type
+            // isn't "calculated", and this is only ever called for a
+            // calculated variable) - fall back to appending one rather than
+            // silently dropping the error.
+            $err = $('<div class="se-manager-calc-eval-error"></div>').appendTo($editor);
+        }
+        $err.text(`Evaluation failed: ${message}`).show();
+    }
 
     function showInlineVariableEditor(varDef, $row) {
         // Default structure for new variables

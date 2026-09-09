@@ -82,6 +82,27 @@ function topoSortCalculated(byName, calcNames) {
     return { order: order.filter((n) => !cyclic.has(n)), cyclic };
 }
 
+// Last-evaluation-failure tracking, purely in-memory (not persisted - it's
+// re-derived every time a calculated variable is (re)evaluated, and is
+// meaningless across a page reload anyway). Lets the UI (tracker,
+// manager-modal editor) surface a failure inline instead of only in the
+// console, per instruction (2026-09-09): "the user must see the error and
+// be able to fix it." Keyed by "chatId::varName" since the same variable
+// name can exist as different definitions across chats/presets.
+const lastEvaluationErrors = new Map();
+
+function errorKey(chatId, varName) {
+    return `${chatId}::${varName}`;
+}
+
+// Returns the error string from this variable's most recent failed
+// evaluation for this chat, or null if its last evaluation succeeded (or it
+// has never been evaluated). Read by tracker-panel-ui.js and ui-events.js.
+export function getCalculatedVariableError(chatId, varName) {
+    if (!chatId || !varName) return null;
+    return lastEvaluationErrors.get(errorKey(chatId, varName)) ?? null;
+}
+
 // Evaluates one calculated variable's expression against its dependencies'
 // *currently stored* values and writes the result through setVar() (so it
 // lands in the isolated store and mirrors into the macro store, same as any
@@ -90,6 +111,7 @@ function topoSortCalculated(byName, calcNames) {
 export function evaluateCalculatedVariable(chatId, def) {
     try {
         if (!chatId || !def || def.type !== 'calculated' || !def.name) return;
+        const key = errorKey(chatId, def.name);
 
         const deps = Array.isArray(def.dependencies) ? def.dependencies : [];
         const values = {};
@@ -101,12 +123,15 @@ export function evaluateCalculatedVariable(chatId, def) {
         const result = evaluateExpression(def.expression, deps, values);
         if (!result.ok) {
             console.warn(LOG_PREFIX, `Calculated variable "${def.name}" failed to evaluate (${result.error}); retaining previous value.`);
+            lastEvaluationErrors.set(key, result.error);
             return;
         }
 
+        lastEvaluationErrors.delete(key);
         setVar(chatId, def.name, result.value, def);
     } catch (err) {
         console.warn(LOG_PREFIX, `Calculated variable "${def?.name}" evaluation error (gracefully handled)`, err);
+        if (chatId && def?.name) lastEvaluationErrors.set(errorKey(chatId, def.name), err?.message || String(err));
     }
 }
 

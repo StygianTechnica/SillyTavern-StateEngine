@@ -552,3 +552,73 @@
     line-height: 1.3;
     white-space: normal;
 }
+
+/* Variable list drag handle (reorder, item 7) */
+.se-manager-variable-grip {
+    cursor: grab;
+    opacity: 0.6;
+    padding: 0 4px;
+}
+
+.se-manager-variable-grip:active {
+    cursor: grabbing;
+}
+
+.se-manager-variable-row.ui-sortable-helper {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Calculated-variable dependency list: checkbox + copy-to-clipboard icon
+   (item 5) side by side. */
+.se-manager-calc-dep-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+}
+
+.se-manager-calc-dep-copy {
+    flex: 0 0 auto;
+    opacity: 0.7;
+}
+
+.se-manager-calc-dep-copy:hover {
+    opacity: 1;
+}
+
+/* Inline calculated-variable evaluation error (item 3) - must be visibly
+   distinct, not just logged to console. */
+.se-manager-calc-eval-error {
+    margin-top: 6px;
+    padding: 6px 8px;
+    border-left: 2px solid #ff6b6b;
+    background: rgba(255, 107, 107, 0.1);
+    color: #ff6b6b;
+    font-size: 0.9em;
+    line-height: 1.3;
+}
+
+/* Live variable-name-uniqueness warning while typing (item 12) */
+.se-manager-name-warning {
+    color: #ff6b6b;
+    font-size: 0.85em;
+    margin-top: -4px;
+    margin-bottom: 4px;
+    line-height: 1.3;
+}
+
+/* Tracker inline calculated-variable error badge + banner (item 3) */
+.se-tracker-error-badge {
+    color: #ff6b6b;
+    margin-left: 4px;
+}
+
+.se-tracker-error-banner {
+    margin: -2px 0 4px 0;
+    padding: 3px 6px;
+    border-left: 2px solid #ff6b6b;
+    background: rgba(255, 107, 107, 0.1);
+    color: #ff6b6b;
+    font-size: 0.8em;
+    line-height: 1.3;
+}

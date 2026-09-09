@@ -5,6 +5,7 @@ import { applyResetOnNewChat, runStartupOnce, offerCopyFromPreviousChat } from '
 import { runPromptedStateUpdate } from '../core/prompted-engine.js';
 import { runDeterministicIncrements } from '../core/deterministic-engine.js';
 import { seedVariablesForChat, hydrateMacroStoreForChat, loadChatState } from '../core/chat-state.js';
+import { refreshVariableMacros } from '../core/macro-registration.js';
 import { applyWorldInfoConditionalFiltering } from '../world-info/wi-filtering.js';
 import { observeWIEditorChanges } from '../world-info/wi-condition-ui.js';
 import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
@@ -42,6 +43,12 @@ export function registerEvents() {
         }
 
         try {
+            refreshVariableMacros();
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
+
+        try {
             refreshPanelIfOpen();
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
@@ -72,6 +79,12 @@ export function registerEvents() {
 
         try {
             runPromptedStateUpdate('chat_change');
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
+
+        try {
+            refreshVariableMacros();
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
         }

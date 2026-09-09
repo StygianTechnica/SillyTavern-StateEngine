@@ -6,7 +6,7 @@ import { getMacroValue } from '../core/macro-store.js';
 import { setVar } from '../core/chat-state.js';
 import { getDefaultValue } from '../core/variable-schema.js';
 import { coerceValue } from '../core/variable-validation.js';
-import { recalculateDependents } from '../core/calculated-engine.js';
+import { recalculateDependents, getCalculatedVariableError } from '../core/calculated-engine.js';
 import { formatValueForDisplay } from './formatting-utils.js';
 import { setStatus } from './settings-panel-ui.js';
 
@@ -105,12 +105,29 @@ export function renderTrackerPanel() {
             .addClass('se-tracker-label')
             .text(def.label || def.name);
 
+        let evalError = null;
         if (def.type === 'calculated') {
+            evalError = getCalculatedVariableError(chatId, def.name);
+
             $label.prepend(
                 $('<i></i>')
                     .addClass('fa-solid fa-calculator se-tracker-calculated-badge')
                     .attr('title', 'Calculated variable (read-only, derived from other variables)'),
             );
+
+            // Inline failure indicator (item 3, 2026-09-09): a type
+            // mismatch, an unresolved dependency, or a dependency cycle
+            // must be visible here, not only in the console - covers the
+            // case where the failing expression was saved from somewhere
+            // other than the manager-modal editor (e.g. a dependency was
+            // later deleted or renamed).
+            if (evalError) {
+                $label.append(
+                    $('<i></i>')
+                        .addClass('fa-solid fa-triangle-exclamation se-tracker-error-badge')
+                        .attr('title', `Evaluation failed: ${evalError}`),
+                );
+            }
         }
 
         const $value = $('<span></span>')
@@ -200,6 +217,16 @@ export function renderTrackerPanel() {
         }
 
         $body.append($row);
+
+        // Full-width banner under the row, not just an icon+tooltip - the
+        // failure must be visible at a glance, not only on hover.
+        if (evalError) {
+            $body.append(
+                $('<div></div>')
+                    .addClass('se-tracker-error-banner')
+                    .text(`"${def.label || def.name}" failed to evaluate: ${evalError}`),
+            );
+        }
     }
 }
 

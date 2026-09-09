@@ -4,6 +4,7 @@ import { LOG_PREFIX, getSettings, persistSettings, debugLog } from './settings-c
 import { genId, blankDefinition } from './variable-schema.js';
 import { seedVariablesForChat } from './chat-state.js';
 import { recalculateAllForChat } from './calculated-engine.js';
+import { refreshVariableMacros } from './macro-registration.js';
 
 function getStarterPresetBlueprints() {
     const makeVar = (overrides) => {
@@ -493,6 +494,7 @@ export function addPresetToChat(chatId, presetId) {
     persistSettings();
     seedVariablesForChat(chatId);
     recalculateAllForChat(chatId);
+    refreshVariableMacros();
     debugLog(`Added preset ${presetId} to chat ${chatId}. Load order:`, binding.presetLoadOrder);
 }
 
@@ -527,6 +529,7 @@ export function removePresetFromChat(chatId, presetId) {
     persistSettings();
     seedVariablesForChat(chatId);
     recalculateAllForChat(chatId);
+    refreshVariableMacros();
 
     debugLog(`Removed preset ${presetId} from chat ${chatId}. Load order:`, binding.presetLoadOrder);
     
@@ -560,6 +563,45 @@ export function removePresetFromTracker(presetId) {
         trackerPresets.splice(idx, 1);
         setTrackerPresets(trackerPresets);
     }
+}
+
+// Variable identity in a preset is by id (always a unique UUID - genId()/
+// generateUUID() already guarantee that, nothing to validate there). But
+// the isolated store (chat-state.js) and the macro-store mirror
+// (macro-store.js) are both keyed by *name*, not id - state.variables[name]
+// and context.variables.local/global both key on def.name. Two variables
+// sharing a name, even in two different presets, silently collide in both
+// stores: whichever one seeds/writes last overwrites the other's slot,
+// which is indistinguishable from a random flip between their two default
+// values. Root-caused 2026-09-09 against exactly this symptom (a variable
+// named the same as one of the built-in starter presets' variables
+// appeared to randomly show the starter preset's default instead of the
+// user's own). Checked across every preset, active or not - a currently-
+// inactive preset can still be activated later and collide.
+export function isVariableNameTaken(name, excludeVarId) {
+    const settings = getSettings();
+    for (const preset of Object.values(settings.presets || {})) {
+        for (const [varId, varDef] of Object.entries(preset.variables || {})) {
+            if (varId === excludeVarId) continue;
+            if (varDef?.name === name) return true;
+        }
+    }
+    return false;
+}
+
+// Appends/increments a numeric suffix ("_2", "_3", ...) until the result is
+// not taken anywhere (see isVariableNameTaken). Used to offer an
+// auto-rename when a user insists on creating/renaming into a colliding
+// name rather than editing it themselves.
+export function generateUniqueVariableName(baseName, excludeVarId) {
+    if (!isVariableNameTaken(baseName, excludeVarId)) return baseName;
+    let n = 2;
+    let candidate = `${baseName}_${n}`;
+    while (isVariableNameTaken(candidate, excludeVarId)) {
+        n++;
+        candidate = `${baseName}_${n}`;
+    }
+    return candidate;
 }
 
 export function getAllVariablesFromPresets(presetIds, preserveOrder = true) {

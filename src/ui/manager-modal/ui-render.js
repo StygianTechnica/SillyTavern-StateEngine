@@ -74,7 +74,16 @@ export function renderVariablesTab(managerApi, managerCurrentPresetId) {
     let variablesList = '';
     if (selectedPresetId && settings.presets[selectedPresetId]) {
         const preset = settings.presets[selectedPresetId];
-        const variableEntries = Object.entries(preset.variables || {});
+        // Visible variables first, hidden (showInTracker === false) grouped
+        // below them (item 6, 2026-09-09). A stable sort (guaranteed by the
+        // spec since ES2019) only reorders across that visible/hidden
+        // boundary - ties keep their existing relative order, so this never
+        // fights with drag/up-down reordering within either group. This is
+        // display order only; the underlying preset.variables order (what
+        // drag-and-drop and the up/down arrows actually persist) is
+        // untouched here.
+        const variableEntries = Object.entries(preset.variables || {})
+            .sort(([, a], [, b]) => (a.showInTracker === false ? 1 : 0) - (b.showInTracker === false ? 1 : 0));
         variablesList = variableEntries
             .map(([varId, varDef], index) => uiTemplates.buildVariablesListRow(varId, varDef, index, variableEntries.length, selectedPresetId))
             .join('');
@@ -98,6 +107,45 @@ export function renderVariablesTab(managerApi, managerCurrentPresetId) {
 
     // Set initial button states
     updateMoveButtonStates();
+
+    // Drag-handle reordering (item 7, 2026-09-09) - the existing up/down
+    // arrows (moveVariable, only enabled in "Tracker order" sort mode)
+    // remain as a fallback; this is an additional, always-available way to
+    // reorder. On drop, the *persisted* preset.variables order is rebuilt
+    // from the row order currently in the DOM (which reflects the
+    // visible/hidden grouping above, so a drag never fights with it) and
+    // saved immediately - matching how moveVariable() already persists on
+    // every click rather than requiring a separate save step.
+    const $list = $('#se-manager-variable-list');
+    if ($list.length && $list.sortable) {
+        $list.sortable({
+            handle: '.se-manager-variable-grip',
+            axis: 'y',
+            containment: 'parent',
+            update: function () {
+                const currentPreset = settings.presets[selectedPresetId];
+                if (!currentPreset) return;
+
+                const orderedIds = $list.find('.se-manager-variable-row').map(function () {
+                    return $(this).attr('data-var-id');
+                }).get();
+
+                const rebuilt = {};
+                for (const id of orderedIds) {
+                    if (currentPreset.variables[id]) rebuilt[id] = currentPreset.variables[id];
+                }
+                // Defensive: never drop a variable the DOM pass didn't find
+                // (shouldn't happen) - append it, preserving prior order.
+                for (const [id, def] of Object.entries(currentPreset.variables)) {
+                    if (!(id in rebuilt)) rebuilt[id] = def;
+                }
+                currentPreset.variables = rebuilt;
+
+                managerApi.persistSettings(settings);
+                managerApi.renderTrackerPanel();
+            },
+        });
+    }
 
     return selectedPresetId;
 }

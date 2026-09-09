@@ -76,6 +76,7 @@ export function buildVariablesListRow(varId, varDef, index, total, selectedPrese
     return `
                 <div class="se-manager-variable-row" data-var-id="${varId}" data-var-name="${(varDef.name || varId).toLowerCase()}" data-var-label="${(varDef.label || '').toLowerCase()}" data-show-in-tracker="${varDef.showInTracker !== false}">
                     <div class="se-manager-variable-row-header">
+                        <span class="se-manager-variable-grip" title="Drag to reorder"><i class="fa-solid fa-grip-vertical"></i></span>
                         <div class="se-manager-variable-info">
                             <div class="se-manager-variable-name">
                                 ${escapeHtml(varDef.name || varId)}
@@ -220,11 +221,16 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars) {
                         ${otherVars.length === 0
                             ? '<div class="se-empty">No other variables in this preset yet.</div>'
                             : otherVars.map((v) => `
-                                <label class="checkbox_label se-manager-calc-dep-item">
-                                    <input type="checkbox" class="se-manager-calc-dep-checkbox" value="${escapeHtml(v.name)}"
-                                        ${Array.isArray(d.dependencies) && d.dependencies.includes(v.name) ? 'checked' : ''} />
-                                    <span>${escapeHtml(v.name)}${v.label ? ` (${escapeHtml(v.label)})` : ''} <small>[${escapeHtml(v.type)}]</small></span>
-                                </label>
+                                <div class="se-manager-calc-dep-item">
+                                    <label class="checkbox_label">
+                                        <input type="checkbox" class="se-manager-calc-dep-checkbox" value="${escapeHtml(v.name)}"
+                                            ${Array.isArray(d.dependencies) && d.dependencies.includes(v.name) ? 'checked' : ''} />
+                                        <span>${escapeHtml(v.name)}${v.label ? ` (${escapeHtml(v.label)})` : ''} <small>[${escapeHtml(v.type)}]</small></span>
+                                    </label>
+                                    <button type="button" class="se-manager-action-btn se-manager-calc-dep-copy" data-copy-name="${escapeHtml(v.name)}" title="Copy &quot;${escapeHtml(v.name)}&quot; to clipboard">
+                                        <i class="fa-solid fa-clipboard"></i>
+                                    </button>
+                                </div>
                             `).join('')
                         }
                     </div>
@@ -233,7 +239,8 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars) {
                     <textarea class="text_pole se-manager-var-field"
                         data-field="expression"
                         placeholder="e.g. strength + dexterity * 2">${escapeHtml(d.expression || '')}</textarea>
-                    <div class="se-empty">Tiny Expression DSL. Only the checked dependencies above may be referenced by name.</div>
+                    <div class="se-empty">Tiny Expression DSL. Only the checked dependencies above may be referenced by name. Click the clipboard icon next to a dependency to copy its exact name.</div>
+                    <div class="se-manager-calc-eval-error" style="display:none;"></div>
                 </div>
             ` : ''}
 

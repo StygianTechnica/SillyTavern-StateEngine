@@ -2,7 +2,7 @@
 
 import { setManagerApi } from './manager-modal.js';
 import { getSettings, persistSettings, toggleDebugMode, debugLog } from '../../core/settings-core.js';
-import { createPreset, renamePreset, deletePreset, getPresetsForChat, addPresetToChat, removePresetFromChat, restoreDefaultPresets } from '../../core/preset-manager.js';
+import { createPreset, renamePreset, deletePreset, getPresetsForChat, addPresetToChat, removePresetFromChat, restoreDefaultPresets, isVariableNameTaken, generateUniqueVariableName } from '../../core/preset-manager.js';
 import { getDebugInfo } from '../../core/debug-engine.js';
 import { blankDefinition } from '../../core/variable-schema.js';
 import { isReservedVariable } from '../../core/validation-utils.js';
@@ -29,5 +29,7 @@ setManagerApi({
     debugLog,
     getDebugInfo,
     isReservedVariable,
-    blankDefinition
+    blankDefinition,
+    isVariableNameTaken,
+    generateUniqueVariableName
 });

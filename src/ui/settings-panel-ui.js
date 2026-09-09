@@ -4,6 +4,7 @@ import { LOG_PREFIX, EXT_TEMPLATE_PATH, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED
 import { runPromptedStateUpdate } from '../core/prompted-engine.js';
 import { seedVariablesForChat, clearMacroVarsForChat } from '../core/chat-state.js';
 import { recalculateAllForChat } from '../core/calculated-engine.js';
+import { refreshVariableMacros, unregisterAllVariableMacros } from '../core/macro-registration.js';
 import { populateConnectionProfileDropdown, populateStateEngineProfileDropdown } from './connection-profile-ui.js';
 import { renderVarTable } from './manager-modal-ui.js';
 import { setTrackerPanelVisible } from './tracker-panel-ui.js';
@@ -51,8 +52,10 @@ export function bindPanelEvents() {
             if (enabled) {
                 seedVariablesForChat(chatId); // after enabling the engine
                 recalculateAllForChat(chatId);
+                refreshVariableMacros();
             } else {
                 clearMacroVarsForChat(chatId); // on engine disable
+                unregisterAllVariableMacros();
             }
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);

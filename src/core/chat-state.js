@@ -365,7 +365,7 @@ export function applyIncrement(chatId, varName, delta, def) {
             // case) - visible verbatim wherever something reads state.variables
             // directly rather than through getMacroValue's array-aware fallback
             // (e.g. the Variable Management tab's JSON preview).
-            state.variables[varName] = { value: def?.type === 'array' ? [] : 0, def: def ?? null };
+            state.variables[varName] = { value: def?.type === 'array' ? [] : (def?.type === 'boolean' ? false : 0), def: def ?? null };
             entry = state.variables[varName];
         } else if (def) {
             // Keep the stored schema snapshot current. This never sources
@@ -395,6 +395,19 @@ export function applyIncrement(chatId, varName, delta, def) {
             const currentArr = Array.isArray(entry.value) ? entry.value : [];
             const result = applyArrayOperation(currentArr, operation, def.increment?.operand, def);
             next = sanitizeArrayValue(def, result);
+        } else if (def?.type === 'boolean') {
+            // The editor only ever offers "Toggle value on increment" for
+            // booleans (ui-templates.js) - no delta/operand field exists for
+            // this type. Falling through to the generic numeric branch below
+            // (root-caused 2026-09-09) did `Number(entry.value) + delta`,
+            // which produces a real number (e.g. 2) in the isolated store
+            // instead of a toggled boolean - setMacroValue()'s own
+            // validateValueStrict() call masked this in the macro-store
+            // mirror (coercing the number back to a boolean on write), but
+            // getVar() - what calculated-engine.js reads - saw the raw
+            // number, breaking boolean logic (`!flag`, `flag && ...`) for
+            // any calculated variable depending on it.
+            next = typeof entry.value === 'boolean' ? !entry.value : !(Number(entry.value) !== 0);
         } else {
             // Convert current value to number safely
             let current = Number(entry.value);
