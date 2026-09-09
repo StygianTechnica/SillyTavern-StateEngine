@@ -324,11 +324,15 @@ rules below before being wired in):
   macro-store mirror. applyIncrement()'s array branch (below) does the same
   to its own operation result before storing.
 
-Deterministic increment operations (chat-state.js
-applyArrayOperation(), shared with the prompted-update path below;
-deterministic-engine.js itself needed no changes - array operations are
+Deterministic increment operations (chat-state.js applyArrayOperation(),
+used exclusively by applyIncrement() - never called from anywhere in
+prompted-engine.js; the model never sees or produces operation vocabulary,
+per 1.15.2's corrected prompted-update rules. This one function serves both
+ways applyIncrement() itself gets triggered: a purely deterministic tick
+(deterministic-engine.js, itself needing no changes - array operations are
 implemented inside applyIncrement(), the same precedent enum-cycling
-already set in 1.11.1). Configured via increment.operation and
+already set in 1.11.1) and a prompted true/false decision
+(isPromptedIncrement, 1.15.2)). Configured via increment.operation and
 increment.operand (increment.operand is a fixed, static value - a
 deterministic trigger fires the same way on every tick, so there is no
 per-tick input value to push/toggle other than whatever this field is set
@@ -354,31 +358,39 @@ to):
   increment is a no-op, matching the "if def.increment.operation is
   missing -> do nothing" requirement exactly.
 
-Prompted update rules (prompted-engine.js). An array-typed updateVars
-entry accepts exactly two JSON shapes for its key in the model's response,
-auto-detected (an array is shape A, an object is checked against shape B,
-anything else is skipped rather than written):
+Prompted update rules (prompted-engine.js). The model is never asked to
+perform an increment-style operation (push/pop/shift/unshift/rotate/clear/
+toggle/cycle) itself, for arrays or any other type - that would put
+arithmetic/rearrangement reasoning on a model that may be lightweight, and
+operation semantics belong to applyIncrement() alone. Instead, exactly the
+same two-tier classification every other type already uses applies to
+arrays without exception:
 
-A. Full replacement: `"varName": ["a", "b"]` - written via setVar(), which
-   sanitizes it per the rules above.
-B. Operation object: `` "varName": { "op": "push"|"pop"|"shift"|"unshift"|"rotate"|"clear"|"toggle", "value": <item> } ``
-   - applied via the same applyArrayOperation() the deterministic path
-   uses, then written via setVar() (so it's sanitized too). "value" is
-   required for push/unshift/toggle and ignored otherwise. "cycle" is
-   deterministic-only, not offered to the model - it advances a fixed
-   sequence rather than expressing anything about conversation content, and
-   isn't in the accepted `op` set for prompted updates.
-   An unrecognized `op`, or a value that is neither an array nor a
-   recognized operation object, is skipped entirely rather than written -
-   the model failing to follow the required shape must never corrupt the
-   stored array.
+- isPromptedUpdate (prompted true, increment false): the model receives a
+  plain-language description of the array (via describeConstraint()) and
+  must reply with a full JSON array of items - never anything else. A
+  response that isn't an array for this key is skipped entirely rather than
+  written; the model failing to follow the required shape must never
+  corrupt the stored array.
+- isPromptedIncrement (prompted true AND increment true): the model
+  receives only a plain "true or false" prompt line, identical in shape to
+  every other incrementable type's boolean prompt (no array-specific
+  wording at all - the user's own prompted.instructions/description text is
+  what tells the model what the true/false question means). A "true"
+  answer runs applyIncrement(), which performs whichever
+  increment.operation/operand was configured in the editor - a fixed,
+  author-configured operation, never something the model specifies or
+  constructs itself.
 
-describeConstraint() (formatting-utils.js) tells the model, for every
-array-typed variable in the prompt: that it's an array, its itemType,
-itemEnumValues when itemType is "enum", the active maxLength/unique/sorted
-constraints, and the exact two accepted shapes above (including the
-allowed `op` values) - this is what actually keeps the model from mixing
-formats or replying with anything besides the JSON value for that key.
+describeConstraint() (formatting-utils.js) only ever describes the full-
+array-replacement shape for an array-typed variable (its itemType,
+itemEnumValues when itemType is "enum", and the active
+maxLength/unique/sorted constraints) - it is never used for incrementVars
+at all (they get the plain true/false line above), and it must never
+mention operation objects, "op", or any operation name; doing so caused the
+model to intermittently return operation-shaped JSON for a variable that
+had increment.behaviors === false and no operation configured for it to
+even mean anything.
 
 World Info condition operators (wi-conditions.js CONDITION_OPERATORS,
 wi-condition-ui.js). Array-aware operators, available whenever the
@@ -499,21 +511,39 @@ prompted-engine.js was already confirmed to pass def into every setVar()
 call for every updateVars entry (array and non-array alike); no change was
 needed there.
 
-1.15.2 Prompted/Increment Classification for Arrays, and Delete Cleanup
+1.15.2 Prompted/Increment Classification for Arrays (corrected), and Delete
+Cleanup
 
-An array-typed variable with both behaviors.prompted and behaviors.increment
-checked is always classified as isPromptedUpdate (full-array/operation-
-object JSON, 1.15), never isPromptedIncrement (a plain "true or false"
-prompt line, meaningless for array content) - regardless of what
-increment.operation happens to be configured. Checking "Incremented
-Behavior" is disabled in the editor whenever an array already has "Prompted
-Behavior" on (mirroring the sorted/increment exclusivity above), and
-turning prompted on for an array forces increment off live, not just via
-the disabled attribute - a disabled checkbox that stays visually checked
-would otherwise still be collected and saved as true by
-collectInlineVariableValues(). Before this, such a variable's array content
-was silently handed to applyIncrement's deterministic operation/operand
-instead of whatever the model actually returned.
+An earlier revision of this document and prompted-engine.js special-cased
+array variables with both behaviors.prompted and behaviors.increment
+checked into isPromptedUpdate (full-array-or-operation-object JSON),
+reasoning that a plain "true or false" prompt line couldn't communicate
+array content. That reasoning was itself the bug: it is not the model's job
+to communicate array content changes as operations at all. This has been
+reverted. Arrays now use exactly the same classification as every other
+type, with no exception:
+
+- isPromptedUpdate (prompted true, increment false): full JSON array only.
+- isPromptedIncrement (prompted true AND increment true): the model
+  receives only a true/false prompt line and never sees operation
+  vocabulary; a "true" answer runs the CONFIGURED increment.operation/
+  operand through applyIncrement(), the same mechanism a purely
+  deterministic array increment already uses. The model is never asked to
+  choose or perform push/pop/rotate/toggle/cycle/etc itself, for arrays or
+  any other type - only ever a yes/no question, exactly per 1.15's
+  corrected prompted-update rules above.
+
+The concrete bug this reversal fixes: describeConstraint() (formatting-
+utils.js) is called for every isPromptedUpdate array regardless of whether
+increment is configured, and its old text unconditionally described the
+operation-object shape - so a variable with behaviors.increment === false
+and no increment.operation configured at all was still being told about an
+operation format that meant nothing for it, on top of the (correct)
+full-array instructions. The two contradictory instruction sets in the same
+prompt caused the model to intermittently return operation-shaped JSON
+instead of a plain array. Fixed by removing all operation-object language
+from describeConstraint() outright (1.15, corrected above) - prompted
+arrays now only ever see full-array-replacement instructions, full stop.
 
 The sorted/increment exclusivity handler ([data-field="sorted"], added in
 1.15.1) must re-render on every change, not only when sorted is being

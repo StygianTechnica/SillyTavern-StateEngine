@@ -42,11 +42,12 @@ export function describeConstraint(def) {
         if (def.unique) constraints.push('unique items');
         if (def.sorted) constraints.push('sorted');
         if (constraints.length) desc += ` (${constraints.join(', ')})`;
-        const ops = ['push', 'unshift', 'pop', 'shift', 'rotate', 'clear'];
-        if (itemType === 'enum') ops.push('toggle');
-        desc += `. Reply with EITHER a full replacement array (e.g. ["a","b"]) OR an operation object `
-            + `{"op": one of [${ops.map(o => `"${o}"`).join(', ')}], "value": <the item, required for push/unshift/toggle, ignored otherwise>} `
-            + `- never mix the two formats, and never output anything besides the JSON value for this key`;
+        // Prompted arrays only ever accept a full array replacement - the
+        // model is never asked to perform an increment-style operation
+        // itself (that's applyIncrement's job, triggered deterministically
+        // or via the incrementVars true/false path, never described here).
+        desc += `. Reply with a full JSON array of items matching this description (e.g. ["a","b"]) - `
+            + `never an operation object, never a partial update, never anything besides the JSON array value for this key`;
         return desc;
     }
     return 'text';

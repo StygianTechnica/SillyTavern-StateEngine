@@ -2,7 +2,7 @@
 
 import { LOG_PREFIX, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED_VARIABLE_RULES, getSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
-import { getVar, setVar, applyIncrement, loadChatState, applyArrayOperation } from './chat-state.js';
+import { getVar, setVar, applyIncrement, loadChatState } from './chat-state.js';
 import { callBackgroundLLM } from './background-llm.js';
 import { extractJsonObject, stripHtml, describeConstraint } from '../ui/formatting-utils.js';
 import { setStatus } from '../ui/settings-panel-ui.js';
@@ -10,19 +10,6 @@ import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
 
 export function shouldSkipPromptedRefresh(def) {
     return !!(def && def.skipPromptedRefresh);
-}
-
-const ARRAY_PROMPTED_OPS = new Set(['push', 'pop', 'shift', 'unshift', 'rotate', 'clear', 'toggle']);
-
-// Detects the {"op": ..., "value": ...} operation-object shape prompted
-// array updates use, as distinct from a full-array replacement. Returns
-// null for anything else, including a malformed/unrecognized op, so the
-// caller can skip the write rather than writing garbage.
-function parseArrayOperationObject(rawValue) {
-    if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) return null;
-    const op = rawValue.op;
-    if (typeof op !== 'string' || !ARRAY_PROMPTED_OPS.has(op)) return null;
-    return { op, value: rawValue.value };
 }
 
 // Fires the background "prompted variable" LLM update and returns``
@@ -59,22 +46,22 @@ export async function runPromptedStateUpdate(triggerType) {
         for (const def of Object.values(variables)) {
             if (!def?.name) continue;
 
-            // Arrays with both behaviors checked still go through the
-            // full-array/operation-object path (isPromptedUpdate), never the
-            // boolean-increment path - a plain "true or false" prompt line
-            // (below) can't communicate array content, so an array-typed
-            // isPromptedIncrement would silently hand the array over to
-            // applyIncrement's deterministic operation/operand instead of
-            // whatever the model actually intended.
+            // Arrays follow the exact same classification every other type
+            // does - the LLM is never asked to perform an increment-style
+            // operation directly. A prompted array with increment ALSO
+            // checked is isPromptedIncrement: the model only ever answers
+            // true/false (below), and a true answer runs the CONFIGURED
+            // increment.operation/operand through applyIncrement, exactly
+            // like every other incrementable type already works. Arrays
+            // never see or produce an operation object themselves.
             const isPromptedUpdate =
                 def.behaviors?.prompted === true &&
-                (def.behaviors?.increment !== true || def.type === 'array') &&
+                def.behaviors?.increment !== true &&
                 !shouldSkipPromptedRefresh(def);
 
             const isPromptedIncrement =
                 def.behaviors?.prompted === true &&
-                def.behaviors?.increment === true &&
-                def.type !== 'array';
+                def.behaviors?.increment === true;
 
             const isDeterministicIncrement =
                 def.behaviors?.increment === true &&
@@ -195,25 +182,16 @@ export async function runPromptedStateUpdate(triggerType) {
 
                             const rawValue = parsed[def.name];
 
-                            if (def.type === 'array') {
-                                if (Array.isArray(rawValue)) {
-                                    // Full array replacement - setVar() validates/sanitizes it.
-                                    setVar(chatId, def.name, rawValue, def);
-                                    updatedCount++;
-                                    continue;
-                                }
-
-                                const operation = parseArrayOperationObject(rawValue);
-                                if (operation) {
-                                    const current = getVar(chatId, def.name)?.value;
-                                    const currentArr = Array.isArray(current) ? current : [];
-                                    const nextArr = applyArrayOperation(currentArr, operation.op, operation.value, def);
-                                    setVar(chatId, def.name, nextArr, def);
-                                    updatedCount++;
-                                }
-                                // Neither a full array nor a recognized operation object -
-                                // the model didn't follow the required shape; skip rather
-                                // than write garbage.
+                            if (def.type === 'array' && !Array.isArray(rawValue)) {
+                                // Prompted arrays only ever accept a full array
+                                // replacement. Operation-style updates
+                                // (push/pop/toggle/etc) are never something the
+                                // model is asked to perform - that's
+                                // applyIncrement's job exclusively, triggered
+                                // either deterministically or via the boolean
+                                // incrementVars path below. Anything else here
+                                // means the model didn't follow the required
+                                // shape; skip rather than write garbage.
                                 continue;
                             }
 

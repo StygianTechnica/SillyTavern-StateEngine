@@ -431,13 +431,6 @@ export function wireEvents(managerApi, managerState) {
             values.behaviors.prompted = isOn;
             values.behaviors.increment = $('#se-manager-increment-toggle').is(':checked');
 
-            // A prompted array already receives full array/operation updates
-            // from the model - deterministic increment operations don't
-            // apply, so turning prompted on forces increment off (mirroring
-            // the sorted/increment exclusivity below). Non-array types keep
-            // the existing "prompted decides whether to increment" pairing.
-            if (isOn && values.type === 'array') values.behaviors.increment = false;
-
             showInlineVariableEditor(values, $row);
         }, 0);
     });
