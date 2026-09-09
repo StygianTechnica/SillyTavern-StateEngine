@@ -147,10 +147,6 @@ export function buildInlineVariableEditor(d, canIncrement) {
         : (Array.isArray(d.enumValues) ? d.enumValues : Object.values(d.enumValues || {}));
 
     // Same live-round-trip-preservation reasoning as enumValuesMultiline above.
-    const itemEnumValuesText = d.itemEnumValuesMultiline !== undefined
-        ? String(d.itemEnumValuesMultiline)
-        : (Array.isArray(d.itemEnumValues) ? d.itemEnumValues : []).join('\n');
-
     const itemEnumValuesArray = d.itemEnumValuesMultiline !== undefined
         ? variableSchema.splitMultilineList(String(d.itemEnumValuesMultiline)).map((s) => s.trim()).filter(Boolean)
         : (Array.isArray(d.itemEnumValues) ? d.itemEnumValues : []);
@@ -246,11 +242,21 @@ export function buildInlineVariableEditor(d, canIncrement) {
 
                 ${itemType === 'enum' ? `
                     <label class="se-manager-label">Allowed item values</label>
-                    <textarea class="text_pole se-manager-var-field"
-                        data-field="itemEnumValuesMultiline"
-                        placeholder="One value per line"
-                        rows="3"
-                    >${escapeHtml(itemEnumValuesText)}</textarea>
+                    <div class="se-manager-itemenum-list">
+                        ${itemEnumValuesArray.map((val, i) => `
+                            <div class="se-manager-itemenum-row" data-index="${i}">
+                                <span class="se-manager-itemenum-grip"><i class="fa-solid fa-grip-vertical"></i></span>
+                                <input class="text_pole se-manager-itemenum-item" value="${escapeHtml(val)}" />
+                                <button type="button" class="menu_button se-manager-itemenum-delete" title="Remove value">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <button type="button" class="menu_button se-manager-itemenum-add">
+                        <i class="fa-solid fa-plus"></i> Add new entry
+                    </button>
                 ` : ''}
 
                 ${itemType === 'object' ? `

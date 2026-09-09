@@ -553,6 +553,40 @@ export function wireEvents(managerApi, managerState) {
         $(this).closest('.se-manager-enum-row').remove();
     });
 
+    // Array item-enum allowed-values editor: identical row-add/delete
+    // pattern to the enum list above, under its own class namespace so its
+    // collection (below, into itemEnumValuesMultiline) never conflates with
+    // the top-level enum list's (into enumValuesMultiline) - the two never
+    // render at once for one variable (type is either 'enum' or 'array',
+    // never both), but keeping them distinct avoids any ambiguity. This
+    // replaces a free-text "one value per line" textarea, which let a
+    // user paste an entire list as one line (e.g. copied from this UI's own
+    // JSON export) and silently end up with a single bogus entry instead of
+    // real separate values - a row editor makes that mistake structurally
+    // impossible, the same way the enum list and array default-value editor
+    // already do for their own fields.
+    $overlay.on('click', '.se-manager-itemenum-add', function () {
+        const $row = $(this).closest('.se-manager-variable-row');
+        const $editor = $row.find('.se-manager-variable-editor-inline');
+        const $list = $editor.find('.se-manager-itemenum-list');
+
+        const $item = $(`
+            <div class="se-manager-itemenum-row">
+                <span class="se-manager-itemenum-grip"><i class="fa-solid fa-grip-vertical"></i></span>
+                <input class="text_pole se-manager-itemenum-item" value="New Entry" />
+                <button class="menu_button se-manager-itemenum-delete" title="Remove value">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+            </div>
+        `);
+
+        $list.append($item);
+    });
+
+    $overlay.on('click', '.se-manager-itemenum-delete', function () {
+        $(this).closest('.se-manager-itemenum-row').remove();
+    });
+
     // Array default-value row editor: same "edit the DOM directly, collect
     // at save time" approach as the enum list above. A freshly-added row's
     // shape depends on the array's current itemType, read live from the DOM
@@ -566,8 +600,14 @@ export function wireEvents(managerApi, managerState) {
 
         let itemHtml;
         if (itemType === 'enum') {
-            const raw = $editor.find('[data-field="itemEnumValuesMultiline"]').val() || '';
-            const allowed = variableSchema.splitMultilineList(raw).map((s) => s.trim()).filter(Boolean);
+            // Allowed item values now live in the row editor
+            // (.se-manager-itemenum-item), not a textarea - read them the
+            // same way collectInlineVariableValues() does.
+            const allowed = [];
+            $editor.find('.se-manager-itemenum-item').each(function () {
+                const v = $(this).val().trim();
+                if (v) allowed.push(v);
+            });
             const opts = allowed.map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
             itemHtml = `<select class="text_pole se-manager-array-item">${opts}</select>`;
         } else if (itemType === 'object') {
@@ -639,13 +679,22 @@ export function wireEvents(managerApi, managerState) {
 
         $editor.html(uiTemplates.buildInlineVariableEditor(d, canIncrement)).data('editing-id', d.id).data('editing-existing', !d._isNew).show();
 
-        // Enable drag-and-drop reordering for the enum and array-default
-        // list editors, if present.
+        // Enable drag-and-drop reordering for the enum, item-enum, and
+        // array-default list editors, if present.
         setTimeout(() => {
             const $enumList = $editor.find('.se-manager-enum-list');
             if ($enumList.length && $enumList.sortable) {
                 $enumList.sortable({
                     handle: '.se-manager-enum-grip',
+                    axis: 'y',
+                    containment: 'parent'
+                });
+            }
+
+            const $itemEnumList = $editor.find('.se-manager-itemenum-list');
+            if ($itemEnumList.length && $itemEnumList.sortable) {
+                $itemEnumList.sortable({
+                    handle: '.se-manager-itemenum-grip',
                     axis: 'y',
                     containment: 'parent'
                 });
@@ -710,6 +759,16 @@ export function wireEvents(managerApi, managerState) {
             enumLines.push($(this).val());
         });
         values.enumValuesMultiline = enumLines.join('\n');
+
+        // Array item-enum allowed-values row editor: same approach, into
+        // itemEnumValuesMultiline - a distinct field/class namespace from
+        // the enum list above so the two never collide, even though only
+        // one is ever present in the DOM for a given variable.
+        const itemEnumLines = [];
+        $editor.find('.se-manager-itemenum-item').each(function () {
+            itemEnumLines.push($(this).val());
+        });
+        values.itemEnumValuesMultiline = itemEnumLines.join('\n');
 
         // Array default-value row editor: rows serialize into defaultValue
         // itself, as a JSON array string - getDefaultValue() (variable-schema.js)

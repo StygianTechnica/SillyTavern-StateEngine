@@ -603,6 +603,23 @@ inside update engines"). Each variable's write is now wrapped in its own
 try/catch, logged by name on failure, so one bad entry can never take out
 the rest of a prompted update's batch.
 
+1.15.4 Item-Enum Allowed Values Is Now a Row Editor, Not a Textarea
+
+The "Allowed item values" editor (array itemType === 'enum') is now a
+row-based list - add/remove/drag-to-reorder, one input per value -
+structurally identical to the top-level enum list (1.11.3) and the array
+default-value editor (1.15.1), under its own class namespace
+(.se-manager-itemenum-*) and field (itemEnumValuesMultiline, unchanged) so
+its row-collection never conflates with the top-level enum list's despite
+sharing the same serialize-into-a-newline-string approach. It replaces the
+free-text "one value per line" textarea that caused 1.15.3's bug: pasting
+an entire list as a single line silently produced one bogus entry instead
+of real separate values. splitMultilineList() (1.15.3) still runs in the
+save pipeline as a second line of defense, but the row editor is the actual
+fix - there is no longer a single shared text field a whole list can be
+pasted into by mistake, matching how the other two allowed-values editors
+already made that mistake structurally impossible.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 
