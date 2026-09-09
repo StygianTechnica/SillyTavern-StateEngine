@@ -6,7 +6,7 @@ import * as variableSchema from './variable-ui-schema.js';
 import * as uiTemplates from './ui-templates.js';
 import * as uiRender from './ui-render.js';
 import { generateUUID, escapeHtml } from './utils.js';
-import { resetValueIfTypeChanged, hydrateMacroStoreForChat } from '../../core/chat-state.js';
+import { resetValueIfTypeChanged, hydrateMacroStoreForChat, seedVariablesForChat } from '../../core/chat-state.js';
 import { recalculateAllForChat, recalculateDependents } from '../../core/calculated-engine.js';
 
 export function wireEvents(managerApi, managerState) {
@@ -273,6 +273,21 @@ export function wireEvents(managerApi, managerState) {
 
         const chatId = managerApi.getCurrentChatId();
         resetValueIfTypeChanged(chatId, newVariable);
+
+        // A variable saved here (new or edited) may not have a stored entry
+        // for this chat yet - the only other seeding triggers are engine
+        // enable and preset add/remove (spec 3.1), neither of which fires
+        // from this handler. Without this, a variable created while its
+        // preset is already active never gets a real isolated-store entry
+        // until the preset is toggled off/on - invisible for a plain
+        // variable (getMacroValue()'s default-value fallback masks it) but
+        // fatal for a calculated variable depending on it, since
+        // calculated-engine.js reads the real stored value via getVar(),
+        // which returns undefined for an unseeded dependency and causes
+        // evaluation to fail every time. seedVariablesForChat() only fills
+        // in variables that don't already have an entry (1.12), so this is
+        // safe to call unconditionally on every save.
+        if (chatId) seedVariablesForChat(chatId);
 
         // Preset-definition change (new/edited/renamed variable) - re-run
         // every calculated variable active for this chat so a newly-created

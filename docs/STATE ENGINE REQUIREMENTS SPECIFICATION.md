@@ -273,6 +273,44 @@ be confused with seeding: 3.1 still forbids seeding on CHAT_CREATED, and
 this function never invents values or reads from preset defaults - it only
 ever copies values that were already stored for a different, real chat.
 
+1.14.2 Tracker Runtime Value Edit Rule (2026-09-09)
+
+Root cause: a variable with neither behaviors.prompted nor
+behaviors.increment set (informally "static" - not a distinct schema type,
+see 1.16's type table) has no write-path at all after seeding. The
+manager-modal inline editor (ui-events.js) only ever edits preset
+*definitions* (name/type/dependencies/defaultValue/etc), never a chat's
+stored value - confirmed by inspection, not changed by this rule. Without a
+runtime edit surface, such a variable is frozen at its seeded defaultValue
+for the rest of the chat, and any calculated variable depending on it can
+never reflect a value the user actually wants to set by hand (e.g. a
+character sheet stat like "strength" that isn't meant to be prompted or
+incremented, only set once and read by other calculated variables).
+
+tracker-panel-ui.js is the fix, not ui-events.js: the Tracker is the
+runtime-state surface, so it - not the schema editor - gets the edit
+affordance. For every displayed variable where isStaticVariable(def) is
+true (type !== "calculated" AND behaviors.prompted !== true AND
+behaviors.increment !== true - true for number/string/boolean/enum/array
+alike; "calculated" itself is always excluded per 1.17.3, and a
+prompted/incremented variable already has its own owner), a pencil-icon
+button swaps the value span for a type-appropriate inline control
+(checkbox for boolean, a <select> of enumValues for enum, a text input -
+JSON for arrays - for number/string/array), committed on Enter/blur/change
+and discarded on Escape.
+
+On commit: the raw input is coerced via coerceValue() (variable-
+validation.js - the same per-type coercion already used elsewhere, not new
+logic), written through setVar(chatId, def.name, coerced, def) - the
+existing write-path (1.6), nothing bypassed - then
+recalculateDependents(chatId, def.name) (calculated-engine.js) so any
+calculated variable depending on it updates immediately, then the tracker
+re-renders. This never touches defaultValue, never calls
+seedVariablesForChat() (no new seeding trigger), and only ever affects the
+current chat's stored value - fully consistent with 1.12: it is a value
+write like a prompted update or a manual reset-button click already were,
+not a reseed.
+
 1.15 Typed Arrays
 
 type "array" variables carry a declared itemType, constraining what the
@@ -677,17 +715,24 @@ Calculated variables are re-evaluated when:
   update or increment, manual reset-on-new-chat, or a copy-from-previous-
   chat), via calculated-engine.js's recalculateDependents(chatId, varName)
 - the preset definition changes (a variable is created, edited, or renamed
-  in the manager modal), via recalculateAllForChat(chatId)
+  in the manager modal), via seedVariablesForChat(chatId) (2026-09-09 - see
+  3.1's fourth seeding trigger) immediately followed by
+  recalculateAllForChat(chatId) in the same save handler. The seed call is
+  required here: a variable created while its preset is already active for
+  the chat has no state.variables entry through any other path, so without
+  it a calculated variable's dependency reads undefined via getVar() and
+  every evaluation attempt fails silently (root-caused 2026-09-09).
 - a dependency variable is deleted, via recalculateDependents(chatId,
   deletedName) - the calculated variable then fails to resolve that
   identifier (DSL 9) and retains its previous value with a logged warning,
   per 1.17.4
 - seeding completes (engine enable, preset add/remove, new-chat variable
-  copy - the three seeding triggers in 3.1), via recalculateAllForChat(chatId)
-  run immediately after seedVariablesForChat(chatId). This is a distinct
-  lifecycle step from hydration/chat-load, so it does not conflict with
-  1.12's hydration-stability rule below - it only ever runs at the same
-  moments seeding itself is already permitted to run.
+  copy, or a variable save - the four seeding triggers in 3.1), via
+  recalculateAllForChat(chatId) run immediately after
+  seedVariablesForChat(chatId). This is a distinct lifecycle step from
+  hydration/chat-load, so it does not conflict with 1.12's
+  hydration-stability rule below - it only ever runs at the same moments
+  seeding itself is already permitted to run.
 
 1.17.2a Hydration and Editing Stability
 
@@ -850,6 +895,23 @@ Seeding must occur only on:
 engine enable
 
 preset add/remove
+
+variable save (manager modal inline editor, ui-events.js
+.se-manager-save-variable-inline handler) - added 2026-09-09. Root-caused
+via direct code trace (not inference): a variable created while its preset
+is already active for the chat never gets a state.variables entry through
+any other path - resetValueIfTypeChanged() only touches variables that
+already have an entry (chat-state.js, `if (!entry) return;`), and the three
+seeding triggers already listed above don't fire from a plain variable
+save. This is invisible for an ordinary variable (getMacroValue()'s
+default-value fallback shows defaultValue regardless of whether anything
+was ever actually stored) but broke calculated variables outright: a
+calculated variable's dependency resolution reads the real stored value via
+getVar(), which returns undefined for an unseeded dependency, so evaluation
+fails every time and the calculated variable never produces a value.
+seedVariablesForChat() is safe to call unconditionally here - it already
+only fills in variables that don't yet have an entry (1.12), never resets
+one that does.
 
 Seeding must not occur inside update engines.
 

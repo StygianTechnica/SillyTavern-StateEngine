@@ -4,8 +4,61 @@ import { getSettings, persistSettings, debugLog } from '../core/settings-core.js
 import { getPresetLoadOrder, getAllVariablesFromPresets, getTrackerPresets, addPresetToTracker, removePresetFromTracker } from '../core/preset-manager.js';
 import { getMacroValue } from '../core/macro-store.js';
 import { setVar } from '../core/chat-state.js';
+import { coerceValue } from '../core/variable-validation.js';
+import { recalculateDependents } from '../core/calculated-engine.js';
 import { formatValueForDisplay } from './formatting-utils.js';
 import { setStatus } from './settings-panel-ui.js';
+
+// A variable is runtime-editable from the tracker when nothing else already
+// owns writing its value: not calculated (derived, read-only - 1.17.3),
+// not prompted (the LLM owns it), not incremented (the reset button and the
+// increment engine own it). There is no separate "static" schema type -
+// number/string/boolean/enum/array are all eligible here whenever neither
+// behavior flag is set; type itself doesn't matter.
+function isStaticVariable(def) {
+    return !!def
+        && def.type !== 'calculated'
+        && def.behaviors?.prompted !== true
+        && def.behaviors?.increment !== true;
+}
+
+// Builds the type-appropriate edit control for one static variable's
+// current value. `onCommit(rawValue)` is called once with whatever the user
+// entered/selected/toggled; the caller is responsible for coercing and
+// writing it. `onCancel()` discards the edit. Both are guarded by the
+// caller against double-invocation (blur firing after Enter/Escape).
+function buildStaticValueEditor(def, currentValue, onCommit, onCancel) {
+    if (def.type === 'boolean') {
+        const $input = $('<input type="checkbox" class="se-tracker-edit-input" />').prop('checked', !!currentValue);
+        $input.on('change', () => onCommit($input.is(':checked')));
+        $input.on('keydown', (e) => { if (e.key === 'Escape') onCancel(); });
+        return $input;
+    }
+
+    if (def.type === 'enum') {
+        const list = Array.isArray(def.enumValues) ? def.enumValues : [];
+        const $input = $('<select class="text_pole se-tracker-edit-input"></select>');
+        for (const v of list) {
+            $('<option></option>').val(v).text(v).prop('selected', v === currentValue).appendTo($input);
+        }
+        $input.on('change', () => onCommit($input.val()));
+        $input.on('keydown', (e) => { if (e.key === 'Escape') onCancel(); });
+        return $input;
+    }
+
+    // number, string, array - a single text field. Arrays round-trip as
+    // their JSON form; coerceValue() (variable-validation.js) already
+    // accepts a JSON-array string, the same as every other array-editing
+    // surface in this codebase.
+    const displayVal = Array.isArray(currentValue) ? JSON.stringify(currentValue) : (currentValue ?? '');
+    const $input = $('<input type="text" class="text_pole se-tracker-edit-input" />').val(displayVal);
+    $input.on('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); onCommit($input.val()); }
+        else if (e.key === 'Escape') { onCancel(); }
+    });
+    $input.on('blur', () => onCommit($input.val()));
+    return $input;
+}
 
 export function renderTrackerPanel() {
     const $body = $('#se_tracker_body');
@@ -65,6 +118,55 @@ export function renderTrackerPanel() {
 
         //$row.append($('<span></span>').addClass(`se-badge se-badge-${def.category} se-tracker-badge`).text(categoryLabel(def.category)));//111111111111
         $row.append($label, $value);
+
+        // Static variables (no prompted/increment behavior, not calculated)
+        // have no write-path after seeding otherwise - this is the runtime
+        // state edit surface. The inline manager-modal editor stays
+        // schema-only (name/type/dependencies/etc); this only ever changes
+        // the *stored value* for the current chat, never defaultValue, and
+        // never re-seeds anything.
+        if (isStaticVariable(def)) {
+            const $editBtn = $('<button></button>')
+                .addClass('se-tracker-btn se-tracker-edit-btn')
+                .attr('title', 'Edit value')
+                .html('<i class="fa-solid fa-pencil"></i>')
+                .on('click', () => {
+                    const ctx = SillyTavern.getContext();
+                    const cid = ctx.chatId;
+                    if (!cid) return;
+
+                    const current = getMacroValue(ctx, def);
+                    let committed = false;
+
+                    const $input = buildStaticValueEditor(
+                        def,
+                        current,
+                        (rawValue) => {
+                            if (committed) return;
+                            committed = true;
+                            try {
+                                const nextValue = coerceValue(def, rawValue);
+                                setVar(cid, def.name, nextValue, def);
+                                recalculateDependents(cid, def.name);
+                            } catch (err) {
+                                console.warn('[State Engine] tracker value edit failed (gracefully handled)', err);
+                            }
+                            renderTrackerPanel();
+                        },
+                        () => {
+                            if (committed) return;
+                            committed = true;
+                            renderTrackerPanel();
+                        },
+                    );
+
+                    $value.replaceWith($input);
+                    $input.trigger('focus');
+                    if ($input.is('input[type="text"]')) $input[0].select();
+                });
+
+            $row.append($editBtn);
+        }
 
         // Only show reset button for increment variables
         if (def.behaviors && def.behaviors.increment) {

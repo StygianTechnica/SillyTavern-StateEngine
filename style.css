@@ -431,6 +431,14 @@
     overflow-wrap: break-word;
 }
 
+.se-tracker-edit-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-family: var(--monoFontFamily, monospace);
+    padding: 1px 4px;
+    height: auto;
+}
+
 .se-tracker-empty {
     opacity: 0.7;
     text-align: center;
