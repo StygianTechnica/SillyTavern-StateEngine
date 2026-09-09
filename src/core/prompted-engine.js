@@ -176,34 +176,68 @@ export async function runPromptedStateUpdate(triggerType) {
                             return;
                         }
 
+                        // TEMP DIAGNOSTIC - filter console on "SE_PROMPTED_WRITE_DIAG".
+                        console.log('SE_PROMPTED_WRITE_DIAG', 'parsed model response', parsed);
+
                         let updatedCount = 0;
                         for (const def of updateVars) {
-                            if (!Object.prototype.hasOwnProperty.call(parsed, def.name)) continue;
+                            // Each variable's write is isolated - one variable
+                            // throwing (a malformed def, an unexpected value
+                            // shape, anything) must never prevent every other
+                            // variable in this same response from being
+                            // written. Previously this whole loop shared one
+                            // try/catch (around the entire .then() body), so a
+                            // single bad entry silently dropped every update
+                            // that would have been processed after it.
+                            try {
+                                if (!Object.prototype.hasOwnProperty.call(parsed, def.name)) continue;
 
-                            const rawValue = parsed[def.name];
+                                const rawValue = parsed[def.name];
 
-                            if (def.type === 'array' && !Array.isArray(rawValue)) {
-                                // Prompted arrays only ever accept a full array
-                                // replacement. Operation-style updates
-                                // (push/pop/toggle/etc) are never something the
-                                // model is asked to perform - that's
-                                // applyIncrement's job exclusively, triggered
-                                // either deterministically or via the boolean
-                                // incrementVars path below. Anything else here
-                                // means the model didn't follow the required
-                                // shape; skip rather than write garbage.
-                                continue;
+                                console.log('SE_PROMPTED_WRITE_DIAG', 'processing updateVars entry', {
+                                    name: def.name,
+                                    type: def.type,
+                                    itemType: def.itemType,
+                                    rawValue,
+                                    isArrayRaw: Array.isArray(rawValue),
+                                });
+
+                                if (def.type === 'array' && !Array.isArray(rawValue)) {
+                                    // Prompted arrays only ever accept a full array
+                                    // replacement. Operation-style updates
+                                    // (push/pop/toggle/etc) are never something the
+                                    // model is asked to perform - that's
+                                    // applyIncrement's job exclusively, triggered
+                                    // either deterministically or via the boolean
+                                    // incrementVars path below. Anything else here
+                                    // means the model didn't follow the required
+                                    // shape; skip rather than write garbage.
+                                    continue;
+                                }
+
+                                setVar(chatId, def.name, rawValue, def);
+                                updatedCount++;
+
+                                if (def.type === 'array') {
+                                    console.log('SE_PROMPTED_WRITE_DIAG', 'post-write readback', {
+                                        name: def.name,
+                                        storedValue: getVar(chatId, def.name)?.value,
+                                    });
+                                }
+                            } catch (err) {
+                                console.warn(LOG_PREFIX, `prompted update failed for variable "${def.name}" (gracefully handled)`, err);
                             }
-
-                            setVar(chatId, def.name, rawValue, def);
-                            updatedCount++;
                         }
 
                         let incrementedCount = 0;
                         for (const def of incrementVars) {
-                            if (parsed[def.name] === true) {
-                                applyIncrement(chatId, def.name, def.increment.delta, def);
-                                incrementedCount++;
+                            try {
+                                if (parsed[def.name] === true) {
+                                    applyIncrement(chatId, def.name, def.increment.delta, def);
+                                    incrementedCount++;
+                                }
+                            } catch (err) {
+                                console.warn(LOG_PREFIX, `prompted increment failed for variable "${def.name}" (gracefully handled)`, err);
                             }
                         }
 
