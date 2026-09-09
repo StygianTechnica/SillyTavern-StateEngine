@@ -116,6 +116,13 @@ export function buildInlineVariableEditor(d, canIncrement) {
     const enumValuesArray = d.enumValuesMultiline !== undefined
         ? String(d.enumValuesMultiline).split(/\r?\n/)
         : (Array.isArray(d.enumValues) ? d.enumValues : Object.values(d.enumValues || {}));
+
+    // Same live-round-trip-preservation reasoning as enumValuesMultiline above.
+    const itemEnumValuesText = d.itemEnumValuesMultiline !== undefined
+        ? String(d.itemEnumValuesMultiline)
+        : (Array.isArray(d.itemEnumValues) ? d.itemEnumValues : []).join('\n');
+
+    const itemType = d.itemType || 'any';
     return `
         <div class="se-manager-variable-editor-fields">
 
@@ -136,6 +143,7 @@ export function buildInlineVariableEditor(d, canIncrement) {
                 <option value="number" ${d.type === 'number' ? 'selected' : ''}>Number</option>
                 <option value="boolean" ${d.type === 'boolean' ? 'selected' : ''}>Boolean</option>
                 <option value="enum" ${d.type === 'enum' ? 'selected' : ''}>Enum</option>
+                <option value="array" ${d.type === 'array' ? 'selected' : ''}>Array</option>
             </select>
 
             <input class="text_pole se-manager-var-field"
@@ -161,6 +169,49 @@ export function buildInlineVariableEditor(d, canIncrement) {
                 <button type="button" class="menu_button se-manager-enum-add">
                     <i class="fa-solid fa-plus"></i> Add new entry
                 </button>
+            ` : ''}
+
+            <!-- Typed array editor -->
+            ${d.type === 'array' ? `
+                <label class="se-manager-label">Item type</label>
+                <select class="text_pole se-manager-var-field" data-field="itemType">
+                    <option value="string" ${itemType === 'string' ? 'selected' : ''}>String</option>
+                    <option value="number" ${itemType === 'number' ? 'selected' : ''}>Number</option>
+                    <option value="boolean" ${itemType === 'boolean' ? 'selected' : ''}>Boolean</option>
+                    <option value="enum" ${itemType === 'enum' ? 'selected' : ''}>Enum</option>
+                    <option value="object" ${itemType === 'object' ? 'selected' : ''}>Object</option>
+                    <option value="any" ${itemType === 'any' ? 'selected' : ''}>Any</option>
+                </select>
+
+                ${itemType === 'enum' ? `
+                    <label class="se-manager-label">Allowed item values</label>
+                    <textarea class="text_pole se-manager-var-field"
+                        data-field="itemEnumValuesMultiline"
+                        placeholder="One value per line"
+                        rows="3"
+                    >${escapeHtml(itemEnumValuesText)}</textarea>
+                ` : ''}
+
+                ${itemType === 'object' ? `
+                    <div class="se-empty">Object item editor coming soon. Object items are validated against itemSchema (per-field type checks), configured outside this editor.</div>
+                ` : ''}
+
+                <div class="se-manager-array-constraints">
+                    <label class="checkbox_label">
+                        <input type="checkbox" class="se-manager-var-field" data-field="unique" ${d.unique ? 'checked' : ''} />
+                        <span>Unique items only</span>
+                    </label>
+                    <label class="checkbox_label">
+                        <input type="checkbox" class="se-manager-var-field" data-field="sorted" ${d.sorted ? 'checked' : ''} />
+                        <span>Keep sorted</span>
+                    </label>
+                    <label>
+                        Max length:
+                        <input class="text_pole se-manager-var-field" data-field="maxLength"
+                            value="${d.maxLength === null || d.maxLength === undefined ? '' : escapeHtml(d.maxLength)}"
+                            placeholder="no limit" />
+                    </label>
+                </div>
             ` : ''}
 
             <!-- Behavior toggles -->
@@ -227,6 +278,33 @@ export function buildInlineVariableEditor(d, canIncrement) {
 
                     ${d.type === 'enum' ? `
                         <label>Cycle through enum values</label>
+                    ` : ''}
+
+                    ${d.type === 'array' ? `
+                        <label>Operation:</label>
+                        <select class="text_pole se-manager-var-field" data-field="increment.operation">
+                            <option value="" ${!d.increment.operation ? 'selected' : ''}>-- none (no-op) --</option>
+                            <option value="push" ${d.increment.operation === 'push' ? 'selected' : ''}>Push (add to end)</option>
+                            <option value="unshift" ${d.increment.operation === 'unshift' ? 'selected' : ''}>Unshift (add to start)</option>
+                            <option value="pop" ${d.increment.operation === 'pop' ? 'selected' : ''}>Pop (remove last)</option>
+                            <option value="shift" ${d.increment.operation === 'shift' ? 'selected' : ''}>Shift (remove first)</option>
+                            <option value="rotate" ${d.increment.operation === 'rotate' ? 'selected' : ''}>Rotate (move last to front)</option>
+                            <option value="clear" ${d.increment.operation === 'clear' ? 'selected' : ''}>Clear</option>
+                            ${itemType === 'enum' ? `
+                                <option value="toggle" ${d.increment.operation === 'toggle' ? 'selected' : ''}>Toggle value</option>
+                                <option value="cycle" ${d.increment.operation === 'cycle' ? 'selected' : ''}>Cycle (replace with next item enum value)</option>
+                            ` : ''}
+                            ${itemType === 'object' ? `
+                                <option value="incrementField" ${d.increment.operation === 'incrementField' ? 'selected' : ''}>Increment field (coming soon)</option>
+                                <option value="toggleField" ${d.increment.operation === 'toggleField' ? 'selected' : ''}>Toggle field (coming soon)</option>
+                            ` : ''}
+                        </select>
+
+                        ${['push', 'unshift', 'toggle'].includes(d.increment.operation) ? `
+                            <label>Value to ${d.increment.operation === 'toggle' ? 'toggle' : 'add'} on each increment:</label>
+                            <input class="text_pole se-manager-var-field" data-field="increment.operand"
+                                value="${d.increment.operand === undefined || d.increment.operand === null ? '' : escapeHtml(d.increment.operand)}" />
+                        ` : ''}
                     ` : ''}
 
                 </div>

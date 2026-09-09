@@ -25,6 +25,16 @@ export function blankDefinition() {
         type: 'number', // number | string | boolean | enum | array
         enumValues: [],
 
+        // Typed-array schema (only meaningful when type === 'array')
+        itemType: 'any',    // string | number | boolean | enum | object | any
+        itemEnumValues: [], // only used when itemType === 'enum'
+        // Only used when itemType === 'object'. Shape:
+        //   { fieldName: { type: 'string'|'number'|'boolean'|'enum', enumValues?: [...] }, ... }
+        itemSchema: {},
+        maxLength: null,    // null = no limit
+        unique: false,
+        sorted: false,
+
         // Default value
         defaultValue: 0,
 
@@ -49,6 +59,8 @@ export function blankDefinition() {
             tick_mode: null,    // null or "per_message"
             tick_on: 'both',    // user | ai | both
             tick_every: 1,      // threshold for deterministic increments
+            operation: null,    // array only: push | unshift | pop | shift | rotate | clear | toggle | cycle | incrementField | toggleField
+            operand: undefined, // array only: the fixed value used by push/unshift/toggle
         },
 
         // Prompted increment configuration

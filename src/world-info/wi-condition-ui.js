@@ -55,6 +55,10 @@ function injectWIConditionUI() {
                         <input id="se_wi_injected_cond_value" type="text" class="text_pole" style="font-size: 0.9em;" placeholder="comma-separated for 'in list'" />
                     </div>
                 </div>
+                <div id="se_wi_injected_cond_index_container" style="display: none; margin-bottom: 8px;">
+                    <label for="se_wi_injected_cond_index" style="font-size: 0.9em;">Index</label>
+                    <input id="se_wi_injected_cond_index" type="number" min="0" step="1" class="text_pole" style="font-size: 0.9em;" placeholder="0" />
+                </div>
                 <div style="display: flex; gap: 6px;">
                     <button type="button" class="se-wi-save-condition-btn menu_button" style="font-size: 0.9em;">Add condition</button>
                     <button type="button" class="se-wi-cancel-condition-btn menu_button" style="font-size: 0.9em;">Cancel</button>
@@ -87,12 +91,105 @@ function getWIEditorEntryKey() {
     return null;
 }
 
+// Cached by handleWIAddCondition each time the editor opens, so the
+// variable-select change handler doesn't need to re-fetch it.
+let cachedConditionVariables = [];
+
+const BASE_OPERATORS = [
+    { value: 'equals', label: 'equals' },
+    { value: 'not_equals', label: 'not equals' },
+    { value: 'greater_than', label: 'greater than' },
+    { value: 'less_than', label: 'less than' },
+    { value: 'greater_or_equal', label: '≥ greater or equal' },
+    { value: 'less_or_equal', label: '≤ less or equal' },
+    { value: 'contains', label: 'contains' },
+    { value: 'not_contains', label: 'not contains' },
+    { value: 'in_list', label: 'in list' },
+    { value: 'regex', label: 'regex pattern' },
+    { value: 'is_true', label: 'is true' },
+    { value: 'is_false', label: 'is false' },
+];
+
+// Array-aware operators, per spec: contains/not_contains/length_gt/length_eq
+// for every itemType; index_eq added only when itemType isn't "any" (an
+// index lookup into an untyped "any" array is still meaningful, but the
+// spec explicitly restricts itemType "any" to just these four).
+function arrayOperators(itemType) {
+    const ops = [
+        { value: 'contains', label: 'contains' },
+        { value: 'not_contains', label: 'not contains' },
+        { value: 'length_gt', label: 'length >' },
+        { value: 'length_eq', label: 'length ==' },
+    ];
+    if (itemType !== 'any') {
+        ops.push({ value: 'index_eq', label: 'item at index ==' });
+    }
+    return ops;
+}
+
+function escapeAttr(text) {
+    return String(text ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Rebuilds the operator dropdown for the currently-selected variable's type,
+// then re-derives the value input for whichever operator ends up selected.
+function updateOperatorAndValueUI(varName) {
+    const operatorSelect = document.getElementById('se_wi_injected_cond_operator');
+    if (!operatorSelect) return;
+
+    const varMeta = cachedConditionVariables.find(v => v.name === varName) || null;
+    const options = varMeta?.type === 'array' ? arrayOperators(varMeta.itemType) : BASE_OPERATORS;
+
+    operatorSelect.innerHTML = options.map(o => `<option value="${o.value}">${o.label}</option>`).join('');
+    updateValueUI(varMeta, operatorSelect.value);
+}
+
+// Swaps the value input between a plain text field, a dropdown of
+// itemEnumValues (array of enum), or an object-array placeholder, and
+// shows/hides the separate index field for index_eq. The value element
+// keeps the id se_wi_injected_cond_value regardless of shape (input or
+// select both expose .value), so save/read code doesn't need to care which.
+function updateValueUI(varMeta, operator) {
+    const valueContainer = document.getElementById('se_wi_injected_cond_value_container');
+    const indexContainer = document.getElementById('se_wi_injected_cond_index_container');
+    if (!valueContainer) return;
+
+    const isBoolean = operator === 'is_true' || operator === 'is_false';
+    valueContainer.style.display = isBoolean ? 'none' : 'block';
+    if (indexContainer) indexContainer.style.display = operator === 'index_eq' ? 'block' : 'none';
+    if (isBoolean) return;
+
+    if (varMeta?.type === 'array' && varMeta.itemType === 'enum') {
+        const opts = (varMeta.itemEnumValues || []).map(v => `<option value="${escapeAttr(v)}">${escapeAttr(v)}</option>`).join('');
+        valueContainer.innerHTML = `
+            <label for="se_wi_injected_cond_value" style="font-size: 0.9em;">Value</label>
+            <select id="se_wi_injected_cond_value" class="text_pole" style="font-size: 0.9em;">${opts}</select>
+        `;
+    } else if (varMeta?.type === 'array' && varMeta.itemType === 'object') {
+        valueContainer.innerHTML = `
+            <label style="font-size: 0.9em;">Value</label>
+            <div style="font-size: 0.85em; opacity: 0.7;">Field selector coming soon for object-array items.</div>
+        `;
+    } else {
+        valueContainer.innerHTML = `
+            <label for="se_wi_injected_cond_value" style="font-size: 0.9em;">Value</label>
+            <input id="se_wi_injected_cond_value" type="text" class="text_pole" style="font-size: 0.9em;" placeholder="comma-separated for 'in list'" />
+        `;
+    }
+}
+
+function handleWIVariableChange() {
+    const varSelect = document.getElementById('se_wi_injected_cond_variable');
+    updateOperatorAndValueUI(varSelect ? varSelect.value : null);
+}
+
 function wireInjectedWIConditionUI() {
     // Wire up click handlers for the injected condition UI
     const addBtn = document.querySelector('.se-wi-add-condition-btn');
     const saveBtn = document.querySelector('.se-wi-save-condition-btn');
     const cancelBtn = document.querySelector('.se-wi-cancel-condition-btn');
     const operatorSelect = document.getElementById('se_wi_injected_cond_operator');
+    const varSelect = document.getElementById('se_wi_injected_cond_variable');
 
     if (!addBtn) return;
 
@@ -113,16 +210,23 @@ function wireInjectedWIConditionUI() {
         operatorSelect.removeEventListener('change', handleWIOperatorChange);
         operatorSelect.addEventListener('change', handleWIOperatorChange);
     }
+
+    if (varSelect) {
+        varSelect.removeEventListener('change', handleWIVariableChange);
+        varSelect.addEventListener('change', handleWIVariableChange);
+    }
 }
 
 function handleWIAddCondition() {
     const editor = document.getElementById('se_wi_injected_condition_editor');
     if (!editor) return;
 
-    const variables = getAvailableVariablesForConditions();
+    cachedConditionVariables = getAvailableVariablesForConditions();
     const varSelect = document.getElementById('se_wi_injected_cond_variable');
     varSelect.innerHTML = '<option value="">-- Select variable --</option>' +
-        variables.map(v => `<option value="${v.name}">${v.presetName} / ${v.name}</option>`).join('');
+        cachedConditionVariables.map(v => `<option value="${v.name}">${v.presetName} / ${v.name}</option>`).join('');
+
+    updateOperatorAndValueUI(null);
 
     editor.style.display = 'block';
 }
@@ -141,14 +245,25 @@ function handleWISaveCondition() {
 
     const varName = document.getElementById('se_wi_injected_cond_variable').value;
     const operator = document.getElementById('se_wi_injected_cond_operator').value;
-    const value = document.getElementById('se_wi_injected_cond_value').value;
+    let value = document.getElementById('se_wi_injected_cond_value').value;
 
     if (!varName || !operator) {
         alert('Please select a variable and operator');
         return;
     }
 
-    if ((operator !== 'is_true' && operator !== 'is_false') && !value) {
+    if (operator === 'index_eq') {
+        // condValue has no separate index field of its own - encode both
+        // into the single stored value string as "<index>:<value>",
+        // decoded back apart in wi-conditions.js's index_eq operator.
+        const indexInput = document.getElementById('se_wi_injected_cond_index');
+        const index = indexInput ? indexInput.value.trim() : '';
+        if (index === '' || value === '') {
+            alert('Please enter both an index and a value');
+            return;
+        }
+        value = `${index}:${value}`;
+    } else if ((operator !== 'is_true' && operator !== 'is_false') && !value) {
         alert('Please enter a value');
         return;
     }
@@ -168,11 +283,9 @@ function handleWISaveCondition() {
 
 function handleWIOperatorChange() {
     const operator = document.getElementById('se_wi_injected_cond_operator').value;
-    const isBoolean = operator === 'is_true' || operator === 'is_false';
-    const valueContainer = document.getElementById('se_wi_injected_cond_value_container');
-    if (valueContainer) {
-        valueContainer.style.display = isBoolean ? 'none' : 'block';
-    }
+    const varSelect = document.getElementById('se_wi_injected_cond_variable');
+    const varMeta = cachedConditionVariables.find(v => v.name === varSelect?.value) || null;
+    updateValueUI(varMeta, operator);
 }
 
 function renderInjectedWIConditions(entryKey) {

@@ -13,7 +13,7 @@ export function mergeDefinition(defaults, varDef) {
 }
 
 export function canIncrement(type) {
-    return (type === 'number' || type === 'boolean' || type === 'enum');
+    return (type === 'number' || type === 'boolean' || type === 'enum' || type === 'array');
 }
 
 export function normalizeCollectedValues(values) {
@@ -44,6 +44,39 @@ export function normalizeCollectedValues(values) {
 
     if (values.min !== undefined) out.min = values.min;
     if (values.max !== undefined) out.max = values.max;
+
+    // Typed-array schema
+    if (values.itemType !== undefined) out.itemType = values.itemType || 'any';
+
+    if (values.itemEnumValuesMultiline !== undefined) {
+        if (typeof values.itemEnumValuesMultiline !== 'string') {
+            values.itemEnumValuesMultiline = '';
+        }
+        const raw = String(values.itemEnumValuesMultiline || '');
+        const lines = raw.split(/\r?\n/);
+        const seen = new Set();
+        const cleaned = [];
+        for (const line of lines) {
+            const s = line.trim();
+            if (!s || seen.has(s)) continue;
+            seen.add(s);
+            cleaned.push(s);
+        }
+        out.itemEnumValues = cleaned;
+    }
+
+    if (values.maxLength !== undefined) {
+        const raw = String(values.maxLength ?? '').trim();
+        if (raw === '') {
+            out.maxLength = null;
+        } else {
+            const n = Number(raw);
+            out.maxLength = Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
+        }
+    }
+
+    if (values.unique !== undefined) out.unique = !!values.unique;
+    if (values.sorted !== undefined) out.sorted = !!values.sorted;
 
     if (values.resetOnNewChat !== undefined) {
         out.resetOnNewChat = !!values.resetOnNewChat;
@@ -83,6 +116,14 @@ export function normalizeCollectedValues(values) {
 
         if (values.increment.tick_every !== undefined) {
             out.increment.tick_every = Number(values.increment.tick_every);
+        }
+
+        if (values.increment.operation !== undefined) {
+            out.increment.operation = values.increment.operation || null;
+        }
+
+        if (values.increment.operand !== undefined) {
+            out.increment.operand = values.increment.operand;
         }
     }
 
@@ -142,6 +183,9 @@ export function describeVariable(d) {
             out.push(`Each increment toggles the boolean value.`);
         } else if (d.type === 'enum') {
             out.push(`Each increment cycles through the enum values.`);
+        } else if (d.type === 'array') {
+            const op = d.increment?.operation;
+            out.push(op ? `Each increment applies the "${op}" operation to the array.` : `No array operation is configured, so increments do nothing.`);
         }
     }
 

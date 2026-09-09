@@ -1,7 +1,7 @@
 // State Engine — World Info condition logic (operators, evaluation, storage)
 
 import { LOG_PREFIX, getSettings } from '../core/settings-core.js';
-import { getPresetsForChat } from '../core/preset-manager.js';
+import { getPresetsForChat, getAllVariablesFromPresets } from '../core/preset-manager.js';
 import { getMacroValue } from '../core/macro-store.js';
 
 // World Info conditional display operators
@@ -37,10 +37,42 @@ const CONDITION_OPERATORS = {
         return !isNaN(v) && !isNaN(c) && v <= c;
     },
     'contains': (varValue, condValue) => {
+        if (Array.isArray(varValue)) {
+            const target = String(condValue).toLowerCase();
+            return varValue.some((item) => String(item).toLowerCase() === target);
+        }
         return String(varValue).toLowerCase().includes(String(condValue).toLowerCase());
     },
     'not_contains': (varValue, condValue) => {
+        if (Array.isArray(varValue)) {
+            const target = String(condValue).toLowerCase();
+            return !varValue.some((item) => String(item).toLowerCase() === target);
+        }
         return !String(varValue).toLowerCase().includes(String(condValue).toLowerCase());
+    },
+    // Array-aware operators.
+    'length_gt': (varValue, condValue) => {
+        if (!Array.isArray(varValue)) return false;
+        const c = Number(condValue);
+        return !Number.isNaN(c) && varValue.length > c;
+    },
+    'length_eq': (varValue, condValue) => {
+        if (!Array.isArray(varValue)) return false;
+        const c = Number(condValue);
+        return !Number.isNaN(c) && varValue.length === c;
+    },
+    // condValue format is "<index>:<value>" (e.g. "0:sword") - this encoding
+    // isn't specified anywhere; it's a judgment call to fit index+value into
+    // the single condValue field the storage format already has.
+    'index_eq': (varValue, condValue) => {
+        if (!Array.isArray(varValue)) return false;
+        const raw = String(condValue);
+        const sep = raw.indexOf(':');
+        if (sep === -1) return false;
+        const idx = Number(raw.slice(0, sep));
+        const expected = raw.slice(sep + 1);
+        if (!Number.isInteger(idx)) return false;
+        return String(varValue[idx]).toLowerCase() === expected.toLowerCase();
     },
     'regex': (varValue, condValue) => {
         try {
@@ -113,7 +145,20 @@ export function clearWIConditionsForEntry(entryKey) {
 
 export function evaluateCondition(varName, operator, condValue) {
     try {
-        const varValue = getMacroValue(varName);
+        // getMacroValue(context, def) needs both a live context and the
+        // variable's def (for scope/type) - previously called here as
+        // getMacroValue(varName) with one argument, which made def.scope
+        // inside macroStore() throw on every single evaluation (varName was
+        // being passed as context, def was undefined). The outer catch below
+        // swallowed that and fail-opened to true, so every WI condition has
+        // always silently evaluated as "met" until now.
+        const context = SillyTavern.getContext();
+        const currentChatId = context.chatId || 'unknown';
+        const activePresetIds = getPresetsForChat(currentChatId);
+        const variables = getAllVariablesFromPresets(activePresetIds);
+        const def = variables[varName] || { name: varName, type: 'string' };
+
+        const varValue = getMacroValue(context, def);
         const operatorFunc = CONDITION_OPERATORS[operator];
 
         if (!operatorFunc) {
@@ -143,9 +188,17 @@ export function shouldDisplayWIEntry(entryKey) {
 }
 
 export function getAvailableVariablesForConditions() {
-    // Get all variables from all active presets in current chat
+    // Get all variables from all active presets in current chat.
+    //
+    // context.chat is the array of chat MESSAGES, not the chat identifier -
+    // it has no .id property, so context.chat.id was always undefined and
+    // this always fell back to the literal string 'unknown', meaning this
+    // function has always looked up presets for the wrong "chat" regardless
+    // of which chat was actually open. context.chatId is the real chat id
+    // (see st-context.js) and is what every other module in this codebase
+    // already uses.
     const context = SillyTavern.getContext();
-    const currentChatId = context.chat.id || 'unknown';
+    const currentChatId = context.chatId || 'unknown';
     const settings = getSettings();
 
     const variables = [];
@@ -160,13 +213,22 @@ export function getAvailableVariablesForConditions() {
             if (seenNames.has(varName)) continue;
             seenNames.add(varName);
 
-            variables.push({
+            const entry = {
                 name: varName,
                 type: def.type || 'manual',
                 category: def.category || 'manual',
                 presetId: presetId,
                 presetName: preset.name || presetId,
-            });
+            };
+
+            if (def.type === 'array') {
+                entry.itemType = def.itemType || 'any';
+                if (entry.itemType === 'enum') {
+                    entry.itemEnumValues = Array.isArray(def.itemEnumValues) ? def.itemEnumValues : [];
+                }
+            }
+
+            variables.push(entry);
         }
     }
 

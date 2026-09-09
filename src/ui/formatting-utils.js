@@ -30,6 +30,25 @@ export function describeConstraint(def) {
     }
     if (def.type === 'boolean') return 'true or false';
     if (def.type === 'enum') return `one of: ${def.enumValues.join(', ')}`;
+    if (def.type === 'array') {
+        const itemType = def.itemType || 'any';
+        let desc = `array of ${itemType}`;
+        if (itemType === 'enum') {
+            const allowed = Array.isArray(def.itemEnumValues) ? def.itemEnumValues : [];
+            desc += ` (each item one of: ${allowed.join(', ')})`;
+        }
+        const constraints = [];
+        if (Number.isFinite(def.maxLength)) constraints.push(`max ${def.maxLength} items`);
+        if (def.unique) constraints.push('unique items');
+        if (def.sorted) constraints.push('sorted');
+        if (constraints.length) desc += ` (${constraints.join(', ')})`;
+        const ops = ['push', 'unshift', 'pop', 'shift', 'rotate', 'clear'];
+        if (itemType === 'enum') ops.push('toggle');
+        desc += `. Reply with EITHER a full replacement array (e.g. ["a","b"]) OR an operation object `
+            + `{"op": one of [${ops.map(o => `"${o}"`).join(', ')}], "value": <the item, required for push/unshift/toggle, ignored otherwise>} `
+            + `- never mix the two formats, and never output anything besides the JSON value for this key`;
+        return desc;
+    }
     return 'text';
 }
 

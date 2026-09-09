@@ -23,6 +23,189 @@ import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.
 
 const SCHEMA_VERSION = 1;
 
+// ---------------------------------------------------------------------------
+// Typed-array validation, constraints, and operations
+// ---------------------------------------------------------------------------
+
+// One array item's validity against def.itemType (and, for object items,
+// def.itemSchema's per-field type checks). Never throws - an item that
+// can't be checked safely (e.g. a malformed itemSchema) is just rejected.
+function isValidArrayItem(item, itemType, def) {
+    switch (itemType) {
+        case 'string':
+            return typeof item === 'string';
+        case 'number':
+            return typeof item === 'number' && Number.isFinite(item);
+        case 'boolean':
+            return typeof item === 'boolean';
+        case 'enum': {
+            const allowed = Array.isArray(def?.itemEnumValues) ? def.itemEnumValues : [];
+            return typeof item === 'string' && allowed.includes(item);
+        }
+        case 'object': {
+            if (typeof item !== 'object' || item === null || Array.isArray(item)) return false;
+            const schema = (def?.itemSchema && typeof def.itemSchema === 'object') ? def.itemSchema : {};
+            return Object.entries(schema).every(([fieldName, fieldSpec]) => {
+                if (!Object.prototype.hasOwnProperty.call(item, fieldName)) return false;
+                const fieldValue = item[fieldName];
+                switch (fieldSpec?.type) {
+                    case 'string': return typeof fieldValue === 'string';
+                    case 'number': return typeof fieldValue === 'number' && Number.isFinite(fieldValue);
+                    case 'boolean': return typeof fieldValue === 'boolean';
+                    case 'enum': {
+                        const allowedField = Array.isArray(fieldSpec.enumValues) ? fieldSpec.enumValues : [];
+                        return allowedField.includes(fieldValue);
+                    }
+                    default:
+                        return true; // Unrecognized/unspecified field type - presence check only.
+                }
+            });
+        }
+        case 'any':
+        default:
+            return true;
+    }
+}
+
+// Ordering used when def.sorted is true. Each itemType has an explicit rule
+// (never a generic fallback that could silently misorder a type it wasn't
+// designed for):
+//   number  -> ascending numeric
+//   string  -> lexicographic
+//   enum    -> by position in itemEnumValues (not alphabetic)
+//   boolean -> false before true
+//   object, any -> lexicographic by JSON.stringify(item)
+function sortArrayItems(items, itemType, def) {
+    const copy = [...items];
+    switch (itemType) {
+        case 'number':
+            return copy.sort((a, b) => a - b);
+        case 'string':
+            return copy.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+        case 'enum': {
+            const order = Array.isArray(def?.itemEnumValues) ? def.itemEnumValues : [];
+            return copy.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+        }
+        case 'boolean':
+            return copy.sort((a, b) => (a === b ? 0 : a ? 1 : -1));
+        case 'object':
+        case 'any':
+        default:
+            return copy.sort((a, b) => {
+                const sa = JSON.stringify(a);
+                const sb = JSON.stringify(b);
+                return sa < sb ? -1 : sa > sb ? 1 : 0;
+            });
+    }
+}
+
+// Coerces rawValue into a real array (backward compatibility: anything that
+// isn't an array, or a JSON-array string, becomes [] - never reinterpreted,
+// never thrown on), validates every item against def.itemType, then applies
+// unique/sorted/maxLength in that order. This is the single place array
+// values get sanitized - setVar() and applyIncrement() both funnel through
+// it, so the isolated store (the source of truth, spec 1.1) never holds an
+// unsanitized array even transiently.
+function sanitizeArrayValue(def, rawValue) {
+    let arr;
+    if (Array.isArray(rawValue)) {
+        arr = rawValue;
+    } else if (typeof rawValue === 'string' && rawValue.trim()) {
+        try {
+            const parsed = JSON.parse(rawValue);
+            arr = Array.isArray(parsed) ? parsed : [];
+        } catch {
+            arr = [];
+        }
+    } else {
+        arr = [];
+    }
+
+    const itemType = def?.itemType || 'any';
+    let items = arr.filter((item) => isValidArrayItem(item, itemType, def));
+
+    if (def?.unique) {
+        // Strict-equality dedup (a Set's membership check is SameValueZero,
+        // effectively === for these purposes). Object items are compared by
+        // reference, not content - two content-identical-but-distinct
+        // objects (e.g. freshly parsed from separate JSON payloads) will not
+        // be deduped against each other. This is a direct, literal reading
+        // of "deduplicate using strict equality" with no per-type exception.
+        const seen = new Set();
+        items = items.filter((item) => {
+            if (seen.has(item)) return false;
+            seen.add(item);
+            return true;
+        });
+    }
+
+    if (def?.sorted) {
+        items = sortArrayItems(items, itemType, def);
+    }
+
+    if (Number.isFinite(def?.maxLength) && def.maxLength >= 0 && items.length > def.maxLength) {
+        items = items.slice(0, def.maxLength);
+    }
+
+    return items;
+}
+
+// Applies one array operation to a copy of currentArray and returns the
+// (unsanitized) result - every caller (applyIncrement below, and
+// prompted-engine.js for LLM-issued operation objects) writes the result
+// through setVar(), which runs it through sanitizeArrayValue() before it
+// ever reaches the isolated store. Unrecognized operations (including the
+// object-array incrementField/toggleField stubs, not yet implemented) are a
+// no-op - never throws.
+export function applyArrayOperation(currentArray, operation, value, def) {
+    const arr = Array.isArray(currentArray) ? [...currentArray] : [];
+
+    switch (operation) {
+        case 'push':
+            arr.push(value);
+            return arr;
+        case 'unshift':
+            arr.unshift(value);
+            return arr;
+        case 'pop':
+            arr.pop();
+            return arr;
+        case 'shift':
+            arr.shift();
+            return arr;
+        case 'rotate':
+            // Move the last element to the front.
+            if (arr.length > 1) arr.unshift(arr.pop());
+            return arr;
+        case 'clear':
+            return [];
+        case 'toggle': {
+            // Enum arrays only: if value is present, remove it; else add it.
+            const idx = arr.indexOf(value);
+            if (idx === -1) arr.push(value);
+            else arr.splice(idx, 1);
+            return arr;
+        }
+        case 'cycle': {
+            // Enum arrays only: replace the array with a single-element
+            // array containing the next enum value. "currentValue" for the
+            // indexOf lookup is the array's own last element - this
+            // operation is meant to maintain a single-element array, so an
+            // array that already has more than one element (e.g. from a mix
+            // of push and cycle) still resolves against whichever element is
+            // last. An empty array starts at itemEnumValues[0].
+            const list = Array.isArray(def?.itemEnumValues) ? def.itemEnumValues : [];
+            if (list.length === 0) return arr;
+            const current = arr.length > 0 ? arr[arr.length - 1] : undefined;
+            const idx = list.indexOf(current);
+            const next = idx === -1 ? list[0] : list[(idx + 1) % list.length];
+            return [next];
+        }
+        default:
+            return arr;
+    }
+}
+
 function defaultChatState(characterAvatar, groupId) {
     return {
         variables: {},
@@ -130,9 +313,19 @@ export function setVar(chatId, varName, value, def) {
         // 1. Update the isolated store: the value, plus a snapshot of the
         // canonical schema (def) that produced it.
         const existing = state.variables[varName] || {};
+        const effectiveDef = def ?? existing.def ?? null;
+
+        // Array values are validated/sanitized here (itemType, maxLength,
+        // unique, sorted) so the isolated store - the source of truth, spec
+        // 1.1 - never holds an unvalidated array, not even transiently
+        // before the macro-store mirror below.
+        const storedValue = effectiveDef?.type === 'array'
+            ? sanitizeArrayValue(effectiveDef, value)
+            : value;
+
         state.variables[varName] = {
-            value,
-            def: def ?? existing.def ?? null,
+            value: storedValue,
+            def: effectiveDef,
         };
 
         saveChatState(chatId, state);
@@ -140,7 +333,7 @@ export function setVar(chatId, varName, value, def) {
         // 2. Mirror into macro store ({{getvar::name}})
         // Use the preset definition (def) for type/scope, NOT stored metadata.
         const macroDef = def || { name: varName, type: 'string' };
-        setMacroValue(SillyTavern.getContext(), macroDef, value);
+        setMacroValue(SillyTavern.getContext(), macroDef, storedValue);
 
     } catch (err) {
         console.warn(LOG_PREFIX, 'setVar failed (gracefully handled)', err);
@@ -179,6 +372,16 @@ export function applyIncrement(chatId, varName, delta, def) {
             }
             const idx = list.indexOf(entry.value);
             next = idx === -1 ? list[0] : list[(idx + 1) % list.length];
+        } else if (def?.type === 'array') {
+            const operation = def.increment?.operation;
+            if (!operation) {
+                // No operation configured - do nothing, per spec.
+                saveChatState(chatId, state);
+                return;
+            }
+            const currentArr = Array.isArray(entry.value) ? entry.value : [];
+            const result = applyArrayOperation(currentArr, operation, def.increment?.operand, def);
+            next = sanitizeArrayValue(def, result);
         } else {
             // Convert current value to number safely
             let current = Number(entry.value);

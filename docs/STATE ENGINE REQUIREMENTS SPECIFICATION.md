@@ -273,6 +273,173 @@ be confused with seeding: 3.1 still forbids seeding on CHAT_CREATED, and
 this function never invents values or reads from preset defaults - it only
 ever copies values that were already stored for a different, real chat.
 
+1.15 Typed Arrays
+
+type "array" variables carry a declared itemType, constraining what the
+array may contain. This is additive schema, not a new top-level type -
+"array" already existed; itemType and the fields below just make it
+strict instead of accepting anything.
+
+Schema fields (variable-schema.js blankDefinition()):
+
+- itemType: "string" | "number" | "boolean" | "enum" | "object" | "any".
+  Missing/falsy itemType is always treated as "any" - every itemType check
+  in this codebase reads `def.itemType || 'any'`, never assumes itemType is
+  set.
+- itemEnumValues: string[]. Only consulted when itemType === "enum".
+- itemSchema: `{ fieldName: { type: "string"|"number"|"boolean"|"enum", enumValues?: [...] }, ... }`.
+  Only consulted when itemType === "object". Per-field type checking, not
+  presence-only.
+- maxLength: number | null. null means no limit.
+- unique: boolean.
+- sorted: boolean.
+
+Validation and constraints (chat-state.js, private helpers
+isValidArrayItem/sortArrayItems/sanitizeArrayValue, unit-tested against the
+rules below before being wired in):
+
+- Backward compatibility: a raw value that isn't an array, and isn't a
+  JSON-array string, becomes [] - a variable that previously stored a
+  non-array value resets to [] rather than being reinterpreted or thrown on.
+- Item validation, invalid items dropped (never thrown on): string ->
+  typeof === "string"; number -> typeof === "number" and finite; boolean ->
+  typeof === "boolean"; enum -> a string present in itemEnumValues; object
+  -> a plain object where every field named in itemSchema is present and
+  matches its declared type (enum fields checked against that field's own
+  enumValues); any -> everything passes.
+- unique: deduplicated via a Set (strict/SameValueZero equality). Object
+  items are compared by reference, not content - two content-identical but
+  distinct object instances (e.g. independently parsed from two JSON
+  payloads) will NOT be deduped against each other. This is a direct
+  reading of "deduplicate using strict equality" with no per-type exception
+  carved out for objects.
+- sorted, applied after unique: number -> ascending numeric; string ->
+  lexicographic; enum -> by each item's position in itemEnumValues (not
+  alphabetic); boolean -> false before true; object and any -> lexicographic
+  by JSON.stringify(item).
+- maxLength, applied last: excess items truncated from the end
+  (`items.slice(0, maxLength)`).
+- setVar() runs every array-typed value through this sanitization before it
+  reaches the isolated store (the source of truth, 1.1) - never only on the
+  macro-store mirror. applyIncrement()'s array branch (below) does the same
+  to its own operation result before storing.
+
+Deterministic increment operations (chat-state.js
+applyArrayOperation(), shared with the prompted-update path below;
+deterministic-engine.js itself needed no changes - array operations are
+implemented inside applyIncrement(), the same precedent enum-cycling
+already set in 1.11.1). Configured via increment.operation and
+increment.operand (increment.operand is a fixed, static value - a
+deterministic trigger fires the same way on every tick, so there is no
+per-tick input value to push/toggle other than whatever this field is set
+to):
+
+- push(operand): append to the end.
+- unshift(operand): insert at the start.
+- pop(): remove the last element.
+- shift(): remove the first element.
+- rotate(): move the LAST element to the front.
+- clear(): set to [].
+- toggle(operand) - enum arrays only: remove operand if present, else
+  append it.
+- cycle() - enum arrays only: replace the array with a single-element array
+  holding the next itemEnumValues entry after the array's own last element
+  (indexOf + 1, modulo itemEnumValues.length); an empty array, or a last
+  element not found in itemEnumValues, starts at itemEnumValues[0].
+- incrementField / toggleField (object arrays): stub only, not implemented
+  - an inert no-op, exposed in the editor UI as "(coming soon)" so a preset
+    author can select them without the save path rejecting the value, but
+    they do nothing until a later pass defines the semantics.
+- No operation configured (increment.operation falsy) -> the whole
+  increment is a no-op, matching the "if def.increment.operation is
+  missing -> do nothing" requirement exactly.
+
+Prompted update rules (prompted-engine.js). An array-typed updateVars
+entry accepts exactly two JSON shapes for its key in the model's response,
+auto-detected (an array is shape A, an object is checked against shape B,
+anything else is skipped rather than written):
+
+A. Full replacement: `"varName": ["a", "b"]` - written via setVar(), which
+   sanitizes it per the rules above.
+B. Operation object: `` "varName": { "op": "push"|"pop"|"shift"|"unshift"|"rotate"|"clear"|"toggle", "value": <item> } ``
+   - applied via the same applyArrayOperation() the deterministic path
+   uses, then written via setVar() (so it's sanitized too). "value" is
+   required for push/unshift/toggle and ignored otherwise. "cycle" is
+   deterministic-only, not offered to the model - it advances a fixed
+   sequence rather than expressing anything about conversation content, and
+   isn't in the accepted `op` set for prompted updates.
+   An unrecognized `op`, or a value that is neither an array nor a
+   recognized operation object, is skipped entirely rather than written -
+   the model failing to follow the required shape must never corrupt the
+   stored array.
+
+describeConstraint() (formatting-utils.js) tells the model, for every
+array-typed variable in the prompt: that it's an array, its itemType,
+itemEnumValues when itemType is "enum", the active maxLength/unique/sorted
+constraints, and the exact two accepted shapes above (including the
+allowed `op` values) - this is what actually keeps the model from mixing
+formats or replying with anything besides the JSON value for that key.
+
+World Info condition operators (wi-conditions.js CONDITION_OPERATORS,
+wi-condition-ui.js). Array-aware operators, available whenever the
+selected condition variable's type is "array": contains, not_contains
+(array.includes(value), not a substring check - falls back to the original
+substring behavior when the variable isn't an array, so this is backward
+compatible for existing string-type conditions), length_gt
+(array.length > Number(value)), length_eq (array.length === Number(value)),
+and index_eq (array[index] === value) - offered for every itemType except
+"any", per spec. index_eq has no dedicated index field in the stored
+condition shape ({variable, operator, value}), so its condValue is encoded
+as the string "<index>:<value>" (e.g. "0:sword"), split back apart by the
+operator itself; the condition-editor UI (wi-condition-ui.js) presents this
+as two separate inputs (an index field shown only for index_eq) and joins
+them on save - this encoding is a judgment call, not something either
+requirements pass specified. When itemType is "enum", the value input
+becomes a dropdown of itemEnumValues instead of free text; when itemType is
+"object", it's a placeholder pending a future field-selector. Every other
+(non-array) variable type keeps the original, unchanged operator list.
+
+Fixing this required correcting two pre-existing bugs in wi-conditions.js,
+found while wiring the above (new array operators would have been equally
+broken otherwise, running through the same code):
+(a) evaluateCondition() called `getMacroValue(varName)` with one argument,
+but getMacroValue(context, def) requires two - every WI condition
+evaluation was throwing internally on `def.scope` and silently fail-opening
+to true via the surrounding catch, meaning WI conditional display has never
+actually filtered anything. Fixed by looking up the variable's real def
+(via getAllVariablesFromPresets) and calling getMacroValue(context, def)
+correctly.
+(b) getAvailableVariablesForConditions() read `context.chat.id` - context.chat
+is the chat MESSAGES array and has no .id property, so this was always
+undefined and fell back to the literal string 'unknown', meaning the
+condition editor's variable dropdown was always populated from the wrong
+chat's presets. Fixed to use context.chatId, the same real chat-id source
+every other module in this codebase already uses.
+
+Variable Management tab: no structural changes. The snippet preview and
+expanded JSON view already display arrays correctly, since both are plain
+JSON.stringify(state.variables) / JSON.stringify(state.variables, null, 2)
+with no per-type branching - typed-array data serializes the same way any
+other array always did.
+
+Import/export: Export is unaffected - it copies a chat's whole stored
+entry as-is via JSON.stringify, arrays included, exactly as it already did
+before typed arrays existed. Import, however, does NOT sanitize array
+contents against itemType/maxLength/unique/sorted: it replaces
+settings.variableStore.chats[chatId] wholesale from pasted JSON (one write,
+for a whole chat's worth of variables at once), never per-variable through
+setVar() - the one function that actually knows how to sanitize an array
+for its specific def. Section 7 of this feature's own requirements said
+"no structural changes needed" for the Variable Management tab, and adding
+per-variable, per-def sanitization to the bulk-import path would be exactly
+such a structural change, so it was deliberately not added. Pasting
+malformed array data into a variable via Import will sit unsanitized in the
+isolated store until that variable is next written through setVar() or
+applyIncrement() (an ordinary prompted update, deterministic tick, or
+manual edit), at which point it's sanitized like any other write. This is
+a known, deliberate limitation, not an oversight - a broader spec/product
+call, not one this feature-level task should make unilaterally.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 

@@ -2,7 +2,7 @@
 
 import { LOG_PREFIX, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED_VARIABLE_RULES, getSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
-import { getVar, setVar, applyIncrement, loadChatState } from './chat-state.js';
+import { getVar, setVar, applyIncrement, loadChatState, applyArrayOperation } from './chat-state.js';
 import { callBackgroundLLM } from './background-llm.js';
 import { extractJsonObject, stripHtml, describeConstraint } from '../ui/formatting-utils.js';
 import { setStatus } from '../ui/settings-panel-ui.js';
@@ -10,6 +10,19 @@ import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
 
 export function shouldSkipPromptedRefresh(def) {
     return !!(def && def.skipPromptedRefresh);
+}
+
+const ARRAY_PROMPTED_OPS = new Set(['push', 'pop', 'shift', 'unshift', 'rotate', 'clear', 'toggle']);
+
+// Detects the {"op": ..., "value": ...} operation-object shape prompted
+// array updates use, as distinct from a full-array replacement. Returns
+// null for anything else, including a malformed/unrecognized op, so the
+// caller can skip the write rather than writing garbage.
+function parseArrayOperationObject(rawValue) {
+    if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) return null;
+    const op = rawValue.op;
+    if (typeof op !== 'string' || !ARRAY_PROMPTED_OPS.has(op)) return null;
+    return { op, value: rawValue.value };
 }
 
 // Fires the background "prompted variable" LLM update and returns``
@@ -170,10 +183,34 @@ export async function runPromptedStateUpdate(triggerType) {
 
                         let updatedCount = 0;
                         for (const def of updateVars) {
-                            if (Object.prototype.hasOwnProperty.call(parsed, def.name)) {
-                                setVar(chatId, def.name, parsed[def.name], def);
-                                updatedCount++;
+                            if (!Object.prototype.hasOwnProperty.call(parsed, def.name)) continue;
+
+                            const rawValue = parsed[def.name];
+
+                            if (def.type === 'array') {
+                                if (Array.isArray(rawValue)) {
+                                    // Full array replacement - setVar() validates/sanitizes it.
+                                    setVar(chatId, def.name, rawValue, def);
+                                    updatedCount++;
+                                    continue;
+                                }
+
+                                const operation = parseArrayOperationObject(rawValue);
+                                if (operation) {
+                                    const current = getVar(chatId, def.name)?.value;
+                                    const currentArr = Array.isArray(current) ? current : [];
+                                    const nextArr = applyArrayOperation(currentArr, operation.op, operation.value, def);
+                                    setVar(chatId, def.name, nextArr, def);
+                                    updatedCount++;
+                                }
+                                // Neither a full array nor a recognized operation object -
+                                // the model didn't follow the required shape; skip rather
+                                // than write garbage.
+                                continue;
                             }
+
+                            setVar(chatId, def.name, rawValue, def);
+                            updatedCount++;
                         }
 
                         let incrementedCount = 0;

@@ -482,7 +482,25 @@ export function wireEvents(managerApi, managerState) {
         }
 
         showInlineVariableEditor(values, $row);
-    });    
+    });
+
+    // Typed array editor: re-render on itemType change (show/hide the item
+    // enum editor) and on increment.operation change (show/hide the operand
+    // field) - same pattern as the top-level type-select handler above.
+    $overlay.on('change', '[data-field="itemType"]', function () {
+        const $row = $(this).closest('.se-manager-variable-row');
+        const values = collectInlineVariableValues($row);
+        values.itemType = $(this).val();
+        showInlineVariableEditor(values, $row);
+    });
+
+    $overlay.on('change', '[data-field="increment.operation"]', function () {
+        const $row = $(this).closest('.se-manager-variable-row');
+        const values = collectInlineVariableValues($row);
+        values.increment = values.increment || {};
+        values.increment.operation = $(this).val();
+        showInlineVariableEditor(values, $row);
+    });
 
     // Enum values editor: row add/delete edit the DOM directly (no re-render
     // needed - collectInlineVariableValues() reads current row order/values
