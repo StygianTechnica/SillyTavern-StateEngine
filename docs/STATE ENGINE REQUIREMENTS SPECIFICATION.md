@@ -563,6 +563,46 @@ variable" once the deleted variable's stored entry is left behind. This is
 scoped to the explicit delete action only - 1.12 still forbids resetting a
 value merely because a definition was edited or redefined.
 
+1.15.3 Enum List Parsing Must Tolerate a Pasted JSON Array, and Prompted
+Write Isolation
+
+Root-caused via direct evidence (temporary SE_SANITIZE_DIAG/
+SE_PROMPTED_WRITE_DIAG logging, since removed): a sorted-enum array's prompted
+update was sanitizing to [] even though every returned name was a genuinely
+valid itemEnumValues entry. The stored itemEnumValues was
+`['["John", "Elizabeth", ..., "Michael"]']` - a one-element array whose sole
+element was the entire allowed-values list typed as one line of literal
+bracketed text, not 12 separate names. Every real name then failed
+`allowed.includes(item)` because it was being compared against the whole
+string, not against any of its members.
+
+Cause: the "Allowed values"/"Allowed item values" multiline editors
+(enumValuesMultiline, itemEnumValuesMultiline) split their textarea content
+on newlines only. Pasting a JSON-array-formatted list as a single line
+(easy to do by accident - it's literally what this same UI's own Variable
+Management JSON export produces) collapses into one bogus "line" containing
+the whole bracketed text verbatim.
+
+Fix: variable-ui-schema.js's splitMultilineList() (used by
+normalizeCollectedValues() for both enumValuesMultiline and
+itemEnumValuesMultiline, and by ui-templates.js/ui-events.js for the same
+fields' live-editor rendering) now detects a trimmed value that looks like
+a JSON array (starts with `[`, ends with `]`), parses it, and uses its
+elements as the individual entries; anything else - including bracketed
+text that isn't valid JSON - falls back to the original newline-split
+behavior unchanged. One value per line remains the documented, primary
+format; a pasted JSON array is now also tolerated rather than silently
+producing an unusable single entry.
+
+Independently, and uncovered by the same investigation: the entire
+updateVars/incrementVars write loop in prompted-engine.js shared one
+try/catch around the whole batch. One variable's write throwing for any
+reason would have silently prevented every variable after it in iteration
+order from ever being written, in violation of 1.7 ("no thrown errors
+inside update engines"). Each variable's write is now wrapped in its own
+try/catch, logged by name on failure, so one bad entry can never take out
+the rest of a prompted update's batch.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 

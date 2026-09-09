@@ -567,7 +567,7 @@ export function wireEvents(managerApi, managerState) {
         let itemHtml;
         if (itemType === 'enum') {
             const raw = $editor.find('[data-field="itemEnumValuesMultiline"]').val() || '';
-            const allowed = raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+            const allowed = variableSchema.splitMultilineList(raw).map((s) => s.trim()).filter(Boolean);
             const opts = allowed.map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
             itemHtml = `<select class="text_pole se-manager-array-item">${opts}</select>`;
         } else if (itemType === 'object') {

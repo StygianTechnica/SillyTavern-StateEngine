@@ -16,6 +16,25 @@ export function canIncrement(type) {
     return (type === 'number' || type === 'boolean' || type === 'enum' || type === 'array');
 }
 
+// Splits multiline-editor textarea content into individual entries. The
+// documented format is one value per line, but this also tolerates the
+// whole textarea being a single pasted JSON array literal (e.g. copied from
+// this same UI's own Variable Management JSON export, or from an LLM
+// example) - a very natural alternate input style that would otherwise
+// silently collapse into one bogus "line" containing the entire bracketed
+// text verbatim, which then matches nothing during enum item validation
+// (every real value gets compared against the whole string and fails).
+export function splitMultilineList(raw) {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+        try {
+            const parsed = JSON.parse(trimmed);
+            if (Array.isArray(parsed)) return parsed.map((v) => String(v));
+        } catch { /* not valid JSON - fall through to newline splitting */ }
+    }
+    return raw.split(/\r?\n/);
+}
+
 export function normalizeCollectedValues(values) {
     const out = {};
 
@@ -29,7 +48,7 @@ export function normalizeCollectedValues(values) {
             values.enumValuesMultiline = '';
         }
         const raw = String(values.enumValuesMultiline || '');
-        const lines = raw.split(/\r?\n/);
+        const lines = splitMultilineList(raw);
         const seen = new Set();
         const cleaned = [];
         for (const line of lines) {
@@ -53,7 +72,7 @@ export function normalizeCollectedValues(values) {
             values.itemEnumValuesMultiline = '';
         }
         const raw = String(values.itemEnumValuesMultiline || '');
-        const lines = raw.split(/\r?\n/);
+        const lines = splitMultilineList(raw);
         const seen = new Set();
         const cleaned = [];
         for (const line of lines) {

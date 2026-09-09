@@ -176,9 +176,6 @@ export async function runPromptedStateUpdate(triggerType) {
                             return;
                         }
 
-                        // TEMP DIAGNOSTIC - filter console on "SE_PROMPTED_WRITE_DIAG".
-                        console.log('SE_PROMPTED_WRITE_DIAG', 'parsed model response', parsed);
-
                         let updatedCount = 0;
                         for (const def of updateVars) {
                             // Each variable's write is isolated - one variable
@@ -193,14 +190,6 @@ export async function runPromptedStateUpdate(triggerType) {
                                 if (!Object.prototype.hasOwnProperty.call(parsed, def.name)) continue;
 
                                 const rawValue = parsed[def.name];
-
-                                console.log('SE_PROMPTED_WRITE_DIAG', 'processing updateVars entry', {
-                                    name: def.name,
-                                    type: def.type,
-                                    itemType: def.itemType,
-                                    rawValue,
-                                    isArrayRaw: Array.isArray(rawValue),
-                                });
 
                                 if (def.type === 'array' && !Array.isArray(rawValue)) {
                                     // Prompted arrays only ever accept a full array
@@ -217,13 +206,6 @@ export async function runPromptedStateUpdate(triggerType) {
 
                                 setVar(chatId, def.name, rawValue, def);
                                 updatedCount++;
-
-                                if (def.type === 'array') {
-                                    console.log('SE_PROMPTED_WRITE_DIAG', 'post-write readback', {
-                                        name: def.name,
-                                        storedValue: getVar(chatId, def.name)?.value,
-                                    });
-                                }
                             } catch (err) {
                                 console.warn(LOG_PREFIX, `prompted update failed for variable "${def.name}" (gracefully handled)`, err);
                             }

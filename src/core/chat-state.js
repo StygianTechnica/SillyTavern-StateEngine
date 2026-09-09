@@ -127,22 +127,6 @@ function sanitizeArrayValue(def, rawValue) {
     }
 
     const itemType = def?.itemType || 'any';
-
-    // TEMP DIAGNOSTIC - filter console on "SE_SANITIZE_DIAG".
-    if (itemType === 'enum') {
-        console.log('SE_SANITIZE_DIAG', 'enum array item validation', {
-            defName: def?.name,
-            itemEnumValues: def?.itemEnumValues,
-            itemEnumValuesIsArray: Array.isArray(def?.itemEnumValues),
-            incomingItems: arr,
-            perItemResult: arr.map((item) => ({
-                item,
-                typeofItem: typeof item,
-                passed: typeof item === 'string' && Array.isArray(def?.itemEnumValues) && def.itemEnumValues.includes(item),
-            })),
-        });
-    }
-
     let items = arr.filter((item) => isValidArrayItem(item, itemType, def));
 
     if (def?.unique) {

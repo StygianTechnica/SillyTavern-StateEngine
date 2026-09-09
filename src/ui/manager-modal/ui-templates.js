@@ -143,7 +143,7 @@ export function buildInlineVariableEditor(d, canIncrement) {
     // re-render via collectInlineVariableValues -> showInlineVariableEditor).
     // Only fall back to the stored enumValues array when opening fresh.
     const enumValuesArray = d.enumValuesMultiline !== undefined
-        ? String(d.enumValuesMultiline).split(/\r?\n/)
+        ? variableSchema.splitMultilineList(String(d.enumValuesMultiline))
         : (Array.isArray(d.enumValues) ? d.enumValues : Object.values(d.enumValues || {}));
 
     // Same live-round-trip-preservation reasoning as enumValuesMultiline above.
@@ -152,7 +152,7 @@ export function buildInlineVariableEditor(d, canIncrement) {
         : (Array.isArray(d.itemEnumValues) ? d.itemEnumValues : []).join('\n');
 
     const itemEnumValuesArray = d.itemEnumValuesMultiline !== undefined
-        ? String(d.itemEnumValuesMultiline).split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
+        ? variableSchema.splitMultilineList(String(d.itemEnumValuesMultiline)).map((s) => s.trim()).filter(Boolean)
         : (Array.isArray(d.itemEnumValues) ? d.itemEnumValues : []);
 
     const itemType = d.itemType || 'any';
