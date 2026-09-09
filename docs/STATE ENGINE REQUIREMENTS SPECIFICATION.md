@@ -74,6 +74,46 @@ ignore def.default entirely
 
 never invent new default fields
 
+1.4.1 Default Value Type Coercion (2026-09-09)
+
+"seed using def.defaultValue" means the field, not the raw JS value sitting
+in it untouched: the manager-modal inline editor's defaultValue input is a
+plain text field regardless of type (jQuery .val() always returns a
+string), so a number-type variable's def.defaultValue could be the string
+"5" rather than the number 5. Root-caused via a pasted stored-state dump
+(2026-09-09): a "constitution" variable created through the inline editor
+had value: "5" and def.defaultValue: "5" (both strings) in its isolated-
+store entry, which made a calculated variable summing it with another
+number fail with "Operator '+' requires numeric operands" -
+expression-dsl.js's arithmetic requires a real `typeof === 'number'`
+operand (DSL spec section 4.1) and performs no implicit coercion (DSL spec
+section 9), by design.
+
+Two places fixed to close this:
+
+- Read side: chat-state.js's seedVariablesForChat() and
+  resetValueIfTypeChanged() now seed via getDefaultValue() (variable-
+  schema.js's existing type-aware coercion - the same function
+  getMacroValue()'s fallback already used) instead of raw
+  `def.defaultValue ?? null`. tracker-panel-ui.js's reset-to-default button
+  fixed the same way. This heals the read path for any already-stored
+  variable definition, not just newly-created ones.
+- Write side: variable-ui-schema.js's normalizeCollectedValues() now
+  coerces a number-type variable's collected defaultValue to a real Number
+  before it's saved onto the definition, so a newly-created or edited
+  number variable's def.defaultValue is never a string to begin with.
+
+Neither change touches def.defaultValue's meaning or introduces a new
+field - both read def.defaultValue exactly as before, just through the
+correct type-aware accessor. A variable that already has a bad string
+value stored *before* this fix (like "constitution" above) is not
+retroactively healed by either change - seeding/reset only apply to
+variables that don't yet have an entry, or whose type just changed. The
+Tracker Runtime Value Edit (1.14.2) is the correct way to fix an
+already-bad stored value by hand: it already runs the input through
+coerceValue() before calling setVar(), so re-entering the value there
+writes a real number.
+
 1.5 Behavior Preservation Rule
 Variable definitions include:
 

@@ -4,6 +4,7 @@ import { getSettings, persistSettings, debugLog } from '../core/settings-core.js
 import { getPresetLoadOrder, getAllVariablesFromPresets, getTrackerPresets, addPresetToTracker, removePresetFromTracker } from '../core/preset-manager.js';
 import { getMacroValue } from '../core/macro-store.js';
 import { setVar } from '../core/chat-state.js';
+import { getDefaultValue } from '../core/variable-schema.js';
 import { coerceValue } from '../core/variable-validation.js';
 import { recalculateDependents } from '../core/calculated-engine.js';
 import { formatValueForDisplay } from './formatting-utils.js';
@@ -179,8 +180,16 @@ export function renderTrackerPanel() {
                         const ctx = SillyTavern.getContext();
                         const chatId = ctx.chatId;
                         if (!chatId) return;
-                        const next = def.defaultValue ?? null;
+                        // getDefaultValue(), not raw def.defaultValue - same
+                        // string-vs-number gap fixed in chat-state.js's
+                        // seedVariablesForChat()/resetValueIfTypeChanged()
+                        // (2026-09-09): def.defaultValue can be a string
+                        // (e.g. "5") even for a number-type variable, since
+                        // the manager-modal defaultValue input is a plain
+                        // text field.
+                        const next = getDefaultValue(def);
                         setVar(chatId, def.name, next, def);
+                        recalculateDependents(chatId, def.name);
                         renderTrackerPanel();
                     } catch (err) {
                         console.warn('[State Engine] reset button failed (gracefully handled)', err);

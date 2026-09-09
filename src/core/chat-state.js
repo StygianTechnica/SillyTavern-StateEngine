@@ -20,6 +20,7 @@
 import { LOG_PREFIX, getSettings, persistSettings } from './settings-core.js';
 import { setMacroValue, deleteMacroValue } from './macro-store.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
+import { getDefaultValue } from './variable-schema.js';
 
 const SCHEMA_VERSION = 1;
 
@@ -443,7 +444,9 @@ export function resetValueIfTypeChanged(chatId, def) {
         const newType = def.type;
         if (!oldType || oldType === newType) return;
 
-        const next = def.defaultValue ?? null;
+        // getDefaultValue(), not raw def.defaultValue - same reasoning as
+        // seedVariablesForChat() above.
+        const next = getDefaultValue(def);
         state.variables[def.name] = {
             value: next,
             def,
@@ -506,7 +509,21 @@ export function seedVariablesForChat(chatId) {
                 if (!def.name) continue;
                 if (Object.prototype.hasOwnProperty.call(state.variables, def.name)) continue;
 
-                const value = def.defaultValue ?? null;
+                // getDefaultValue() (variable-schema.js), not raw
+                // def.defaultValue directly: the inline editor's defaultValue
+                // input collects a plain string (jQuery .val()) regardless of
+                // type, and normalizeCollectedValues() didn't coerce it for
+                // number-type variables - a number variable's def.defaultValue
+                // could be the string "10", not the number 10.
+                // getDefaultValue() does the same type-aware coercion
+                // getMacroValue()'s fallback already relies on, so a seeded
+                // number-type variable always lands in the isolated store as
+                // a real number - required for expression-dsl.js's strict
+                // typeof checks (root-caused 2026-09-09: a calculated
+                // variable summing two seeded numbers failed with
+                // `Operator "+" requires numeric operands` because one
+                // dependency's seeded value was still the raw string).
+                const value = getDefaultValue(def);
                 setVar(chatId, def.name, value, def);
 
             } catch (err) {

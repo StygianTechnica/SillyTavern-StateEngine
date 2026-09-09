@@ -59,7 +59,20 @@ export function normalizeCollectedValues(values) {
         }
         out.enumValues = cleaned;
     }
-    if (values.defaultValue !== undefined) out.defaultValue = values.defaultValue;
+    if (values.defaultValue !== undefined) {
+        // The defaultValue input is a plain text field regardless of type
+        // (jQuery .val() is always a string), so a number-type variable's
+        // defaultValue must be coerced here or it lands on the definition
+        // as e.g. "10" instead of 10 - fine for display (getDefaultValue()
+        // coerces on read) but wrong for anything that does a strict
+        // typeof check on the stored value, like expression-dsl.js's
+        // arithmetic operators (root-caused 2026-09-09). Every other type
+        // is either already string-shaped (string/enum) or safely
+        // re-parsed from a string on read (boolean).
+        out.defaultValue = values.type === 'number'
+            ? (Number.isFinite(Number(values.defaultValue)) ? Number(values.defaultValue) : 0)
+            : values.defaultValue;
+    }
 
     // Calculated-variable fields. dependencies comes from the editor's
     // checkbox list (already an array of variable names, not multiline
