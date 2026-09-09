@@ -5,7 +5,7 @@ import * as presetManager from './preset-manager.js';
 import * as variableSchema from './variable-ui-schema.js';
 import * as uiTemplates from './ui-templates.js';
 import * as uiRender from './ui-render.js';
-import { generateUUID } from './utils.js';
+import { generateUUID, escapeHtml } from './utils.js';
 import { resetValueIfTypeChanged, hydrateMacroStoreForChat } from '../../core/chat-state.js';
 
 export function wireEvents(managerApi, managerState) {
@@ -451,8 +451,33 @@ export function wireEvents(managerApi, managerState) {
             values.behaviors.increment = isOn;
             values.behaviors.prompted = $('#se-manager-prompted-toggle').is(':checked');
 
+            // Sorted and increment are mutually exclusive for arrays -
+            // turning increment on forces sorted off (the reverse direction
+            // is enforced by the [data-field="sorted"] handler below).
+            if (isOn) values.sorted = false;
+
             showInlineVariableEditor(values, $row);
         }, 0);
+    });
+
+    // Sorted and increment are mutually exclusive for arrays (sorted +
+    // rotate/push/unshift/pop/shift all produce ambiguous or contradictory
+    // results) - checking "Keep sorted" forces increment off. The disabled
+    // attributes in the template (ui-templates.js) prevent re-enabling the
+    // other side while one is on, but that alone doesn't retroactively
+    // uncheck an already-on increment when sorted is turned on here, hence
+    // this explicit force + re-render.
+    $overlay.on('change', '[data-field="sorted"]', function () {
+        const $row = $(this).closest('.se-manager-variable-row');
+        const isOn = $(this).is(':checked');
+        if (!isOn) return;
+
+        const values = collectInlineVariableValues($row);
+        values.sorted = true;
+        values.behaviors = values.behaviors || {};
+        values.behaviors.increment = false;
+
+        showInlineVariableEditor(values, $row);
     });
 
     $overlay.on('change', '[data-field="type"]', function () {
@@ -528,6 +553,46 @@ export function wireEvents(managerApi, managerState) {
         $(this).closest('.se-manager-enum-row').remove();
     });
 
+    // Array default-value row editor: same "edit the DOM directly, collect
+    // at save time" approach as the enum list above. A freshly-added row's
+    // shape depends on the array's current itemType, read live from the DOM
+    // rather than a possibly-stale working copy.
+    $overlay.on('click', '.se-manager-array-add', function () {
+        const $row = $(this).closest('.se-manager-variable-row');
+        const $editor = $row.find('.se-manager-variable-editor-inline');
+        const $list = $editor.find('.se-manager-array-list');
+
+        const itemType = $editor.find('[data-field="itemType"]').val() || 'any';
+
+        let itemHtml;
+        if (itemType === 'enum') {
+            const raw = $editor.find('[data-field="itemEnumValuesMultiline"]').val() || '';
+            const allowed = raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+            const opts = allowed.map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+            itemHtml = `<select class="text_pole se-manager-array-item">${opts}</select>`;
+        } else if (itemType === 'object') {
+            itemHtml = `<span class="se-manager-array-item-placeholder">Object item editor coming soon</span>`;
+        } else {
+            itemHtml = `<input class="text_pole se-manager-array-item" value="" />`;
+        }
+
+        const $item = $(`
+            <div class="se-manager-array-row">
+                <span class="se-manager-array-grip"><i class="fa-solid fa-grip-vertical"></i></span>
+                ${itemHtml}
+                <button type="button" class="menu_button se-manager-array-delete" title="Remove item">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+            </div>
+        `);
+
+        $list.append($item);
+    });
+
+    $overlay.on('click', '.se-manager-array-delete', function () {
+        $(this).closest('.se-manager-array-row').remove();
+    });
+
     $overlay.on('click', '#se-manager-new-variable', function () {
         const presetId = managerState.currentPresetId;
         if (!presetId) {
@@ -574,12 +639,22 @@ export function wireEvents(managerApi, managerState) {
 
         $editor.html(uiTemplates.buildInlineVariableEditor(d, canIncrement)).data('editing-id', d.id).data('editing-existing', !d._isNew).show();
 
-        // Enable drag-and-drop reordering for the enum list editor, if present.
+        // Enable drag-and-drop reordering for the enum and array-default
+        // list editors, if present.
         setTimeout(() => {
-            const $list = $editor.find('.se-manager-enum-list');
-            if ($list.length && $list.sortable) {
-                $list.sortable({
+            const $enumList = $editor.find('.se-manager-enum-list');
+            if ($enumList.length && $enumList.sortable) {
+                $enumList.sortable({
                     handle: '.se-manager-enum-grip',
+                    axis: 'y',
+                    containment: 'parent'
+                });
+            }
+
+            const $arrayList = $editor.find('.se-manager-array-list');
+            if ($arrayList.length && $arrayList.sortable) {
+                $arrayList.sortable({
+                    handle: '.se-manager-array-grip',
                     axis: 'y',
                     containment: 'parent'
                 });
@@ -635,6 +710,28 @@ export function wireEvents(managerApi, managerState) {
             enumLines.push($(this).val());
         });
         values.enumValuesMultiline = enumLines.join('\n');
+
+        // Array default-value row editor: rows serialize into defaultValue
+        // itself, as a JSON array string - getDefaultValue() (variable-schema.js)
+        // already accepts a JSON-string array default, so no new field was
+        // needed. Only runs when the array row editor is actually present,
+        // so non-array types keep using whatever the generic
+        // .se-manager-var-field loop above already collected for
+        // defaultValue from the plain text input.
+        const $arrayList = $editor.find('.se-manager-array-list');
+        if ($arrayList.length) {
+            const items = [];
+            $arrayList.find('.se-manager-array-row').each(function () {
+                const $input = $(this).find('.se-manager-array-item');
+                if ($input.length) {
+                    items.push($input.val());
+                } else {
+                    // Object-array placeholder rows have no editable content yet.
+                    items.push({});
+                }
+            });
+            values.defaultValue = JSON.stringify(items);
+        }
 
         values.showInTracker = true;
         return values;

@@ -440,6 +440,65 @@ manual edit), at which point it's sanitized like any other write. This is
 a known, deliberate limitation, not an oversight - a broader spec/product
 call, not one this feature-level task should make unilaterally.
 
+1.15.1 Array Editor, Sorted/Increment Exclusivity, and Tracker Column Fix
+
+Sorted and increment are mutually exclusive for array variables (sorted +
+rotate scrambles the array; sorted + push/unshift is contradictory; sorted
++ pop/shift is ambiguous about which end "sorted" means). Enforced in both
+directions: turning on "Keep sorted" forces behaviors.increment off,
+turning on "Incremented Behavior" forces sorted off, and each control is
+disabled (with a "Sorted arrays cannot use increment operations." tooltip)
+while the other is active, so a user can't re-enable one without first
+turning the other off. This is a manager-modal UI rule only - it doesn't
+change what chat-state.js does if a preset already on disk somehow has both
+set; sanitizeArrayValue() still runs unique -> sorted -> maxLength as
+documented in 1.15 regardless.
+
+The array-default-value editor is row-based (add/remove/reorder, mirroring
+the enum list editor's UI and drag-and-drop pattern), not a raw-JSON text
+field. Rows serialize into defaultValue itself as a JSON array string on
+save - this is a different field than itemEnumValuesMultiline (1.15's
+schema-level "what values are allowed" editor, still a textarea and
+unaffected by this section); the row editor is about the array's actual
+default *contents*. getDefaultValue() (variable-schema.js) already accepted
+a JSON-string array default before this change, so no new schema field was
+needed - only the UI and defaultValue's own row->JSON serialization
+changed. itemType "enum" rows use a <select> of itemEnumValues; itemType
+"object" rows are placeholders ("Object item editor coming soon") that
+still support add/remove/reorder and serialize as `{}` per row, pending a
+real per-field object item editor.
+
+Tracker panel column layout (style.css): the name column
+(.se-tracker-label) now has a fixed 160px width instead of flex:1, and the
+value column (.se-tracker-value) now flexes and wraps instead of having no
+sizing rules at all - previously an unusually long value had nothing
+stopping it from squeezing the name column toward unreadability. The
+tracker (tracker-panel-ui.js) already exclusively rendered values through
+formatValueForDisplay() (which already returns "[]" for an empty array) -
+that part of this fix's premise was already true, verified rather than
+redundantly re-applied.
+
+The actual source of an array ever rendering as a bare "0" was not the
+tracker at all: applyIncrement()'s fresh-entry-creation path (chat-state.js)
+built `{ value: 0, def }` unconditionally, regardless of def.type. If
+def.increment.operation was still unconfigured on that same first call, the
+function returned before the array branch ever got a chance to correct
+entry.value - leaving a real number sitting in the isolated store under an
+array-typed def. The tracker itself never showed this (getMacroValue()'s
+array-aware getDefaultValue() fallback masks it), but anything reading
+state.variables directly - the Variable Management tab's JSON preview,
+notably - would have shown it verbatim. Fixed by making the fresh-entry
+default type-aware (`[]` for def.type === 'array', `0` otherwise).
+
+sortArrayItems()'s enum case (1.15) now explicitly returns the array
+unsorted when itemEnumValues is empty, rather than relying on
+`indexOf` always returning -1 for every comparison (which already left the
+array in its original order via a stable sort, but only as a side effect,
+not a deliberate check) - same outcome, now an intentional code path.
+prompted-engine.js was already confirmed to pass def into every setVar()
+call for every updateVars entry (array and non-array alike); no change was
+needed there.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 

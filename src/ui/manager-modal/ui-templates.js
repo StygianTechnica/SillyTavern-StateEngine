@@ -108,6 +108,35 @@ export function buildVariablesListRow(varId, varDef, index, total, selectedPrese
             `;
 }
 
+// One row of the array-default-value editor (Section 3: row-based, not
+// textarea-based). itemType 'enum' renders a <select> of itemEnumValues;
+// 'object' is a placeholder (no per-item editing yet, add/remove/reorder
+// still work); everything else is a plain text input, per spec.
+function buildArrayItemRow(val, i, itemType, itemEnumValuesArray) {
+    let itemHtml;
+    if (itemType === 'enum') {
+        const opts = itemEnumValuesArray
+            .map((ev) => `<option value="${escapeHtml(ev)}" ${ev === val ? 'selected' : ''}>${escapeHtml(ev)}</option>`)
+            .join('');
+        itemHtml = `<select class="text_pole se-manager-array-item">${opts}</select>`;
+    } else if (itemType === 'object') {
+        itemHtml = `<span class="se-manager-array-item-placeholder">Object item editor coming soon</span>`;
+    } else {
+        const displayVal = (typeof val === 'object' && val !== null) ? JSON.stringify(val) : val;
+        itemHtml = `<input class="text_pole se-manager-array-item" value="${escapeHtml(displayVal)}" />`;
+    }
+
+    return `
+        <div class="se-manager-array-row" data-index="${i}">
+            <span class="se-manager-array-grip"><i class="fa-solid fa-grip-vertical"></i></span>
+            ${itemHtml}
+            <button type="button" class="menu_button se-manager-array-delete" title="Remove item">
+                <i class="fa-solid fa-trash"></i>
+            </button>
+        </div>
+    `;
+}
+
 export function buildInlineVariableEditor(d, canIncrement) {
     // enumValuesMultiline carries the live (possibly-unsaved) list-editor rows
     // across editor re-renders (type toggle, prompted/increment toggles both
@@ -122,7 +151,28 @@ export function buildInlineVariableEditor(d, canIncrement) {
         ? String(d.itemEnumValuesMultiline)
         : (Array.isArray(d.itemEnumValues) ? d.itemEnumValues : []).join('\n');
 
+    const itemEnumValuesArray = d.itemEnumValuesMultiline !== undefined
+        ? String(d.itemEnumValuesMultiline).split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
+        : (Array.isArray(d.itemEnumValues) ? d.itemEnumValues : []);
+
     const itemType = d.itemType || 'any';
+
+    // The array-default-value row editor round-trips through
+    // collectInlineVariableValues() the same way enumValuesMultiline does,
+    // except here it lands back in defaultValue itself (as a JSON array
+    // string) rather than a separate field - getDefaultValue() already
+    // accepts a JSON-string array default, so this needed no new field.
+    const defaultValueArray = (() => {
+        if (Array.isArray(d.defaultValue)) return d.defaultValue;
+        if (typeof d.defaultValue === 'string' && d.defaultValue.trim()) {
+            try {
+                const parsed = JSON.parse(d.defaultValue);
+                if (Array.isArray(parsed)) return parsed;
+            } catch { /* not JSON - fall through to empty */ }
+        }
+        return [];
+    })();
+
     return `
         <div class="se-manager-variable-editor-fields">
 
@@ -146,10 +196,21 @@ export function buildInlineVariableEditor(d, canIncrement) {
                 <option value="array" ${d.type === 'array' ? 'selected' : ''}>Array</option>
             </select>
 
-            <input class="text_pole se-manager-var-field"
-                data-field="defaultValue"
-                placeholder="Default value"
-                value="${escapeHtml(d.defaultValue)}" />
+            ${d.type === 'array' ? `
+                <label class="se-manager-label">Default values</label>
+                <div class="se-manager-array-list">
+                    ${defaultValueArray.map((val, i) => buildArrayItemRow(val, i, itemType, itemEnumValuesArray)).join('')}
+                </div>
+
+                <button type="button" class="menu_button se-manager-array-add">
+                    <i class="fa-solid fa-plus"></i> Add item
+                </button>
+            ` : `
+                <input class="text_pole se-manager-var-field"
+                    data-field="defaultValue"
+                    placeholder="Default value"
+                    value="${escapeHtml(d.defaultValue)}" />
+            `}
 
             <!-- Enum values editor -->
             ${d.type === 'enum' ? `
@@ -201,8 +262,8 @@ export function buildInlineVariableEditor(d, canIncrement) {
                         <input type="checkbox" class="se-manager-var-field" data-field="unique" ${d.unique ? 'checked' : ''} />
                         <span>Unique items only</span>
                     </label>
-                    <label class="checkbox_label">
-                        <input type="checkbox" class="se-manager-var-field" data-field="sorted" ${d.sorted ? 'checked' : ''} />
+                    <label class="checkbox_label" ${d.behaviors?.increment ? 'title="Sorted arrays cannot use increment operations."' : ''}>
+                        <input type="checkbox" class="se-manager-var-field" data-field="sorted" ${d.sorted ? 'checked' : ''} ${d.behaviors?.increment ? 'disabled' : ''} />
                         <span>Keep sorted</span>
                     </label>
                     <label>
@@ -239,8 +300,8 @@ export function buildInlineVariableEditor(d, canIncrement) {
                 ${canIncrement ? `
                     <div class="se-manager-toggle-row">
                         <div class="se-row">
-                            <label class="checkbox_label">
-                                <input id="se-manager-increment-toggle" type="checkbox" class="se-manager-var-field" data-field="behaviors.increment" ${d.behaviors?.increment ? 'checked' : ''} />
+                            <label class="checkbox_label" ${d.type === 'array' && d.sorted ? 'title="Sorted arrays cannot use increment operations."' : ''}>
+                                <input id="se-manager-increment-toggle" type="checkbox" class="se-manager-var-field" data-field="behaviors.increment" ${d.behaviors?.increment ? 'checked' : ''} ${d.type === 'array' && d.sorted ? 'disabled' : ''} />
                                 <span>Incremented Behavior</span>
                             </label>
                         </div>

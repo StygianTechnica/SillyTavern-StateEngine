@@ -84,6 +84,11 @@ function sortArrayItems(items, itemType, def) {
             return copy.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
         case 'enum': {
             const order = Array.isArray(def?.itemEnumValues) ? def.itemEnumValues : [];
+            // A missing/empty itemEnumValues has no ordering to sort by -
+            // skip explicitly rather than relying on indexOf always
+            // returning -1 (which happens to leave the array untouched via
+            // a stable sort anyway, but only by accident).
+            if (order.length === 0) return copy;
             return copy.sort((a, b) => order.indexOf(a) - order.indexOf(b));
         }
         case 'boolean':
@@ -352,7 +357,14 @@ export function applyIncrement(chatId, varName, delta, def) {
         // Ensure entry exists
         let entry = state.variables[varName];
         if (!entry) {
-            state.variables[varName] = { value: 0, def: def ?? null };
+            // Type-aware: a bare `0` here for an array-typed def would sit in
+            // the isolated store as a real type mismatch if this call's own
+            // operation turns out to be unconfigured (see the array branch
+            // below, which returns before ever touching entry.value in that
+            // case) - visible verbatim wherever something reads state.variables
+            // directly rather than through getMacroValue's array-aware fallback
+            // (e.g. the Variable Management tab's JSON preview).
+            state.variables[varName] = { value: def?.type === 'array' ? [] : 0, def: def ?? null };
             entry = state.variables[varName];
         } else if (def) {
             // Keep the stored schema snapshot current. This never sources
