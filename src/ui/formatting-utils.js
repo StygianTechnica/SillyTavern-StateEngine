@@ -69,7 +69,22 @@ export function typeLabel(type) {
     return 'Text';
 }
 
-export function formatValueForDisplay(value) {
+// `def` is optional (2026-09-09) - when the variable's declared type is
+// "boolean", the display is forced to "true"/"false" regardless of what
+// shape the underlying stored value actually is (a real boolean, the
+// strings "true"/"false", or - for a value written before a since-fixed
+// bug - a raw leftover number like 1/0/2 from applyIncrement's old
+// non-boolean-aware arithmetic branch). Deliberately NOT applied to
+// "calculated" variables: a calculated expression's boolean result is
+// still shown via the generic typeof check below, per the instruction
+// that calculated booleans may remain numeric-looking without a
+// dedicated type-inference pass.
+export function formatValueForDisplay(value, def) {
+    if (def?.type === 'boolean') {
+        const isTrue = value === true || value === 'true'
+            || (typeof value === 'number' && value !== 0);
+        return isTrue ? 'true' : 'false';
+    }
     if (typeof value === 'boolean') return value ? 'true' : 'false';
     if (Array.isArray(value)) {
         if (value.length === 0) return '[]';

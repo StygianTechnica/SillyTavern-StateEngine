@@ -330,14 +330,43 @@
 #se_tracker_panel {
     position: fixed;
     z-index: 3000;
+    display: flex;
+    flex-direction: column;
     min-width: 220px;
-    max-width: 360px;
+    min-height: 120px;
+    /* No fixed max-width/max-height (2026-09-08 had 360px/320px caps with
+       no way to raise them) - bounded by the viewport instead, and the user
+       can freely resize within that via the native resize handle below. */
+    max-width: 95vw;
+    max-height: 90vh;
+    /* Restored from settings.trackerPanelSize on build - see
+       buildTrackerPanel(). Native CSS resize (not a custom drag handle)
+       requires overflow other than visible, hence overflow: hidden here;
+       the scrollable body is #se_tracker_body below. */
+    resize: both;
+    overflow: hidden;
     background: var(--SmartThemeBlurTintColor, #1e1e1eee);
     color: var(--SmartThemeBodyColor, #eee);
     border: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.4));
     border-radius: 8px;
     box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
     font-size: 0.85em;
+}
+
+#se_tracker_panel.se-tracker-collapsed {
+    /* Collapsed hides the body (rule below) - resizing height while
+       collapsed would just resize empty space, so only width stays
+       adjustable. */
+    resize: horizontal;
+}
+
+/* Chromium/Electron-only (SillyTavern's actual runtime) - the default
+   resize-handle glyph is a faint gray triangle that's easy to miss against
+   this panel's dark background; brighten it a little. Firefox has no
+   equivalent pseudo-element and just falls back to its own default
+   rendering, which is fine. */
+#se_tracker_panel::-webkit-resizer {
+    background: linear-gradient(135deg, transparent 0 50%, rgba(255, 255, 255, 0.35) 50% 100%);
 }
 
 #se_tracker_header {
@@ -380,7 +409,12 @@
 
 #se_tracker_body {
     padding: 6px 8px;
-    max-height: 320px;
+    flex: 1 1 auto;
+    /* Lets this child actually shrink/scroll within the flex column instead
+       of forcing the panel taller than its resized height - a flex item's
+       default min-height is auto (= its content size), which would defeat
+       both this and the panel's own resize. */
+    min-height: 0;
     overflow-y: auto;
 }
 
@@ -429,6 +463,14 @@
     font-family: var(--monoFontFamily, monospace);
     font-weight: bold;
     overflow-wrap: break-word;
+    /* $().text() already sets textContent, which preserves the real string
+       exactly (no trimming happens in JS - confirmed by exhaustive grep,
+       2026-09-09) - what looked like trimming was the browser's default
+       white-space:normal rendering collapsing leading/trailing/repeated
+       spaces visually. pre-wrap preserves whitespace runs while still
+       wrapping long values, unlike plain `pre` (no wrap -> horizontal
+       scroll). */
+    white-space: pre-wrap;
 }
 
 .se-tracker-edit-input {
@@ -573,8 +615,18 @@
 .se-manager-calc-dep-item {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    /* No justify-content: space-between - that stretched the copy icon to
+       the far right edge of the row regardless of name length, making it
+       easy to miss (2026-09-09). Default flex-start packs it immediately
+       after the checkbox/label instead, for both long and short names. */
     gap: 6px;
+}
+
+.se-manager-calc-dep-item .checkbox_label {
+    /* Let the label take only the width its content needs, so the copy
+       icon sits right after the name instead of being pushed off by a
+       label that stretches to fill the row. */
+    flex: 0 1 auto;
 }
 
 .se-manager-calc-dep-copy {

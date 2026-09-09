@@ -1,5 +1,5 @@
 # State Engine Expression DSL Specification  
-Version 1.0 — Tiny Expression DSL for Computed Variables
+Version 1.1 — Tiny Expression DSL for Computed Variables (adds the ternary conditional operator, section 4.5)
 
 This document defines the deterministic, side‑effect‑free expression language used by calculated variables in the State Engine. The DSL is intentionally small, predictable, and easy to evaluate without LLM involvement.
 
@@ -123,6 +123,30 @@ Operands must be boolean.
 
 ---
 
+### 4.5 Conditional (Ternary) Operator
+
+```
+condition ? exprIfTrue : exprIfFalse
+```
+
+- `condition` must evaluate to a boolean; evaluation fails otherwise (section 10.3).
+- Only the selected branch is evaluated - the other is never touched.
+- Both branches must be valid expressions (parsing does not depend on which one runs).
+- The result is whatever value the selected branch returns - its type is not constrained by the DSL.
+- Follows standard precedence rules (see section 5): its own tier, between Equality and Logical AND.
+- Not right-associative / self-nesting: each of `condition`, `exprIfTrue`, and `exprIfFalse` is itself
+  one Equality-level expression (arithmetic/comparison/equality, no bare `&&`, `||`, or another `? :`).
+  A nested ternary in a branch position needs explicit parentheses: `a ? b : (c ? d : e)` works;
+  `a ? b : c ? d : e` does not.
+
+Example:
+
+```
+status = isOpen ? "Open" : "Closed"
+```
+
+---
+
 ## 5. Precedence and Associativity
 
 From highest to lowest:
@@ -133,10 +157,13 @@ From highest to lowest:
 4. Additive (+, -)
 5. Comparison (<, <=, >, >=)
 6. Equality (==, !=)
-7. Logical AND (&&)
-8. Logical OR (||)
+7. Ternary (? :)
+8. Logical AND (&&)
+9. Logical OR (||)
 
-All binary operators are left‑associative.
+All binary operators are left‑associative. The ternary operator is not
+right-associative (see 4.5) - each of its three parts is exactly one
+Equality-level expression.
 
 ---
 

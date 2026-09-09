@@ -79,7 +79,7 @@ function tokenize(expr) {
             continue;
         }
 
-        if ('+-*/%<>!().,'.includes(c)) {
+        if ('+-*/%<>!().,?:'.includes(c)) {
             tokens.push({ type: 'op', value: c });
             i++;
             continue;
@@ -133,12 +133,32 @@ class Parser {
     }
 
     parseAnd() {
-        let left = this.parseEquality();
+        let left = this.parseTernary();
         while (this.isOp('&&')) {
             this.next();
-            left = { kind: 'logical', op: '&&', left, right: this.parseEquality() };
+            left = { kind: 'logical', op: '&&', left, right: this.parseTernary() };
         }
         return left;
+    }
+
+    // condition ? thenExpr : elseExpr - its own precedence tier, between
+    // Equality and Logical AND (spec section 5 / 4.5). Not right-recursive:
+    // each of condition/thenExpr/elseExpr is exactly one Equality-level
+    // expression, the same shape every other tier in this parser has - a
+    // nested ternary in a branch position needs explicit parentheses
+    // (parentheses always re-enter parseOr() from parsePrimary(), so
+    // `a ? b : (c ? d : e)` works; a bare `a ? b : c ? d : e` does not,
+    // consistent with ternary binding *tighter* than && / || here rather
+    // than the C/JS convention of binding loosest).
+    parseTernary() {
+        const condition = this.parseEquality();
+        if (!this.isOp('?')) return condition;
+
+        this.next();
+        const thenExpr = this.parseEquality();
+        this.expectOp(':');
+        const elseExpr = this.parseEquality();
+        return { kind: 'ternary', condition, thenExpr, elseExpr };
     }
 
     parseEquality() {
@@ -275,6 +295,14 @@ function evaluateNode(node, deps, values) {
             const v = evaluateNode(node.operand, deps, values);
             if (typeof v !== 'boolean') throw new Error('Unary "!" requires a boolean operand');
             return !v;
+        }
+
+        case 'ternary': {
+            const cond = evaluateNode(node.condition, deps, values);
+            if (typeof cond !== 'boolean') throw new Error('Ternary "?" condition must be boolean');
+            // Only the selected branch is evaluated - the other is never
+            // touched (JS's own ?: short-circuits the same way here).
+            return cond ? evaluateNode(node.thenExpr, deps, values) : evaluateNode(node.elseExpr, deps, values);
         }
 
         case 'arith': {

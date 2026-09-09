@@ -98,6 +98,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
     maxMessageLength: null,
     showTrackerPanel: false,
     trackerPanelPos: { top: 100, left: 100 },
+    // null width/height means "use the CSS default" - only set once the
+    // user actually drags the resize handle (2026-09-09).
+    trackerPanelSize: { width: null, height: null },
     trackerPanelCollapsed: false,
     trackerShowHidden: false,
     presets: {},
@@ -149,6 +152,7 @@ export function getSettings() {
     if (!settings.variableStore.chats || typeof settings.variableStore.chats !== 'object') settings.variableStore.chats = {};
     if (settings.showTrackerPanel === undefined) settings.showTrackerPanel = false;
     if (!settings.trackerPanelPos || typeof settings.trackerPanelPos !== 'object') settings.trackerPanelPos = { top: 100, left: 100 };
+    if (!settings.trackerPanelSize || typeof settings.trackerPanelSize !== 'object') settings.trackerPanelSize = { width: null, height: null };
     if (settings.trackerPanelCollapsed === undefined) settings.trackerPanelCollapsed = false;
     if (settings.trackerShowHidden === undefined) settings.trackerShowHidden = false;
 

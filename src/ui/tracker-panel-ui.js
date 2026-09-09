@@ -132,7 +132,7 @@ export function renderTrackerPanel() {
 
         const $value = $('<span></span>')
             .addClass('se-tracker-value')
-            .text(formatValueForDisplay(value));
+            .text(formatValueForDisplay(value, def));
 
         //$row.append($('<span></span>').addClass(`se-badge se-badge-${def.category} se-tracker-badge`).text(categoryLabel(def.category)));//111111111111
         $row.append($label, $value);
@@ -267,6 +267,40 @@ export function makeTrackerPanelDraggable($panel, $header) {
     });
 }
 
+// Persists the panel's current on-screen size (from the native CSS
+// resize:both handle - style.css) into settings.trackerPanelSize, so it's
+// restored on the next buildTrackerPanel() rather than snapping back to
+// the CSS default every reload. ResizeObserver is the correct mechanism
+// here - CSS resize:both drags don't dispatch any element-level DOM event
+// (window.onresize doesn't cover it); ResizeObserver is the only thing
+// that reliably fires when it happens, in any browser. Debounced so a drag
+// in progress doesn't write on every intermediate frame.
+function watchTrackerPanelResize($panel) {
+    if (typeof ResizeObserver !== 'function') return; // very old browser - resizing itself still works, just isn't remembered
+    let saveTimer = null;
+    const observer = new ResizeObserver((entries) => {
+        const entry = entries[0];
+        if (!entry) return;
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+            const settings = getSettings();
+            // While collapsed the panel's rendered height is just the
+            // header (the body is hidden and its own inline height was
+            // cleared - see the collapse-toggle handler) - never let that
+            // overwrite the real expanded height the user actually set.
+            const nextHeight = settings.trackerPanelCollapsed
+                ? settings.trackerPanelSize?.height ?? null
+                : Math.round(entry.contentRect.height);
+            settings.trackerPanelSize = {
+                width: Math.round(entry.contentRect.width),
+                height: nextHeight,
+            };
+            persistSettings();
+        }, 400);
+    });
+    observer.observe($panel[0]);
+}
+
 export function buildTrackerPanel() {
     if ($('#se_tracker_panel').length) return;
 
@@ -287,14 +321,28 @@ export function buildTrackerPanel() {
     $('body').append($panel);
 
     $panel.css({ top: `${settings.trackerPanelPos.top}px`, left: `${settings.trackerPanelPos.left}px` });
+    if (settings.trackerPanelSize?.width) $panel.css('width', `${settings.trackerPanelSize.width}px`);
+    if (settings.trackerPanelSize?.height) $panel.css('height', `${settings.trackerPanelSize.height}px`);
     $panel.toggleClass('se-tracker-collapsed', !!settings.trackerPanelCollapsed);
     $('#se_tracker_debug_toggle').toggleClass('se-tracker-btn-active', !!settings.trackerShowHidden);
+    watchTrackerPanelResize($panel);
 
     $('#se_tracker_collapse').on('click', () => {
         const s = getSettings();
         s.trackerPanelCollapsed = !s.trackerPanelCollapsed;
         persistSettings();
         $panel.toggleClass('se-tracker-collapsed', s.trackerPanelCollapsed);
+
+        // A manual resize sets an explicit inline height via the browser's
+        // native resize:both drag; that height doesn't clear itself when
+        // the body is hidden (display:none) for collapse, which would
+        // otherwise leave dead space below the header. Clear it on
+        // collapse, restore the remembered size on expand.
+        if (s.trackerPanelCollapsed) {
+            $panel.css('height', '');
+        } else if (s.trackerPanelSize?.height) {
+            $panel.css('height', `${s.trackerPanelSize.height}px`);
+        }
     });
 
     $('#se_tracker_close').on('click', () => {

@@ -89,7 +89,7 @@ export function renderVarTable() {
         // ));
         $row.append($('<td></td>').text(typeLabel(def.type)));
         $row.append($('<td></td>').text(def.scope === 'global' ? 'Global' : 'Chat'));
-        $row.append($('<td></td>').addClass('se-col-value').text(formatValueForDisplay(value)));
+        $row.append($('<td></td>').addClass('se-col-value').text(formatValueForDisplay(value, def)));
 
         const $actions = $('<div></div>').addClass('se-row-actions');
         const $editBtn = $('<button></button>').addClass('menu_button se-edit-btn').text('Edit');
