@@ -42,7 +42,7 @@ function buildCalculatedGraph(allDefs) {
 // calculated variable may depend on another calculated variable). Any
 // calculated variable that participates in a dependency cycle is excluded
 // from `order` and reported in `cyclic` instead: per the DSL's error model
-// (section 10.3), a variable that can't be resolved retains its previous
+// (section 11.3), a variable that can't be resolved retains its previous
 // stored value rather than being evaluated.
 function topoSortCalculated(byName, calcNames) {
     const visited = new Set();
@@ -107,7 +107,7 @@ export function getCalculatedVariableError(chatId, varName) {
 // *currently stored* values and writes the result through setVar() (so it
 // lands in the isolated store and mirrors into the macro store, same as any
 // other write - spec 1.1/1.2). On any evaluation failure, per DSL section
-// 10.3: retain the previous stored value, log a warning, never throw.
+// 11.3: retain the previous stored value, log a warning, never throw.
 export function evaluateCalculatedVariable(chatId, def) {
     try {
         if (!chatId || !def || def.type !== 'calculated' || !def.name) return;

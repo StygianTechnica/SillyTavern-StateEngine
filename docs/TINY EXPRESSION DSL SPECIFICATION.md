@@ -1,5 +1,5 @@
 # State Engine Expression DSL Specification  
-Version 1.1 — Tiny Expression DSL for Computed Variables (adds the ternary conditional operator, section 4.5)
+Version 1.2 — Tiny Expression DSL for Computed Variables (adds rand(), section 8 - the DSL's first built-in function, and its documented exception to the Deterministic design goal)
 
 This document defines the deterministic, side‑effect‑free expression language used by calculated variables in the State Engine. The DSL is intentionally small, predictable, and easy to evaluate without LLM involvement.
 
@@ -7,7 +7,11 @@ This document defines the deterministic, side‑effect‑free expression languag
 
 ## 1. Design Goals
 
-- Deterministic: Same inputs always produce the same output.
+- Deterministic: Same inputs always produce the same output, with one
+  narrow, explicit exception - the `rand()` built-in (section 8) - which
+  exists precisely to be non-deterministic (dice rolls, random encounter
+  tables) and is documented as such rather than silently violating this
+  goal.
 - Pure: Expressions cannot mutate state or perform I/O.
 - Safe: No arbitrary code execution.
 - Minimal: Only essential operators and functions.
@@ -129,7 +133,7 @@ Operands must be boolean.
 condition ? exprIfTrue : exprIfFalse
 ```
 
-- `condition` must evaluate to a boolean; evaluation fails otherwise (section 10.3).
+- `condition` must evaluate to a boolean; evaluation fails otherwise (section 11.3).
 - Only the selected branch is evaluated - the other is never touched.
 - Both branches must be valid expressions (parsing does not depend on which one runs).
 - The result is whatever value the selected branch returns - its type is not constrained by the DSL.
@@ -216,7 +220,62 @@ Otherwise evaluation fails.
 
 ---
 
-## 8. Parentheses
+## 8. Built-in Functions
+
+Unlike array/string operations (sections 6-7), which are dot-notation
+methods on a value (`myArray.contains(...)`, `myString.lower()`), a
+built-in function is called bare - `name(args)` - with no receiver and no
+`.` before it. `name.rand(args)` and `random.rand(20)` are never valid:
+`rand` is not registered as a dot-method, so those parse as (or fail as) a
+property/method access on whatever `name`/`random` resolves to, never as a
+call to this function.
+
+### 8.1 rand(n) / rand(n, trigger)
+
+Returns a random integer in the inclusive range `1..n`.
+
+Arguments:
+- `n` (required): a positive integer literal or a variable resolving to a
+  positive, finite integer. Not an integer, not finite, not positive, or
+  not a number at all → evaluation fails.
+- `trigger` (optional): a boolean literal or a variable resolving to a
+  boolean. Its *value* is never read beyond confirming it is boolean - its
+  only purpose is to appear in this variable's `dependencies`, so that a
+  dependency-change re-evaluation (section 10) re-rolls. Present but not
+  boolean → evaluation fails.
+- Any other argument count (0, or more than 2) → evaluation fails.
+
+Examples:
+
+```
+rand(20)                          // d20, no dependencies
+rand(diceSize)                    // die size from another variable
+rand(diceSize, rollTrigger)       // re-rolls when rollTrigger changes
+rand(20, (roundNumber % 2 == 0))  // re-rolls every other round
+```
+
+`rand()` is the DSL's sole deliberate exception to section 1's
+"Deterministic" goal and section 11.1 below - see both for what that means
+and why it's still safe (pure in every other sense: no state, no I/O, no
+external calls beyond `Math.random()`'s own entropy source).
+
+Because a fresh call always produces a new value, evaluating a `rand()`
+expression twice with identical arguments will *not* produce the same
+result - the "same inputs -> same output" guarantee this DSL otherwise
+makes for every other operator/function does not apply here. A calculated
+variable using `rand()` re-rolls whenever the containing expression is
+re-evaluated for any reason (section 10) - including a `recalculateAllForChat`
+sweep unrelated to this variable's own dependencies, not only when `n` or
+`trigger` actually change; there is no per-variable "did my inputs really
+change" gate in the current recalculation model.
+
+Every identifier referenced inside `rand(...)` - `n` and `trigger` alike -
+must still appear in the variable's `dependencies` array (section 10), the
+same as any other identifier used anywhere in the expression.
+
+---
+
+## 9. Parentheses
 
 Parentheses may be used to override precedence:
 
@@ -224,7 +283,7 @@ Parentheses may be used to override precedence:
 
 ---
 
-## 9. Variable Resolution
+## 10. Variable Resolution
 
 Each identifier must refer to a variable listed in dependencies.
 
@@ -238,12 +297,16 @@ No implicit coercion is performed.
 
 ---
 
-## 10. Evaluation Model
+## 11. Evaluation Model
 
-### 10.1 Deterministic
-Evaluation must produce the same result for the same inputs.
+### 11.1 Deterministic
+Evaluation must produce the same result for the same inputs, with the sole
+exception of `rand()` (section 8.1), which is deterministic in every sense
+except the one thing it exists to *not* be (its return value) - it still
+takes no side effects, touches no state, and depends on nothing beyond its
+own arguments and JavaScript's built-in entropy source.
 
-### 10.2 Pure
+### 11.2 Pure
 Expressions cannot:
 - mutate variables
 - call external functions
@@ -252,7 +315,13 @@ Expressions cannot:
 - reference chat messages
 - reference the LLM
 
-### 10.3 Error Handling
+`rand()`'s use of `Math.random()` is not considered a violation of this
+rule - it reads no State Engine variable, chat data, or extension state,
+and writes nothing itself (evaluateExpression() always returns a plain
+value; only its caller, evaluateCalculatedVariable(), ever writes anything,
+through the same setVar() path any other calculated result uses).
+
+### 11.3 Error Handling
 If evaluation fails:
 - the calculated variable retains its previous stored value
 - no exception is thrown
@@ -260,26 +329,29 @@ If evaluation fails:
 
 ---
 
-## 11. Examples
+## 12. Examples
 
-### 11.1 Numeric
+### 12.1 Numeric
 strength + dexterity * 2
 
-### 11.2 Boolean
+### 12.2 Boolean
 is_indoor && (weather == "storm")
 
-### 11.3 String
+### 12.3 String
 current_location.lower()
 
-### 11.4 Array
+### 12.4 Array
 encounter_tags.contains("boss") && threat_level == "high"
 
-### 11.5 Mixed
+### 12.5 Mixed
 npc_trust > 50 && quest_active
+
+### 12.6 Random
+rand(20, rollTrigger)
 
 ---
 
-## 12. Serialization
+## 13. Serialization
 
 Expressions are stored as plain strings in the variable definition:
 
@@ -298,12 +370,13 @@ Rules:
 
 ---
 
-## 13. Reserved Words
+## 14. Reserved Words
 
 The following identifiers are reserved and must not be used as variable names:
 
 true  
 false  
 null  
-Any built-in function names  
+rand (built-in function, section 8.1)  
+Any other built-in function names  
 Any future reserved keywords added to this DSL

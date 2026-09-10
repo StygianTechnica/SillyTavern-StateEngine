@@ -764,7 +764,7 @@ Calculated variables are re-evaluated when:
   every evaluation attempt fails silently (root-caused 2026-09-09).
 - a dependency variable is deleted, via recalculateDependents(chatId,
   deletedName) - the calculated variable then fails to resolve that
-  identifier (DSL 9) and retains its previous value with a logged warning,
+  identifier (DSL section 10) and retains its previous value with a logged warning,
   per 1.17.4
 - seeding completes (engine enable, preset add/remove, new-chat variable
   copy, or a variable save - the four seeding triggers in 3.1), via
@@ -856,7 +856,7 @@ behaviors.increment is true, which a calculated variable's is never).
 
 1.17.4 Failure Behavior
 
-Per docs/TINY EXPRESSION DSL SPECIFICATION.md section 10.3 and this
+Per docs/TINY EXPRESSION DSL SPECIFICATION.md section 11.3 and this
 instruction's own section 6: on any evaluation failure (an identifier not
 in dependencies, a missing/null dependency value, a type mismatch, division
 by zero, a syntax error, or a dependency-cycle member per 1.17.3), the

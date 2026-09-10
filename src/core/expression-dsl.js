@@ -7,7 +7,7 @@
 // past evaluateExpression()'s own boundary; every failure comes back as
 // { ok: false, error } so the caller (calculated-engine.js) can retain the
 // variable's previous stored value per the DSL's own error-handling model
-// (section 10.3).
+// (section 11.3).
 
 // ---------------------------------------------------------------------------
 // 1. Tokenizer
@@ -248,6 +248,26 @@ class Parser {
         }
         if (t.type === 'ident') {
             this.next();
+            // Bare function call: identifier immediately followed by "("
+            // with no "." in between - deliberately a separate grammar
+            // path from parsePostfix's .method() call node above, so
+            // built-in functions like rand() are only ever reachable as
+            // rand(...), never as x.rand(...) (postfix dispatch has its
+            // own fixed whitelist - contains/lower/upper/trim - and rand
+            // is never added to it).
+            if (this.isOp('(')) {
+                this.next();
+                const args = [];
+                if (!this.isOp(')')) {
+                    args.push(this.parseOr());
+                    while (this.isOp(',')) {
+                        this.next();
+                        args.push(this.parseOr());
+                    }
+                }
+                this.expectOp(')');
+                return { kind: 'funcCall', name: t.value, args };
+            }
             return { kind: 'ident', name: t.value };
         }
         if (this.isOp('(')) {
@@ -395,6 +415,42 @@ function evaluateNode(node, deps, values) {
                 return target.trim();
             }
             throw new Error(`Unknown method ".${node.method}()"`);
+        }
+
+        case 'funcCall': {
+            if (node.name === 'rand') {
+                if (node.args.length < 1 || node.args.length > 2) {
+                    throw new Error('rand() requires 1 or 2 arguments');
+                }
+
+                const n = evaluateNode(node.args[0], deps, values);
+                if (typeof n !== 'number' || !Number.isFinite(n) || !Number.isInteger(n) || n <= 0) {
+                    throw new Error('rand() first argument must be a positive integer');
+                }
+
+                if (node.args.length === 2) {
+                    const trigger = evaluateNode(node.args[1], deps, values);
+                    if (typeof trigger !== 'boolean') {
+                        throw new Error('rand() second argument must be boolean');
+                    }
+                    // The trigger's value is intentionally never read beyond
+                    // this type check - only its identifier being present in
+                    // this variable's dependencies matters, so that a
+                    // dependency-change re-evaluation of this expression
+                    // re-rolls (calculated-engine.js's recalculateDependents/
+                    // recalculateAllForChat, unchanged - this needs no new
+                    // update policy).
+                }
+
+                // Not state - a fresh, uniform 1..n roll every time this
+                // expression is evaluated. Never called from outside
+                // evaluateExpression()'s own boundary, so - like every other
+                // evaluation failure - a bad argument here still resolves to
+                // "retain the previous stored value", not a partial/garbage
+                // write (DSL section 11.3).
+                return Math.floor(Math.random() * n) + 1;
+            }
+            throw new Error(`Unknown function "${node.name}()"`);
         }
 
         default:

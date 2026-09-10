@@ -481,6 +481,57 @@
     height: auto;
 }
 
+/* Explicit, not just "inherit the theme's checkbox rule" - removing
+   .se-tracker-edit-input (this class's flex-grow/padding) was not enough
+   on its own, meaning something else (an active custom SillyTavern theme,
+   most likely - not anything in this extension's own CSS, confirmed by
+   grep) is restyling input[type=checkbox] as a large toggle-switch pill,
+   with a specificity/cascade order this extension can't control by
+   omission. So instead of relying on inheritance, this reproduces the
+   base SillyTavern theme's own square-checkbox rule verbatim (same
+   custom properties, same clip-path tick, same disabled/focus states -
+   public/style.css's input[type='checkbox'] rule) directly on this class,
+   with !important on the box-model properties so it wins regardless of
+   what's overriding the bare element selector (2026-09-09). */
+.se-tracker-edit-checkbox {
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    appearance: none !important;
+    border-radius: 3px !important;
+    width: var(--mainFontSize, 1em) !important;
+    height: var(--mainFontSize, 1em) !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    flex: 0 0 auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    outline: 1px solid var(--grey5020a, rgba(128, 128, 128, 0.2));
+    border: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.4));
+    background-color: var(--SmartThemeBodyColor, #eee);
+    box-shadow: inset 0 0 2px 0 var(--SmartThemeShadowColor, rgba(0, 0, 0, 0.5));
+    filter: brightness(1.2);
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    display: grid;
+    place-content: center;
+}
+
+.se-tracker-edit-checkbox::before {
+    content: "";
+    width: 0.65em;
+    height: 0.65em;
+    transform: scale(0);
+    transition: transform 0.1s ease-in-out;
+    box-shadow: inset 1em 1em var(--SmartThemeCheckboxTickColor, #61afef);
+    transform-origin: bottom left;
+    clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+}
+
+.se-tracker-edit-checkbox:checked::before {
+    transform: scale(1);
+}
+
 .se-tracker-empty {
     opacity: 0.7;
     text-align: center;
