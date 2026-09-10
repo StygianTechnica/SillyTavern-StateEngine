@@ -30,7 +30,18 @@ function isStaticVariable(def) {
 // caller against double-invocation (blur firing after Enter/Escape).
 function buildStaticValueEditor(def, currentValue, onCommit, onCancel) {
     if (def.type === 'boolean') {
-        const $input = $('<input type="checkbox" class="se-tracker-edit-input" />').prop('checked', !!currentValue);
+        // Deliberately NOT .se-tracker-edit-input - that class's flex-grow
+        // and padding (meant for the text input/select below) fought with
+        // SillyTavern's own themed checkbox rule (style.css's global
+        // input[type='checkbox'] - appearance:none, fixed
+        // width/height:var(--mainFontSize), its own checkmark), stretching
+        // it away from the square shape every other checkbox in the
+        // extension (e.g. the manager-modal editor's behaviors.prompted
+        // checkbox, which carries no sizing class at all) already gets for
+        // free. No custom class/CSS needed here either - inheriting that
+        // same global rule untouched *is* "matching the extension drawer's
+        // checkbox style" (2026-09-09).
+        const $input = $('<input type="checkbox" class="se-tracker-edit-checkbox" />').prop('checked', !!currentValue);
         $input.on('change', () => onCommit($input.is(':checked')));
         $input.on('keydown', (e) => { if (e.key === 'Escape') onCancel(); });
         return $input;
