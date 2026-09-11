@@ -1,6 +1,6 @@
 // State Engine — preset and preset-scoped variable operations
 
-import { LOG_PREFIX, getSettings, persistSettings, debugLog } from './settings-core.js';
+import { LOG_PREFIX, BUILTIN_NAMESPACE, getSettings, persistSettings, debugLog } from './settings-core.js';
 import { genId, blankDefinition } from './variable-schema.js';
 import { seedVariablesForChat } from './chat-state.js';
 import { recalculateAllForChat } from './calculated-engine.js';
@@ -316,9 +316,19 @@ function seedExamplePresets(settings, restoreMissing) {
         }
         const presetId = genId();
         const variables = {};
-        for (const def of seed.vars) variables[def.id] = def;
+        // Starter-preset variables are namespaced the same way anything
+        // created through src/api/variable-api.js is (see that module's
+        // header comment for why the delimiter is "__", not ".") -
+        // qualified here, at creation, rather than baked into the
+        // blueprint literals above, so the blueprint stays readable as
+        // plain local names.
+        for (const def of seed.vars) {
+            const qualifiedDef = { ...def, name: `${BUILTIN_NAMESPACE}__${def.name}` };
+            variables[qualifiedDef.id] = qualifiedDef;
+        }
         settings.presets[presetId] = {
             id: presetId,
+            namespace: BUILTIN_NAMESPACE,
             name: seed.name,
             description: seed.description || '',
             variables,

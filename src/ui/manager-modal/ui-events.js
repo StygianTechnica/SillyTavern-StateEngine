@@ -9,6 +9,25 @@ import { generateUUID, escapeHtml } from './utils.js';
 import { resetValueIfTypeChanged, hydrateMacroStoreForChat, seedVariablesForChat } from '../../core/chat-state.js';
 import { recalculateAllForChat, recalculateDependents, getCalculatedVariableError } from '../../core/calculated-engine.js';
 import { refreshVariableMacros } from '../../core/macro-registration.js';
+import { BUILTIN_NAMESPACE } from '../../core/settings-core.js';
+
+// Every variable created/edited through the manager modal is stored under
+// the reserved BUILTIN_NAMESPACE (see settings-core.js's
+// migrateToBuiltinNamespace() and docs/STATE ENGINE API SPECIFICATION.md) -
+// qualifyLocalName() is applied to the user-typed name right before the
+// uniqueness check/save, never to what's displayed back to them.
+// Idempotent: re-saving an existing "se__foo" variable whose name field
+// wasn't touched must not double-prefix it. Delimiter is "__", not "." -
+// see src/api/variable-api.js's header comment: a dot breaks the
+// calculated-variable expression DSL's tokenizer.
+const BUILTIN_NAMESPACE_PREFIX = `${BUILTIN_NAMESPACE}__`;
+function qualifyLocalName(raw) {
+    const trimmed = (raw || '').trim();
+    return trimmed.startsWith(BUILTIN_NAMESPACE_PREFIX) ? trimmed : `${BUILTIN_NAMESPACE_PREFIX}${trimmed}`;
+}
+function localVariableName(qualified) {
+    return (qualified || '').startsWith(BUILTIN_NAMESPACE_PREFIX) ? qualified.slice(BUILTIN_NAMESPACE_PREFIX.length) : (qualified || '');
+}
 
 export function wireEvents(managerApi, managerState) {
     const $overlay = $('#se-manager-overlay');
@@ -254,6 +273,13 @@ export function wireEvents(managerApi, managerState) {
             return;
         }
 
+        // Storage/macro name is namespace-qualified (BUILTIN_NAMESPACE,
+        // "se.<name>") from here on - see this file's qualifyLocalName()
+        // comment above. Everything before this point (validateVariableName,
+        // isReservedVariable) deliberately checked the raw, unqualified
+        // name the user typed.
+        values.name = qualifyLocalName(values.name);
+
         // The isolated store and macro store are both keyed by variable
         // *name* (not id) - two variables sharing a name, even across
         // different presets (active or not), silently collide in both
@@ -262,9 +288,9 @@ export function wireEvents(managerApi, managerState) {
         if (managerApi.isVariableNameTaken(values.name, values.id)) {
             const suggested = managerApi.generateUniqueVariableName(values.name, values.id);
             const useAlternate = window.confirm(
-                `A variable named "${values.name}" already exists in another preset. Variable names must be unique across all presets - ` +
+                `A variable named "${localVariableName(values.name)}" already exists in another preset. Variable names must be unique across all presets - ` +
                 `the stored value and the {{${values.name}}} macro are both keyed by name, so a duplicate would silently collide with it.\n\n` +
-                `OK = rename this one to "${suggested}" and save.\nCancel = go back and edit the name yourself.`
+                `OK = rename this one to "${localVariableName(suggested)}" and save.\nCancel = go back and edit the name yourself.`
             );
             if (!useAlternate) return;
             values.name = suggested;
@@ -738,7 +764,7 @@ export function wireEvents(managerApi, managerState) {
             $warning = $('<div class="se-manager-name-warning" style="display:none;"></div>').insertAfter($field);
         }
 
-        if (name && managerApi.isVariableNameTaken(name, editingId)) {
+        if (name && managerApi.isVariableNameTaken(qualifyLocalName(name), editingId)) {
             $warning.text(`"${name}" is already used by another variable (names must be unique across all presets).`).show();
         } else {
             $warning.hide();

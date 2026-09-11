@@ -268,6 +268,38 @@ Preset changes must not reset stored variable values.
 - When a variable's type changes, its stored value for that chat must be reset to the new type's defaultValue immediately upon variable-definition save.
 - No module may trigger full-store reseeding on preset save.
 
+1.12.1 First-Seed Persistence Bug (root-caused and fixed 2026-09-10)
+
+seedVariablesForChat() (chat-state.js) loaded a chat's state once at the
+top of the function, then in its loop called setVar() per variable - which
+does its own separate loadChatState()/saveChatState() round-trip - and
+finally re-saved the function's own original, stale snapshot. For a chat
+that had never been seeded before (nothing yet in
+variableStore.chats[chatId]), loadChatState() returns a fresh, unpersisted
+object on every call until something actually exists in the store - so the
+loop's setVar() calls built real data into one disconnected object chain,
+while the function's own final save silently overwrote all of it with the
+empty pre-loop snapshot.
+
+In real usage this meant: the very first preset activation on a genuinely
+new chat (no prior setVar() call for it from any other path, e.g.
+offerCopyFromPreviousChat) could seed nothing into the real isolated
+store - invisible for a plain variable (the macro-store mirror write
+inside setVar() is unaffected and still looked correct) but fatal for any
+calculated variable depending on it, since calculated-engine.js's getVar()
+call for that dependency returned undefined. Root-caused via a written
+test that activated a preset for a never-before-touched chatId and checked
+the isolated store directly (not the macro mirror) - not by inspection.
+
+Fixed by having seedVariablesForChat() persist its loaded state
+immediately, before the loop runs, so every loadChatState() call for the
+rest of that function invocation (direct, or via setVar()/
+resetValueIfTypeChanged()) returns the same already-stored object instead
+of a series of disconnected fresh defaults. This does not change 1.12's
+own rule (seeding still only initializes variables that don't yet exist) -
+it fixes a bug in how the *result* of that seeding got persisted, for the
+one case (a chat's first-ever seed) where it previously didn't.
+
 1.14 Manual Variable Management Rule
 
 The Manager Modal has a "Variable Management" tab (manager-modal.js /

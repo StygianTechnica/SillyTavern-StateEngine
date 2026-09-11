@@ -181,3 +181,20 @@ export function registerEvents() {
         console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
     }
 }
+
+// Dispatches a namespaced API-layer event (src/api/event-api.js) on the
+// same eventSource instance every built-in listener above is registered
+// on, so API-fired events go through this one place rather than callers
+// reaching for SillyTavern.getContext().eventSource directly. Never
+// throws — a listener that fails is exactly as isolated as failures
+// already are everywhere else in this file.
+export function dispatchNamespacedEvent(chatId, eventName) {
+    try {
+        const context = SillyTavern.getContext();
+        context.eventSource?.emit(eventName, chatId);
+        return true;
+    } catch (err) {
+        console.warn(LOG_PREFIX, `dispatchNamespacedEvent failed for "${eventName}" (gracefully handled)`, err);
+        return false;
+    }
+}

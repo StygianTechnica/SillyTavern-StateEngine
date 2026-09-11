@@ -517,6 +517,29 @@ export function seedVariablesForChat(chatId) {
         const variables = getAllVariablesFromPresets(activePresetIds);
         const state = loadChatState(chatId);
 
+        // Persist immediately, before the loop below - even though nothing
+        // has been seeded into it yet. loadChatState() returns a brand-new,
+        // unpersisted default object on EVERY call until something actually
+        // exists in the store (it never saves a default itself). Each
+        // setVar()/resetValueIfTypeChanged() call in this function does its
+        // own independent loadChatState()/saveChatState() round-trip - for
+        // the very first seed ever on a chat (nothing previously saved for
+        // it), that means this function's own `state` and every one of
+        // those calls' internal state were different, disconnected object
+        // instances. The final `saveChatState(chatId, state)` at the bottom
+        // of this function then persisted THIS function's stale, empty-
+        // variables snapshot, silently discarding everything the loop's
+        // setVar() calls had actually written. Saving here first makes
+        // `store.chats[chatId]` exist from this point on, so every
+        // subsequent loadChatState() call in this function (direct or via
+        // setVar/resetValueIfTypeChanged) returns this SAME object - one
+        // consistent accumulation, not several disconnected ones. Root-
+        // caused 2026-09-10 against exactly this symptom: a calculated
+        // variable failing to evaluate ("dependency is undefined") for a
+        // dependency that setVar() had, moments earlier in the same
+        // function call, appeared to write successfully.
+        saveChatState(chatId, state);
+
         for (const def of Object.values(variables)) {
             try {
                 if (!def.name) continue;
