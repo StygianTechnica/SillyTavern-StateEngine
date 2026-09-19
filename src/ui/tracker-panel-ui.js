@@ -1,11 +1,12 @@
 // State Engine — floating tracker panel
 
-import { getSettings, persistSettings, debugLog } from '../core/settings-core.js';
+import { getSettings, persistSettings, debugLog, DEFAULT_CALENDAR_ID } from '../core/settings-core.js';
 import { getPresetLoadOrder, getAllVariablesFromPresets, getTrackerPresets, addPresetToTracker, removePresetFromTracker } from '../core/preset-manager.js';
 import { getMacroValue } from '../core/macro-store.js';
 import { setVar } from '../core/chat-state.js';
 import { getDefaultValue } from '../core/variable-schema.js';
-import { coerceValue } from '../core/variable-validation.js';
+import { coerceValue, validateValueStrict } from '../core/variable-validation.js';
+import { format } from '../core/calendar-engine.js';
 import { recalculateDependents, getCalculatedVariableError } from '../core/calculated-engine.js';
 import { formatValueForDisplay } from './formatting-utils.js';
 import { setStatus } from './settings-panel-ui.js';
@@ -21,6 +22,39 @@ function isStaticVariable(def) {
         && def.type !== 'calculated'
         && def.behaviors?.prompted !== true
         && def.behaviors?.increment !== true;
+}
+
+// What a tracker edit of `def` means for the text the user committed:
+// { ok: true, value } with the value to store, or { ok: false, error }.
+// Every type but datetime keeps the long-standing behavior - coerceValue()
+// always yields something, falling back to the default for input it cannot
+// use. A datetime variable is the exception: falling back to the default
+// would silently reset the clock to 1970 on a typo, so there the text must be
+// an ISO date/datetime ("2026-09-18 22:55:00") or a number of seconds, and
+// anything else is refused and nothing is written.
+export function resolveTrackerEdit(def, rawValue) {
+    if (def?.type === 'datetime') {
+        const result = validateValueStrict(def, typeof rawValue === 'string' ? rawValue.trim() : rawValue);
+        // An empty box is not a value (validateValueStrict treats only
+        // null/undefined that way).
+        if (!result.valid || rawValue === '' || rawValue === null || rawValue === undefined) {
+            return { ok: false, error: result.error || 'Enter a date such as "2026-09-18 22:55:00" or a number of seconds.' };
+        }
+        return { ok: true, value: result.value };
+    }
+    return { ok: true, value: coerceValue(def, rawValue) };
+}
+
+// A datetime's stored scalar as the tracker shows it, "2026-09-18 22:55:00",
+// via calendar-engine's format() - the one official formatter (spec 1.21.5).
+// A value or calendar format() refuses is shown as stored rather than
+// breaking the panel.
+function datetimeText(def, scalar) {
+    try {
+        return format(def.calendar || DEFAULT_CALENDAR_ID, Number(scalar), { style: 'full' });
+    } catch {
+        return scalar ?? '';
+    }
 }
 
 // Builds the type-appropriate edit control for one static variable's
@@ -58,11 +92,15 @@ function buildStaticValueEditor(def, currentValue, onCommit, onCancel) {
         return $input;
     }
 
-    // number, string, array - a single text field. Arrays round-trip as
-    // their JSON form; coerceValue() (variable-validation.js) already
-    // accepts a JSON-array string, the same as every other array-editing
-    // surface in this codebase.
-    const displayVal = Array.isArray(currentValue) ? JSON.stringify(currentValue) : (currentValue ?? '');
+    // number, string, array, datetime - a single text field. Arrays
+    // round-trip as their JSON form; coerceValue() (variable-validation.js)
+    // already accepts a JSON-array string, the same as every other
+    // array-editing surface in this codebase. A datetime is edited as its
+    // ISO form ("2026-09-18 22:55:00"); a plain number of seconds is accepted
+    // back too (resolveTrackerEdit above).
+    const displayVal = def.type === 'datetime'
+        ? datetimeText(def, currentValue)
+        : Array.isArray(currentValue) ? JSON.stringify(currentValue) : (currentValue ?? '');
     const $input = $('<input type="text" class="text_pole se-tracker-edit-input" />').val(displayVal);
     $input.on('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); onCommit($input.val()); }
@@ -143,7 +181,7 @@ export function renderTrackerPanel() {
 
         const $value = $('<span></span>')
             .addClass('se-tracker-value')
-            .text(formatValueForDisplay(value, def));
+            .text(def.type === 'datetime' ? String(datetimeText(def, value)) : formatValueForDisplay(value, def));
 
         //$row.append($('<span></span>').addClass(`se-badge se-badge-${def.category} se-tracker-badge`).text(categoryLabel(def.category)));//111111111111
         $row.append($label, $value);
@@ -174,9 +212,13 @@ export function renderTrackerPanel() {
                             if (committed) return;
                             committed = true;
                             try {
-                                const nextValue = coerceValue(def, rawValue);
-                                setVar(cid, def.name, nextValue, def);
-                                recalculateDependents(cid, def.name);
+                                const edit = resolveTrackerEdit(def, rawValue);
+                                if (edit.ok) {
+                                    setVar(cid, def.name, edit.value, def);
+                                    recalculateDependents(cid, def.name);
+                                } else {
+                                    setStatus(`"${def.label || def.name}" not changed: ${edit.error}`, true);
+                                }
                             } catch (err) {
                                 console.warn('[State Engine] tracker value edit failed (gracefully handled)', err);
                             }

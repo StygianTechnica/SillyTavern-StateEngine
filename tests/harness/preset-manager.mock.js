@@ -49,6 +49,12 @@ export function getPresetsForChat(chatId) {
 
 // Mirrors the real function's side effects: bind, then seed + recalculate +
 // refresh macros (all three are separate mocks, so tests can assert on them).
+// Presets in activation order, as the tracker panel displays them.
+export function getPresetLoadOrder(chatId) {
+    if (!validChatId(chatId)) return [];
+    return binding(chatId).presetLoadOrder;
+}
+
 export const addPresetToChat = vi.fn((chatId, presetId) => {
     if (!validChatId(chatId)) return;
     const b = binding(chatId);

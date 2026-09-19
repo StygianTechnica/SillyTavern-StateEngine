@@ -1,5 +1,8 @@
 // State Engine — display/text formatting helpers
 
+import { DEFAULT_CALENDAR_ID } from '../core/settings-core.js';
+import { formatScalar } from '../core/calendar-engine.js';
+
 export function stripHtml(str) {
     return String(str ?? '').replace(/<[^>]*>/g, '').trim();
 }
@@ -29,6 +32,11 @@ export function describeConstraint(def) {
         return `number${parts.length ? ` (${parts.join(', ')})` : ''}`;
     }
     if (def.type === 'boolean') return 'true or false';
+    if (def.type === 'datetime') {
+        return 'date and time. Reply with either a new date-time as "YYYY-MM-DD HH:MM:SS" (e.g. "2026-09-18 22:00:00"), '
+            + 'or how far to move it from its current value (e.g. "advance 3 hours", "advance 1 day", "advance 1 month"). '
+            + 'If no time has passed, repeat the current value';
+    }
     if (def.type === 'enum') return `one of: ${def.enumValues.join(', ')}`;
     if (def.type === 'array') {
         const itemType = def.itemType || 'any';
@@ -80,6 +88,12 @@ export function typeLabel(type) {
 // that calculated booleans may remain numeric-looking without a
 // dedicated type-inference pass.
 export function formatValueForDisplay(value, def) {
+    // A datetime variable stores scalar seconds; the tracker shows the
+    // calendar's structured form, "2026-09-18 22:55:00" (requirements spec
+    // 1.21). A value the calendar cannot convert is shown as stored.
+    if (def?.type === 'datetime') {
+        return formatScalar(def.calendar || DEFAULT_CALENDAR_ID, value) ?? String(value);
+    }
     if (def?.type === 'boolean') {
         const isTrue = value === true || value === 'true'
             || (typeof value === 'number' && value !== 0);

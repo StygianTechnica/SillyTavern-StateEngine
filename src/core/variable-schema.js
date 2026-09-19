@@ -1,5 +1,8 @@
 // State Engine — variable definition helpers
 
+import { DEFAULT_CALENDAR_ID } from './settings-core.js';
+import { toScalar } from './calendar-engine.js';
+
 export function genId() {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
     return `se-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -15,6 +18,10 @@ export function genId() {
 // preset). "core" is where every variable lives unless assigned elsewhere,
 // and the only batch the main prompted update asks about.
 export const DEFAULT_BATCH = 'core';
+
+// Datetime variables (requirements spec 1.21) are created in this batch
+// unless the caller picks another - see createVariable() in variable-api.js.
+export const TIME_BATCH = 'time';
 
 // The batch a definition belongs to. A definition with no `batch` field at
 // all (anything created before batching existed) is in DEFAULT_BATCH - so
@@ -38,7 +45,7 @@ export function blankDefinition() {
         scope: 'chat', // chat | global
 
         // Type system
-        type: 'number', // number | string | boolean | enum | array | calculated
+        type: 'number', // number | string | boolean | enum | array | calculated | datetime
         enumValues: [],
 
         // Calculated-variable configuration (only meaningful when
@@ -58,6 +65,12 @@ export function blankDefinition() {
         maxLength: null,    // null = no limit
         unique: false,
         sorted: false,
+
+        // Datetime configuration (only meaningful when type === 'datetime'):
+        // which calendar definition (settings.calendars) converts this
+        // variable's scalar time, and the unit that scalar is stored in.
+        calendar: DEFAULT_CALENDAR_ID,
+        unit: 'seconds',
 
         // Default value
         defaultValue: 0,
@@ -112,6 +125,13 @@ export function getDefaultValue(def) {
             const list = Array.isArray(def.enumValues) ? def.enumValues : [];
             if (list.includes(def.defaultValue)) return def.defaultValue;
             return list[0] ?? '';
+        }
+        case 'datetime': {
+            // Scalar seconds. A number is used as-is; an ISO date/datetime
+            // string is converted through the variable's calendar; anything
+            // else is 0.
+            const scalar = toScalar(def.calendar || DEFAULT_CALENDAR_ID, def.defaultValue);
+            return scalar ?? 0;
         }
         case 'array':
             if (Array.isArray(def.defaultValue)) return [...def.defaultValue];

@@ -1020,8 +1020,9 @@ Rules:
 Main prompted update (prompted-engine.js):
 
 - The main prompted update asks the model only about variables in batch
-  "core". prompted-engine.js's selectBatchVariables(variables, batch = 'core')
-  picks them, and the existing classification (update / prompted increment /
+  "core" (and, since 1.21, "time" - where datetime variables live).
+  prompted-engine.js's selectBatchVariables(variables, batch = 'core') picks
+  them (`batch` may be a name or a list of names), and the existing classification (update / prompted increment /
   deterministic) runs over that selection unchanged. A prompted variable in
   any other batch is left out of the prompt, and is never updated by that
   update even if the model answers for it. When every prompted variable is in
@@ -1103,6 +1104,168 @@ Manager modal (src/ui/manager-modal/ui-events.js):
   stored definition's batch over onto the rebuilt one. Batches are assigned
   through the API; the editor neither shows nor changes them.
 
+1.21 Datetime Variables (2026-09-18)
+
+A datetime variable holds a real date and time. Its stored value is SCALAR
+TIME - one number, in seconds - and a CALENDAR DEFINITION turns that number
+into a year/month/day/hour/minute/second and back. Everything that only needs
+a value (the isolated store, the macro mirror, the expression DSL,
+comparisons) sees a plain number; only the increment path, the prompted-update
+path and the UI ever look through the calendar.
+
+Rules:
+
+- type is "datetime". The stored value is a number of seconds. Scalar 0 is
+  1970-01-01 00:00:00 in the (proleptic) Gregorian calendar; negative scalars
+  are earlier dates.
+- A datetime variable references its calendar by ID: `calendar` on the
+  definition (blankDefinition() sets "gregorian"). `unit` is "seconds" (the
+  only unit this engine stores). Both fields exist on every definition,
+  exactly as `batch` does, and mean nothing for any other type. The default
+  calendar is "gregorian".
+- Calendar definitions live in settings.calendars (settings-core.js,
+  DEFAULT_CALENDARS), keyed by id. getSettings() guarantees the "gregorian"
+  entry exists, so the default reference can never dangle. A definition
+  carries: id, label, unit, secondsPerMinute, minutesPerHour, hoursPerDay,
+  months ([{ name, days, leap? }] - `leap` is that month's length in a leap
+  year), leapYearRule.
+- Calendar definitions describe HOW to convert scalar time to structured time.
+  src/core/calendar-engine.js is the only module that does it:
+
+    getCalendar(calendarId)                    -> settings.calendars[id] or null
+    toStructured(calendarId, scalar)           -> { year, month, day, hour, minute, second }
+    fromStructured(calendarId, structured)     -> scalar
+    incrementScalar(calendarId, scalar, delta) -> scalar
+
+  plus the helpers the rest of the extension needs to stay out of the
+  arithmetic: parseDateTime (ISO text -> scalar), toScalar (number | numeric
+  string | ISO text -> scalar, or null), formatScalar (scalar ->
+  "2026-09-18 22:55:00", or null), isValidDelta, and resolveInstruction
+  (natural-language instruction -> scalar, or null). Months and days in
+  structured time are 1-based (ISO). fromStructured() rejects an impossible
+  date (month 13, Feb 30, hour 24) rather than rolling it over.
+- Increments. A datetime variable's `increment.delta` is a duration STRING:
+  "1h", "1d", "1mo", "1y", or several ("1d 2h", "1y, 2mo and 3d"), with
+  s/m/h/d/w/mo/y and their long forms; a bare number is seconds; a negative
+  amount steps back. ("m" is minutes and "mo" is months.) Fixed units are
+  exact seconds (1h = 3600, 1d = 86400). 1mo and 1y follow the calendar: a
+  month is 28-31 days and a year 365 or 366, and the result keeps the
+  day-of-month and time of day, clamped to the target month's length (Jan 31
+  + 1mo = Feb 28, or Feb 29 in a leap year; Feb 29 + 1y = Feb 28). Months and
+  years must be whole numbers. All of this is calendar.incrementScalar(); a
+  datetime is NEVER incremented by numeric addition.
+- Deterministic increments: runDeterministicIncrements() (deterministic-
+  engine.js) checks the delta with isValidDelta() - an unparseable one is
+  logged by variable name and skipped - then writes through applyIncrement()
+  like every other type. applyIncrement() (chat-state.js) has the datetime
+  branch that calls calendar.incrementScalar() on the stored scalar and writes
+  the result. Deterministic and prompted increments share that single
+  implementation on purpose (1.6: applyIncrement is the increment write path)
+  rather than the deterministic engine doing the arithmetic a second time.
+- Prompted increments and updates: the model answers a datetime variable in
+  words or with a date, never in raw seconds. prompted-engine.js hands the
+  answer to calendar.resolveInstruction(), which understands "advance 3
+  hours", "move forward 1 day" (also skip ahead, add, ...), "rewind 2 days" /
+  "go back 1 hour", "set time to 2026-09-18 22:00", and a bare date or number.
+  Relative phrases go through calendar.incrementScalar(); absolute ones
+  through calendar.fromStructured(). The result is written with setVar(). An
+  answer that is not understood is skipped and logged, never written. A
+  prompted INCREMENT (the boolean-conditional kind) simply calls
+  applyIncrement(), i.e. incrementScalar() with the configured delta. The
+  prompt shows the model the current value as "YYYY-MM-DD HH:MM:SS".
+- Batch: datetime variables belong to batch "time" (variable-schema.js
+  TIME_BATCH). createVariable() puts them there unless the caller names a
+  batch, updateVariable() does so when a variable BECOMES a datetime without
+  the patch naming one, and the inline editor does the same for a variable
+  that becomes a datetime while still in "core".
+  CHANGE TO 1.20: 1.20 said the main prompted update asks only about batch
+  "core", which would have left every prompted datetime variable (in "time")
+  unreachable by the main update and made the prompted-increment rule above
+  pointless. The main update now selects batches "core" AND "time"
+  (selectBatchVariables accepts a batch name or a list of them; its default is
+  still just "core"). Any other batch is still excluded, so a datetime the
+  caller moved to another batch is left out.
+- Validation and coercion (variable-validation.js): validateValueStrict() and
+  coerceValue() accept a finite number, a numeric string ("3600" - the
+  tracker's text field supplies numbers as text) as that number, and an ISO
+  date or date-time ("2026-09-18", "2026-09-18 22:00", "2026-09-18T22:00:05")
+  converted through the variable's calendar. Everything else is rejected,
+  including a date that does not exist. As with every type, the strict
+  validator reports the error and returns the default; coerceValue() returns
+  the default.
+- Defaults: getDefaultValue() returns a numeric defaultValue as-is, converts
+  an ISO string through the calendar, and otherwise returns 0.
+- API (variable-api.js): createVariable() with type "datetime" requires the
+  calendar to exist in settings.calendars, `unit` to be "seconds", and
+  defaultValue to be convertible to scalar time; a violation warns and
+  returns null with nothing written. The stored defaultValue is the converted
+  scalar (an ISO default is converted once, at creation). updateVariable()
+  applies the same rules to the merged definition.
+- Type change: resetValueIfTypeChanged() (chat-state.js) normally resets a
+  changed variable to its new type's default. When the new type is datetime
+  it first tries to CONVERT the stored value (a number or ISO string becomes
+  its scalar) and only falls back to the default when it cannot.
+- Macros: the {{name}} macro and getvar carry the scalar, in seconds, like
+  every other stored value; the calendar is not consulted for macros.
+- DSL: the expression DSL sees a datetime as a number. There are no datetime
+  operators or functions; `a - b` is a difference in seconds.
+- UI: the tracker shows a datetime through calendar.toStructured() (via
+  formatValueForDisplay), e.g. "2026-09-18 22:55:00". Editing it in the
+  tracker takes an ISO date/date-time or a number of seconds; anything else
+  is refused with a status message and NOTHING is written (unlike the other
+  types, where bad input falls back to the default - resetting a clock to 1970
+  on a typo would be a silent loss). The manager-modal inline editor shows the
+  default as an ISO string and saves it as scalar seconds; it offers a "Date
+  & time" type and an "Advance by" field for the delta. The editor has no
+  calendar or unit field - the stored definition's are carried over on save,
+  the same way `batch` is - so no calendar choice is exposed.
+
+Fantasy calendars (bones only):
+
+- Calendar definitions are pluggable objects: anything registered under
+  settings.calendars with the fields above. The shape (months with their own
+  lengths, leapYearRule, clock constants) is what a fantasy calendar would
+  fill in.
+- ONLY "gregorian" is implemented. calendar-engine.js refuses (throws, and
+  every user-facing caller treats that as invalid input) any definition whose
+  leapYearRule it does not implement, instead of converting with the wrong
+  rules.
+- The API for definitions exists (getCalendar and the settings.calendars
+  store); the UI does not expose it yet - no calendar picker, no editor.
+
+1.21.5 Calendar Formatting (2026-09-18)
+
+- Datetime variables store scalar seconds. That does not change.
+- Anything that shows a datetime to a person - the tracker, Pretty Panels,
+  any external app - must call calendarEngine.format() to get the text. It is
+  the ONLY official formatting mechanism; no consumer does its own date math
+  or string-building from a scalar.
+- The macro store continues to show scalar seconds ({{name}} and getvar are
+  not formatted and not affected).
+- calendarEngine.format(calendarId, scalarTime, options = {}) returns a
+  string. options.style is "full" (default, "YYYY-MM-DD HH:mm:ss"), "date"
+  ("YYYY-MM-DD"), "time" ("HH:mm:ss"), "month" (the calendar's month name),
+  "year" (the year) or "custom", which needs options.pattern and supports the
+  tokens YYYY, MM, DD, HH, mm, ss, MMM (short month name) and MMMM (full month
+  name); other pattern characters are kept as written. options.locale is
+  reserved and ignored.
+- calendarEngine.formatPartial(calendarId, scalarTime, fields = []) returns
+  an object holding only the requested fields (year, month, day, hour, minute,
+  second) - month as its NAME, the rest as numbers: ["month", "day"] gives
+  { month: "September", day: 18 }. It covers month-only, day-only, time-only
+  and so on.
+- Calendar definitions are readable through the API layer: getCalendarDefinitions,
+  getCalendarDefinition, formatDateTime and formatDateTimePartial
+  (docs/STATE ENGINE API SPECIFICATION.md, Section 10), backed by
+  calendarEngine.listCalendars() and getCalendarDefinition().
+- First pass: only "gregorian" is formatted. Any other calendar id throws
+  "Formatting not implemented for this calendar". Fantasy calendars will
+  override formatting rules later; there are no fantasy formatting rules and
+  no fantasy calendar UI yet.
+- The tracker displays a datetime with calendarEngine.format(def.calendar,
+  scalar, { style: "full" }). formatScalar() remains as a never-throws
+  wrapper over format(...full) for display code that wants null on failure.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 
@@ -1133,8 +1296,11 @@ macroStore). Named "macro", not "var", deliberately - this is the
 outside chat-state.js should call these directly.
 
 prompted-engine.js
-selecting only batch "core" variables for the main prompted update
-(selectBatchVariables, 1.20)
+selecting only batch "core" and "time" variables for the main prompted update
+(selectBatchVariables, 1.20/1.21)
+
+turning a datetime variable's answer into a scalar via calendar-engine.js
+(1.21)
 
 classification of prompted variables
 
@@ -1146,6 +1312,12 @@ deterministic-engine.js
 deterministic increments
 
 calling applyIncrement
+
+calendar-engine.js
+scalar time <-> structured time and datetime increments (getCalendar,
+toStructured, fromStructured, incrementScalar, 1.21). Reads calendar
+definitions from settings.calendars; imports only settings-core.js. Owns ALL
+calendar arithmetic - no other module does its own date math.
 
 expression-dsl.js
 Tiny Expression DSL tokenizer/parser/evaluator for calculated variables
@@ -1259,6 +1431,9 @@ preserve type, behaviors, increment
 never invent new fields (`batch`, 1.20, is a sanctioned field - added to
 blankDefinition() with default 'core'; this rule still forbids inventing any
 other)
+
+calendar-engine.js now owns all formatting logic for datetime variables
+(format, formatPartial - 1.21.5).
 
 never rename schema fields
 

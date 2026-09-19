@@ -32,6 +32,38 @@ export const DEFAULT_UNIFIED_VARIABLE_RULES = [
             '- The JSON object MUST contain one key for every update variable AND every boolean-condition variable.'
         ].join('\n');
 
+// Calendar definitions for datetime variables (requirements spec 1.21).
+// Pluggable objects, keyed by id, that src/core/calendar-engine.js reads to
+// convert a variable's scalar seconds to and from a structured date. Only
+// "gregorian" is implemented; the fields beyond it (months, leapYearRule) are
+// the shape a fantasy calendar would fill in later.
+export const DEFAULT_CALENDAR_ID = 'gregorian';
+export const DEFAULT_CALENDARS = Object.freeze({
+    gregorian: Object.freeze({
+        id: 'gregorian',
+        label: 'Gregorian Calendar',
+        unit: 'seconds',
+        secondsPerMinute: 60,
+        minutesPerHour: 60,
+        hoursPerDay: 24,
+        months: Object.freeze([
+            Object.freeze({ name: 'January', days: 31 }),
+            Object.freeze({ name: 'February', days: 28, leap: 29 }),
+            Object.freeze({ name: 'March', days: 31 }),
+            Object.freeze({ name: 'April', days: 30 }),
+            Object.freeze({ name: 'May', days: 31 }),
+            Object.freeze({ name: 'June', days: 30 }),
+            Object.freeze({ name: 'July', days: 31 }),
+            Object.freeze({ name: 'August', days: 31 }),
+            Object.freeze({ name: 'September', days: 30 }),
+            Object.freeze({ name: 'October', days: 31 }),
+            Object.freeze({ name: 'November', days: 30 }),
+            Object.freeze({ name: 'December', days: 31 }),
+        ]),
+        leapYearRule: 'gregorian',
+    }),
+});
+
 // Debug mode - session-only, not persisted
 window.seDebugMode = false;
 
@@ -258,6 +290,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
     // actually calls registerExtension()/registerEventSource().
     extensions: {},
     eventSources: {},
+    // Calendar definitions (see DEFAULT_CALENDARS above).
+    calendars: DEFAULT_CALENDARS,
 });
 
 // ---------------------------------------------------------------------------
@@ -319,6 +353,10 @@ export function getSettings() {
     if (!settings.wiConditions || typeof settings.wiConditions !== 'object') settings.wiConditions = {};
     if (!settings.extensions || typeof settings.extensions !== 'object') settings.extensions = {};
     if (!settings.eventSources || typeof settings.eventSources !== 'object') settings.eventSources = {};
+    if (!settings.calendars || typeof settings.calendars !== 'object') settings.calendars = {};
+    // The built-in calendar is always present, so a datetime variable's
+    // default calendar reference can never dangle.
+    if (!settings.calendars[DEFAULT_CALENDAR_ID]) settings.calendars[DEFAULT_CALENDAR_ID] = structuredCloneSafe(DEFAULT_CALENDARS[DEFAULT_CALENDAR_ID]);
 
 
     return settings;

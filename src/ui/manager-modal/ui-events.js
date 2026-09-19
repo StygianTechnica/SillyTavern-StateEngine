@@ -9,7 +9,8 @@ import { generateUUID, escapeHtml } from './utils.js';
 import { resetValueIfTypeChanged, hydrateMacroStoreForChat, seedVariablesForChat } from '../../core/chat-state.js';
 import { recalculateAllForChat, recalculateDependents, getCalculatedVariableError } from '../../core/calculated-engine.js';
 import { refreshVariableMacros } from '../../core/macro-registration.js';
-import { BUILTIN_NAMESPACE } from '../../core/settings-core.js';
+import { BUILTIN_NAMESPACE, DEFAULT_CALENDAR_ID } from '../../core/settings-core.js';
+import { formatScalar, toScalar } from '../../core/calendar-engine.js';
 
 // Every variable created/edited through the manager modal is stored under
 // the reserved BUILTIN_NAMESPACE (see settings-core.js's
@@ -296,6 +297,17 @@ export function wireEvents(managerApi, managerState) {
             values.name = suggested;
         }
 
+        // A datetime's default is typed as an ISO date ("2026-09-18 22:00")
+        // and converted to scalar seconds by normalizeCollectedValues() below
+        // (via the calendar's fromStructured()). Text that is neither a date
+        // nor a number is refused here rather than silently saved as 0. An
+        // empty box just means "no default" (0 = 1970-01-01 00:00:00).
+        if (values.type === 'datetime' && String(values.defaultValue ?? '').trim() !== ''
+            && toScalar(previousCalendarId(preset, values.id), values.defaultValue) === null) {
+            alert('Default value must be a date-time such as "2026-09-18 22:00:00" (or a number of seconds).');
+            return;
+        }
+
         console.log("VALUES BEFORE SAVE:", values);
 
         const newVariable = {
@@ -319,6 +331,20 @@ export function wireEvents(managerApi, managerState) {
         // main prompt. Carry the stored batch over instead.
         const previousDef = preset.variables[newVariable.id];
         if (typeof previousDef?.batch === 'string' && previousDef.batch) newVariable.batch = previousDef.batch;
+
+        // Same trap for a datetime's calendar/unit (requirements spec 1.21):
+        // the editor has no field for them (calendars are not exposed in the
+        // UI yet), so the rebuilt definition would reset them to the
+        // Gregorian default on every save.
+        if (typeof previousDef?.calendar === 'string' && previousDef.calendar) newVariable.calendar = previousDef.calendar;
+        if (typeof previousDef?.unit === 'string' && previousDef.unit) newVariable.unit = previousDef.unit;
+
+        // A variable that has just become a datetime lands in batch "time",
+        // as one created through the API does (variable-api.js) - but only
+        // when it was never assigned anywhere else.
+        if (newVariable.type === 'datetime' && previousDef?.type !== 'datetime' && (!previousDef?.batch || previousDef.batch === 'core')) {
+            newVariable.batch = 'time';
+        }
 
         preset.variables[newVariable.id] = newVariable;
 
@@ -819,6 +845,12 @@ export function wireEvents(managerApi, managerState) {
     // variable directly in its editor (item 3, 2026-09-09) - a type
     // mismatch, an unresolved dependency, or a dependency cycle must be
     // visible to the user, not only logged to the console.
+    // The calendar a datetime variable being saved will use: the stored
+    // definition's own (it is carried over on save), else the default.
+    function previousCalendarId(preset, varId) {
+        return preset?.variables?.[varId]?.calendar || DEFAULT_CALENDAR_ID;
+    }
+
     function showCalculatedEvalError($editor, message) {
         let $err = $editor.find('.se-manager-calc-eval-error');
         if (!$err.length) {
@@ -839,6 +871,16 @@ export function wireEvents(managerApi, managerState) {
         // Merge defaults into existing varDef
         const d = variableSchema.mergeDefinition(defaults, varDef);
         const canIncrement = variableSchema.canIncrement(d.type);
+
+        // A datetime is stored as scalar seconds but edited as an ISO date:
+        // show its default as "2026-09-18 22:00:00". Text that is not
+        // convertible (a half-typed value carried across a re-render) is left
+        // exactly as typed.
+        if (d.type === 'datetime') {
+            const scalar = toScalar(d.calendar || DEFAULT_CALENDAR_ID, d.defaultValue);
+            const shown = scalar === null ? null : formatScalar(d.calendar || DEFAULT_CALENDAR_ID, scalar);
+            if (shown) d.defaultValue = shown;
+        }
 
         // Other variables in the current preset, for the calculated-type
         // dependency checkbox list - excludes the variable being edited.

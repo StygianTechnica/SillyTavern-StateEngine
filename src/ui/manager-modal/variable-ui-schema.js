@@ -2,6 +2,9 @@
 // Merging, coercion/normalization, validation, and description text for
 // variable definitions. Uses ES6 modules - imported by manager-modal.js
 
+import { DEFAULT_CALENDAR_ID } from '../../core/settings-core.js';
+import { toScalar } from '../../core/calendar-engine.js';
+
 export function mergeDefinition(defaults, varDef) {
     const d = Object.assign({}, defaults, varDef);
 
@@ -13,7 +16,7 @@ export function mergeDefinition(defaults, varDef) {
 }
 
 export function canIncrement(type) {
-    return (type === 'number' || type === 'boolean' || type === 'enum' || type === 'array');
+    return (type === 'number' || type === 'boolean' || type === 'enum' || type === 'array' || type === 'datetime');
 }
 
 // Splits multiline-editor textarea content into individual entries. The
@@ -69,9 +72,17 @@ export function normalizeCollectedValues(values) {
         // arithmetic operators (root-caused 2026-09-09). Every other type
         // is either already string-shaped (string/enum) or safely
         // re-parsed from a string on read (boolean).
+        //
+        // A datetime's defaultValue is typed as an ISO date ("2026-09-18
+        // 22:00") but stored as scalar seconds, converted through the
+        // variable's calendar (calendar-engine's fromStructured() underneath);
+        // text that is not a date or number falls back to 0, though the save
+        // handler (ui-events.js) refuses such text before it gets here.
         out.defaultValue = values.type === 'number'
             ? (Number.isFinite(Number(values.defaultValue)) ? Number(values.defaultValue) : 0)
-            : values.defaultValue;
+            : values.type === 'datetime'
+                ? (toScalar(values.calendar || DEFAULT_CALENDAR_ID, values.defaultValue) ?? 0)
+                : values.defaultValue;
     }
 
     // Calculated-variable fields. dependencies comes from the editor's
@@ -139,7 +150,11 @@ export function normalizeCollectedValues(values) {
         out.increment = {};
 
         if (values.increment.delta !== undefined) {
-            out.increment.delta = Number(values.increment.delta);
+            // A datetime's delta is a duration string ("1h", "1d", "1mo",
+            // "1y" - calendar-engine.js), not a number.
+            out.increment.delta = values.type === 'datetime'
+                ? String(values.increment.delta).trim()
+                : Number(values.increment.delta);
         }
 
         if (values.increment.triggers !== undefined) {
@@ -231,6 +246,8 @@ export function describeVariable(d) {
             out.push(`Each increment toggles the boolean value.`);
         } else if (d.type === 'enum') {
             out.push(`Each increment cycles through the enum values.`);
+        } else if (d.type === 'datetime') {
+            out.push(`Each increment advances the time by ${d.increment?.delta ?? '1s'}.`);
         } else if (d.type === 'array') {
             const op = d.increment?.operation;
             out.push(op ? `Each increment applies the "${op}" operation to the array.` : `No array operation is configured, so increments do nothing.`);

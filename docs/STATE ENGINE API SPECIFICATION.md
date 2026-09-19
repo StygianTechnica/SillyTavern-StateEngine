@@ -1219,3 +1219,79 @@ dependencies, discovery, registration integration, atomicity, and no side
 effects), plus additions to `identity.test.js` and
 `state-engine-api.test.js`; the full suite (579 tests) passes under
 `npm test`.
+
+
+SECTION 10 — CALENDAR FORMATTING API (2026-09-18)
+
+**10.1 What it is**
+
+Datetime variables (requirements spec 1.21) store scalar seconds. These four
+functions let external apps - Pretty Panels, other extensions - read the
+calendar definitions and ask for human-readable dates without reimplementing
+any calendar arithmetic. They live in `src/api/variable-api.js` and are
+exposed on `stateEngine`; the work is done by `src/core/calendar-engine.js`
+(`listCalendars`, `getCalendarDefinition`, `format`, `formatPartial`), which
+is the only official formatter (requirements spec 1.21.5).
+
+**10.2 Functions**
+
+```
+getCalendarDefinitions(extensionId, instanceId)
+  -> { calendarId: definition, ... }          the live settings.calendars
+
+getCalendarDefinition(extensionId, instanceId, calendarId)
+  -> definition, or null if there is no such calendar
+
+formatDateTime(extensionId, instanceId, calendarId, scalarTime, options)
+  -> string
+  options.style    "full" (default) | "date" | "time" | "month" | "year" | "custom"
+  options.pattern  custom only. Tokens: YYYY MM DD HH mm ss MMM MMMM
+  options.locale   reserved, ignored
+
+formatDateTimePartial(extensionId, instanceId, calendarId, scalarTime, fields)
+  -> object with only the requested fields
+  fields: any of "year", "month", "day", "hour", "minute", "second"
+```
+
+Examples, for scalar 2026-09-18 22:55:07 UTC:
+
+```
+formatDateTime(..., 'gregorian', t)                                   "2026-09-18 22:55:07"
+formatDateTime(..., 'gregorian', t, { style: 'date' })                "2026-09-18"
+formatDateTime(..., 'gregorian', t, { style: 'time' })                "22:55:07"
+formatDateTime(..., 'gregorian', t, { style: 'month' })               "September"
+formatDateTime(..., 'gregorian', t, { style: 'year' })                "2026"
+formatDateTime(..., 'gregorian', t, { style: 'custom', pattern: 'MMM DD' })   "Sep 18"
+formatDateTimePartial(..., 'gregorian', t, ['month', 'day'])          { month: "September", day: 18 }
+```
+
+**10.3 Behavior**
+
+- Formatting is calendar-specific. Only `"gregorian"` is implemented in this
+  first pass: any other calendar id throws `Formatting not implemented for
+  this calendar`, even one that exists in `settings.calendars`. Fantasy
+  calendars will supply their own formatting rules later.
+- The macro store is unchanged: `{{name}}` / `getvar` still show scalar
+  seconds. Formatting is something a consumer asks for, never something
+  stored or substituted.
+- `getCalendarDefinitions()` returns the live settings object, not a copy -
+  treat it as read-only. There is deliberately no API to add or edit a
+  calendar yet.
+
+**10.4 Errors, and how this differs from your request**
+
+- **Identity.** The requested `validateCallerIdentity(extensionId,
+  instanceId)` cannot be called with two arguments - it requires a target
+  namespace and throws without one. These signatures carry none, so, like
+  `assignBatch`/`declareCapabilities`, they use `resolveCallerRecord`: the
+  `instanceId` must match, and the extension must already own a namespace
+  (`createNamespace()` first). Calendar data is not namespaced, so no
+  further ownership is checked.
+- Identity failures **throw**, and so do formatting failures (bad scalar,
+  unknown style, unknown field, unimplemented calendar, `custom` without a
+  pattern). Unlike this module's warn-and-null CRUD calls, a caller asking
+  for a string is never handed a silent `null` in its place.
+
+**10.5 Verification**
+
+`tests/calendar-format.test.js`; the full suite passes under `npm test`.

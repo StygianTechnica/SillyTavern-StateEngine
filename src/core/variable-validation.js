@@ -1,6 +1,8 @@
 // State Engine — variable value validation and coercion
 
 import { getDefaultValue, clampNumber } from './variable-schema.js';
+import { DEFAULT_CALENDAR_ID } from './settings-core.js';
+import { toScalar } from './calendar-engine.js';
 
 // Validate a value against type constraints; return {valid: boolean, value: coerced, error?: string}
 export function validateValueStrict(def, raw) {
@@ -97,6 +99,23 @@ export function validateValueStrict(def, raw) {
                 break;
             }
 
+            case 'datetime': {
+                // Scalar seconds. A finite number, a numeric string (the
+                // tracker's text field hands numbers over as text) or an ISO
+                // date/datetime string ("2026-09-18 22:00"), the latter
+                // converted through the variable's calendar. Anything else -
+                // including a well-shaped date that does not exist - is
+                // rejected.
+                const scalar = toScalar(def.calendar || DEFAULT_CALENDAR_ID, raw);
+                if (scalar === null) {
+                    errors.push(`"${raw}" is not a valid datetime (expected a number of seconds or an ISO date such as "2026-09-18 22:00")`);
+                    coerced = getDefaultValue(def);
+                } else {
+                    coerced = scalar;
+                }
+                break;
+            }
+
             case 'calculated': {
                 // Calculated values are produced deterministically by
                 // expression-dsl.js (always a number, string, or boolean -
@@ -152,6 +171,8 @@ export function coerceValue(def, raw) {
             }
             return getDefaultValue(def);
         }
+        case 'datetime':
+            return toScalar(def.calendar || DEFAULT_CALENDAR_ID, raw) ?? getDefaultValue(def);
         case 'calculated':
             return raw;
         default:

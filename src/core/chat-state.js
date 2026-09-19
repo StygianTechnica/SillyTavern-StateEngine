@@ -21,6 +21,8 @@ import { LOG_PREFIX, getSettings, persistSettings } from './settings-core.js';
 import { setMacroValue, deleteMacroValue } from './macro-store.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
 import { getDefaultValue } from './variable-schema.js';
+import { DEFAULT_CALENDAR_ID } from './settings-core.js';
+import { incrementScalar, toScalar } from './calendar-engine.js';
 
 const SCHEMA_VERSION = 1;
 
@@ -377,7 +379,7 @@ export function applyIncrement(chatId, varName, delta, def) {
             // case) - visible verbatim wherever something reads state.variables
             // directly rather than through getMacroValue's array-aware fallback
             // (e.g. the Variable Management tab's JSON preview).
-            state.variables[varName] = { value: def?.type === 'array' ? [] : (def?.type === 'boolean' ? false : 0), def: def ?? null };
+            state.variables[varName] = { value: def?.type === 'array' ? [] : (def?.type === 'boolean' ? false : (def?.type === 'datetime' ? getDefaultValue(def) : 0)), def: def ?? null };
             entry = state.variables[varName];
         } else if (def) {
             // Keep the stored schema snapshot current. This never sources
@@ -420,6 +422,15 @@ export function applyIncrement(chatId, varName, delta, def) {
             // number, breaking boolean logic (`!flag`, `flag && ...`) for
             // any calculated variable depending on it.
             next = typeof entry.value === 'boolean' ? !entry.value : !(Number(entry.value) !== 0);
+        } else if (def?.type === 'datetime') {
+            // Scalar seconds, but NOT a number increment: delta is a string
+            // like "1h"/"1d"/"1mo"/"1y" (a bare number is seconds) and month
+            // and year steps follow the calendar's real month lengths and
+            // leap years, so the calendar does the arithmetic. A delta the
+            // calendar cannot parse throws into the catch below and leaves
+            // the stored value untouched.
+            const current = toScalar(def.calendar || DEFAULT_CALENDAR_ID, entry.value) ?? getDefaultValue(def);
+            next = incrementScalar(def.calendar || DEFAULT_CALENDAR_ID, current, delta);
         } else {
             // Convert current value to number safely
             let current = Number(entry.value);
@@ -470,8 +481,13 @@ export function resetValueIfTypeChanged(chatId, def) {
         if (!oldType || oldType === newType) return;
 
         // getDefaultValue(), not raw def.defaultValue - same reasoning as
-        // seedVariablesForChat() above.
-        const next = getDefaultValue(def);
+        // seedVariablesForChat() above. Exception: a variable that just
+        // became a datetime keeps what it already held when that value is
+        // convertible to scalar time (a number of seconds, or an ISO date
+        // string) - only an unconvertible value falls back to the default.
+        const next = newType === 'datetime'
+            ? (toScalar(def.calendar || DEFAULT_CALENDAR_ID, entry.value) ?? getDefaultValue(def))
+            : getDefaultValue(def);
         state.variables[def.name] = {
             value: next,
             def: keepSnapshotBatch(def, entry.def),

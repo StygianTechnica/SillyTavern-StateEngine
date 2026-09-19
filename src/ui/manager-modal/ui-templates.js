@@ -193,6 +193,7 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars) {
                 <option value="enum" ${d.type === 'enum' ? 'selected' : ''}>Enum</option>
                 <option value="array" ${d.type === 'array' ? 'selected' : ''}>Array</option>
                 <option value="calculated" ${d.type === 'calculated' ? 'selected' : ''}>Calculated</option>
+                <option value="datetime" ${d.type === 'datetime' ? 'selected' : ''}>Date &amp; time</option>
             </select>
 
             ${d.type === 'array' ? `
@@ -209,7 +210,7 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars) {
             ` : `
                 <input class="text_pole se-manager-var-field"
                     data-field="defaultValue"
-                    placeholder="Default value"
+                    placeholder="${d.type === 'datetime' ? 'Default date-time, e.g. 2026-09-18 22:00:00' : 'Default value'}"
                     value="${escapeHtml(d.defaultValue)}" />
             `}
 
@@ -374,6 +375,13 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars) {
                     <!-- Type-specific increment controls -->
                     ${d.type === 'number' ? `
                         <label>Increment amount:</label>
+                        <input class="text_pole se-manager-var-field"
+                            data-field="increment.delta"
+                            value="${escapeHtml(d.increment.delta)}" />
+                    ` : ''}
+
+                    ${d.type === 'datetime' ? `
+                        <label>Advance by (e.g. 1h, 1d, 1mo, 1y):</label>
                         <input class="text_pole se-manager-var-field"
                             data-field="increment.delta"
                             value="${escapeHtml(d.increment.delta)}" />

@@ -7,6 +7,7 @@
 import { vi } from 'vitest';
 import { getSettings, persistSettings } from '../../src/core/settings-core.js';
 import { getDefaultValue } from '../../src/core/variable-schema.js';
+import { incrementScalar } from '../../src/core/calendar-engine.js';
 import context from './context.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.mock.js';
 
@@ -48,8 +49,12 @@ export const setVar = vi.fn((chatId, varName, value, def) => {
 
 export const applyIncrement = vi.fn((chatId, varName, delta, def) => {
     const entry = loadChatState(chatId).variables[varName];
-    const current = entry ? entry.value : 0;
-    const next = def?.type === 'boolean' ? !current : Number(current) + Number(delta);
+    const current = entry ? entry.value : (def?.type === 'datetime' ? getDefaultValue(def) : 0);
+    // Datetime steps through the REAL calendar engine, like the real module
+    // (whose own applyIncrement is tested directly in datetime.test.js).
+    const next = def?.type === 'datetime'
+        ? incrementScalar(def.calendar || 'gregorian', Number(current), delta)
+        : def?.type === 'boolean' ? !current : Number(current) + Number(delta);
     setVar(chatId, varName, next, def);
 });
 

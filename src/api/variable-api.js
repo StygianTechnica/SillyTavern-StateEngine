@@ -33,10 +33,12 @@
 
 import { LOG_PREFIX, persistSettings } from '../core/settings-core.js';
 import { validateNamespace } from './namespace-manager.js';
-import { validateCallerIdentity } from './identity.js';
+import { validateCallerIdentity, resolveCallerRecord } from './identity.js';
 import { normalizeBatchName } from './batch-rules.js';
 import { findPresetEntry } from './preset-api.js';
-import { blankDefinition } from '../core/variable-schema.js';
+import { blankDefinition, TIME_BATCH } from '../core/variable-schema.js';
+import * as calendarEngine from '../core/calendar-engine.js';
+import { getCalendar, toScalar } from '../core/calendar-engine.js';
 import { isVariableNameTaken } from '../core/preset-manager.js';
 import { seedVariablesForChat, resetValueIfTypeChanged, deleteVariableValueEverywhere } from '../core/chat-state.js';
 import { recalculateAllForChat, evaluateCalculatedVariable, recalculateDependents } from '../core/calculated-engine.js';
@@ -68,6 +70,30 @@ function checkedBatch(value, fnName) {
         console.warn(LOG_PREFIX, `${fnName}: ${err.message}`);
         return { ok: false };
     }
+}
+
+// Datetime rules (requirements spec 1.21) shared by createVariable() and
+// updateVariable(), checked on the fully-merged definition: the calendar it
+// names must exist, its unit must be the one this engine stores ("seconds"),
+// and its defaultValue must be convertible to scalar time. On success the
+// defaultValue is rewritten as that scalar, the canonical stored form, so an
+// ISO string given by a caller is converted once, here. Returns { ok: true }
+// or { ok: false, error } - never throws.
+function checkedDatetime(def, fnName) {
+    const calendarId = def.calendar ?? 'gregorian';
+    if (!getCalendar(calendarId)) {
+        return { ok: false, error: `${fnName}: calendar "${calendarId}" does not exist` };
+    }
+    if (def.unit !== undefined && def.unit !== 'seconds') {
+        return { ok: false, error: `${fnName}: datetime unit must be "seconds" (got "${def.unit}")` };
+    }
+    const scalar = toScalar(calendarId, def.defaultValue);
+    if (scalar === null) {
+        return { ok: false, error: `${fnName}: defaultValue ${JSON.stringify(def.defaultValue)} is not a number of seconds or an ISO date such as "2026-09-18 22:00"` };
+    }
+    def.calendar = calendarId;
+    def.defaultValue = scalar;
+    return { ok: true };
 }
 
 function currentChatId() {
@@ -228,6 +254,16 @@ export function createVariable(extensionId, instanceId, def) {
             if (!checked.ok) return null;
             fullDef.batch = checked.batch;
         }
+        if (fullDef.type === 'datetime') {
+            const datetime = checkedDatetime(fullDef, 'createVariable');
+            if (!datetime.ok) {
+                console.warn(LOG_PREFIX, datetime.error);
+                return null;
+            }
+            // Datetime variables live in batch "time" unless the caller
+            // chose another (a batch given in `def` was applied above).
+            if (def.batch === undefined) fullDef.batch = TIME_BATCH;
+        }
 
         // Nothing is written to settings.presets until validation (above)
         // has already passed - a rejected calculated definition never
@@ -332,6 +368,20 @@ export function updateVariable(extensionId, instanceId, ref, patch) {
         }
 
         const newDef = { ...def, ...safePatch };
+
+        if (newDef.type === 'datetime') {
+            // Same rules as createVariable(), on the merged definition - so a
+            // patch that changes only `calendar`, or only `defaultValue`, is
+            // checked against the other's stored value too.
+            const datetime = checkedDatetime(newDef, 'updateVariable');
+            if (!datetime.ok) {
+                console.warn(LOG_PREFIX, datetime.error);
+                return null;
+            }
+            // A variable that just BECAME a datetime moves into batch "time"
+            // unless the patch names a batch itself.
+            if (def.type !== 'datetime' && safePatch.batch === undefined) newDef.batch = TIME_BATCH;
+        }
 
         // Re-validate and re-derive dependencies only when the expression
         // is actually changing (including "just became calculated") - an
@@ -440,4 +490,36 @@ export function listVariables(extensionId, instanceId, namespace, presetName) {
         console.warn(LOG_PREFIX, 'listVariables failed (gracefully handled)', err);
         return [];
     }
+}
+
+// ---------------------------------------------------------------------------
+// Calendar formatting API (requirements spec 1.21.5)
+// ---------------------------------------------------------------------------
+//
+// None of these signatures carries a namespace, and validateCallerIdentity()
+// needs one - so, like assignBatch()/declareCapabilities(), the caller is
+// identified through resolveCallerRecord(): the instance id must match and the
+// extension must already own a namespace. Calendar data is not namespaced, so
+// nothing further is checked. Identity failures throw; so do formatting
+// failures (unlike this module's warn-and-null CRUD) - a caller asking for a
+// string should never be handed a silent null in its place.
+
+export function getCalendarDefinitions(extensionId, instanceId) {
+    resolveCallerRecord(extensionId, instanceId);
+    return calendarEngine.listCalendars();
+}
+
+export function getCalendarDefinition(extensionId, instanceId, calendarId) {
+    resolveCallerRecord(extensionId, instanceId);
+    return calendarEngine.getCalendarDefinition(calendarId);
+}
+
+export function formatDateTime(extensionId, instanceId, calendarId, scalarTime, options) {
+    resolveCallerRecord(extensionId, instanceId);
+    return calendarEngine.format(calendarId, scalarTime, options);
+}
+
+export function formatDateTimePartial(extensionId, instanceId, calendarId, scalarTime, fields) {
+    resolveCallerRecord(extensionId, instanceId);
+    return calendarEngine.formatPartial(calendarId, scalarTime, fields);
 }
