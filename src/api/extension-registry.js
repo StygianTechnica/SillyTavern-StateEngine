@@ -1,8 +1,13 @@
 // Extension Registry
 //
-// registerExtension()/unregisterExtension() are the only writers of
-// settings.extensions — namespace-manager.js owns that store's shape and
-// the read-only validateNamespace()/ownsNamespace() checks built on it.
+// unregisterExtension() removes an extension's record from
+// settings.extensions (namespace-manager.js owns that store's shape and its
+// createNamespace() writer). The old registerExtension(info) and
+// getRegisteredExtensions() that used to live here were replaced by
+// createNamespace()/getNamespaces() (namespace-manager.js) and the
+// identity-checked registerExtension()/getRegisteredExtensions() in
+// extension-registration.js - same names, new meaning, so they cannot
+// coexist in one export surface.
 
 import { LOG_PREFIX, getSettings, persistSettings } from '../core/settings-core.js';
 import { getExtensionsStore } from './namespace-manager.js';
@@ -10,42 +15,10 @@ import { deletePreset as deletePresetCore } from '../core/preset-manager.js';
 import { deleteVariableValueEverywhere } from '../core/chat-state.js';
 import { refreshVariableMacros } from '../core/macro-registration.js';
 
-// info: { namespace, name?, id?, ... }. `namespace` must be unique among
-// currently-registered extensions. `id` defaults to `namespace` — see
-// namespace-manager.js's ownsNamespace() comment for why the two are kept
-// as (currently identical) separate fields rather than collapsed into one.
-export function registerExtension(info) {
-    try {
-        if (!info || !info.namespace) {
-            console.warn(LOG_PREFIX, 'registerExtension requires info.namespace');
-            return null;
-        }
-        const extensions = getExtensionsStore();
-        if (Object.prototype.hasOwnProperty.call(extensions, info.namespace)) {
-            console.warn(LOG_PREFIX, `registerExtension: namespace "${info.namespace}" is already registered`);
-            return null;
-        }
-
-        const record = {
-            ...info,
-            id: info.id || info.namespace,
-            namespace: info.namespace,
-            name: info.name || info.namespace,
-            registeredAt: Date.now(),
-        };
-        extensions[info.namespace] = record;
-        persistSettings();
-        return record;
-    } catch (err) {
-        console.warn(LOG_PREFIX, 'registerExtension failed (gracefully handled)', err);
-        return null;
-    }
-}
-
 // Removes the extension's own metadata, then deletes every preset (and
 // that preset's stored variable values, everywhere) whose preset.namespace
 // matches — the namespace this extension owned no longer has an owner, so
-// nothing should be left behind for a later registerExtension() call under
+// nothing should be left behind for a later createNamespace() call under
 // the same namespace to silently inherit. Presets with no `namespace`
 // field (created directly through preset-manager.js/the manager modal,
 // never through this API layer) are untouched — they were never owned by
@@ -85,14 +58,5 @@ export function unregisterExtension(id) {
     } catch (err) {
         console.warn(LOG_PREFIX, 'unregisterExtension failed (gracefully handled)', err);
         return false;
-    }
-}
-
-export function getRegisteredExtensions() {
-    try {
-        return Object.values(getExtensionsStore());
-    } catch (err) {
-        console.warn(LOG_PREFIX, 'getRegisteredExtensions failed (gracefully handled)', err);
-        return [];
     }
 }

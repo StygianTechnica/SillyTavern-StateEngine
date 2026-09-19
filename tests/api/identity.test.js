@@ -39,6 +39,7 @@ const ARGS = {
     deleteVariable: (t) => [{ namespace: t, presetName: 'P', variableName: 'v' }],
     getVariable: (t) => [{ namespace: t, presetName: 'P', variableName: 'v' }],
     listVariables: (t) => [t, 'P'],
+    registerExtension: (t) => [{ namespace: t, variables: [], capabilities: [], description: '' }],
     validateCalculatedDefinition: (t) => [{ type: 'calculated', expression: '1', namespace: t, presetName: 'P' }],
     applyCalculatedDefinition: (t) => [{ namespace: t, presetName: 'P', variableName: 'v' }, { name: 'x' }, []],
     registerEventSource: (t) => [{ namespace: t, eventName: 'e' }],
@@ -118,7 +119,7 @@ describe('identity', () => {
         });
 
         it('honours an extension id that differs from its namespace', () => {
-            stateEngine.registerExtension({ namespace: 'pp', id: 'pretty-panels' });
+            stateEngine.createNamespace('pretty-panels', instanceId, 'pp');
             expect(() => validateCallerIdentity('pretty-panels', instanceId, 'pp')).not.toThrow();
             expect(() => validateCallerIdentity('pp', instanceId, 'pp')).toThrow("Extension 'pp' does not own namespace 'pp'");
         });
@@ -166,6 +167,119 @@ describe('identity', () => {
 
         it('allows the correct identity (it may still return null/false for missing data - but never throws)', () => {
             expect(() => invoke(name, 'se', instanceId, 'se')).not.toThrow();
+        });
+    });
+
+    // Their signatures carry no namespace - the target is the caller's OWN
+    // record - so they don't fit the (target namespace) table above.
+    describe.each(['declareCapabilities', 'declareDependencies'])('%s', (name) => {
+        const call = (ext, inst, list = ['ui.panel']) => stateEngine[name](ext, inst, list);
+
+        beforeEach(() => {
+            registerNamespaces('pp');
+        });
+
+        it.each([
+            ['a wrong instanceId', 'nope'],
+            ['a missing instanceId', undefined],
+            ['a null instanceId', null],
+            ['a non-string instanceId', 7],
+        ])('rejects %s and throws', (_label, bad) => {
+            expect(() => call('pp', bad)).toThrow(WRONG_INSTANCE);
+        });
+
+        it('checks the instance before anything about the extension', () => {
+            expect(() => call('ghost', 'nope')).toThrow(WRONG_INSTANCE);
+        });
+
+        it.each([['ghost'], [undefined], [''], [null]])('rejects an extension that owns no namespace (%j)', (id) => {
+            expect(() => call(id, instanceId)).toThrow("does not own a namespace - call createNamespace() first");
+        });
+
+        it('rejects a namespace string used as an extension id (ownership is by extension id)', () => {
+            stateEngine.createNamespace('prettypanels', instanceId, 'pretty');
+            expect(() => call('pretty', instanceId)).toThrow(/does not own a namespace/);
+        });
+
+        it('a rejected call has no side effects', () => {
+            const before = JSON.stringify(settings.snapshot());
+            context.saveSettingsDebounced.mockClear();
+
+            expect(() => call('pp', 'nope')).toThrow();
+            expect(() => call('ghost', instanceId)).toThrow();
+
+            expect(JSON.stringify(settings.snapshot())).toBe(before);
+            expect(context.saveSettingsDebounced).not.toHaveBeenCalled();
+        });
+
+        it('allows the correct identity for the caller\'s own namespace', () => {
+            expect(() => call('pp', instanceId)).not.toThrow();
+            expect(() => call('se', instanceId)).not.toThrow(); // the built-in extension owns `se`
+        });
+
+        it('only ever affects the caller\'s own record', () => {
+            call('pp', instanceId, ['pp.only']);
+            const other = stateEngine.getCapabilityGraph();
+            expect(other.se).toEqual({ capabilities: [], dependsOn: [] });
+        });
+
+        it('follows namespace ownership: allowed once createNamespace has run, rejected again after unregisterExtension', () => {
+            expect(() => call('late', instanceId)).toThrow(/does not own a namespace/);
+            stateEngine.createNamespace('late', instanceId, 'late');
+            expect(() => call('late', instanceId)).not.toThrow();
+            stateEngine.unregisterExtension('late');
+            expect(() => call('late', instanceId)).toThrow(/does not own a namespace/);
+        });
+
+        it('is identity-checked by the real validateCallerIdentity path (agrees with ownsNamespace)', () => {
+            for (const ext of ['pp', 'se', 'ghost']) {
+                const owns = ownsNamespace(ext, ext);
+                const allowed = (() => { try { call(ext, instanceId); return true; } catch { return false; } })();
+                expect(allowed).toBe(owns);
+            }
+        });
+    });
+
+    describe('createNamespace (instance identity only - it runs before the caller owns anything)', () => {
+        it.each([
+            ['a wrong instanceId', 'nope'],
+            ['a missing instanceId', undefined],
+            ['a null instanceId', null],
+            ['a non-string instanceId', 7],
+        ])('rejects %s, throws, and claims nothing', (_label, bad) => {
+            const before = JSON.stringify(settings.snapshot());
+            context.saveSettingsDebounced.mockClear();
+
+            expect(() => stateEngine.createNamespace('pp', bad, 'pp')).toThrow(WRONG_INSTANCE);
+
+            expect(JSON.stringify(settings.snapshot())).toBe(before);
+            expect(context.saveSettingsDebounced).not.toHaveBeenCalled();
+        });
+
+        it('allows the correct instance without any prior ownership', () => {
+            expect(ownsNamespace('pp', 'pp')).toBe(false);
+            expect(() => stateEngine.createNamespace('pp', instanceId, 'pp')).not.toThrow();
+            expect(ownsNamespace('pp', 'pp')).toBe(true);
+        });
+
+        it('confers ownership only to the extension named - which is what makes validateCallerIdentity pass for it', () => {
+            stateEngine.createNamespace('pp', instanceId, 'pp');
+            expect(() => validateCallerIdentity('pp', instanceId, 'pp')).not.toThrow();
+            expect(() => validateCallerIdentity('zz', instanceId, 'pp')).toThrow("Extension 'zz' does not own namespace 'pp'");
+        });
+
+        it('cannot be used to take over a namespace someone else already owns', () => {
+            expect(() => stateEngine.createNamespace('intruder', instanceId, 'se')).toThrow("Namespace 'se' is already taken");
+            expect(() => validateCallerIdentity('intruder', instanceId, 'se')).toThrow("Extension 'intruder' does not own namespace 'se'");
+            expect(() => validateCallerIdentity('se', instanceId, 'se')).not.toThrow();
+        });
+
+        it('is the one identity-taking function that is not ownership-checked', () => {
+            registerNamespaces('pp');
+            // a non-owner is rejected by every ownership-checked function...
+            expect(() => stateEngine.listPresets('zz', instanceId, 'pp')).toThrow("does not own namespace 'pp'");
+            // ...but may create a namespace of its own
+            expect(() => stateEngine.createNamespace('zz', instanceId, 'zz')).not.toThrow();
         });
     });
 

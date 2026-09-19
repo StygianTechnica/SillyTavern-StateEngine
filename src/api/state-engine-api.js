@@ -5,6 +5,8 @@ import * as presets from './preset-api.js';
 import * as vars from './variable-api.js';
 import * as events from './event-api.js';
 import * as ext from './extension-registry.js';
+import * as reg from './extension-registration.js';
+import * as cap from './capability-graph.js';
 import * as deps from './dependency-graph.js';
 import * as indep from './independent-presets.js';
 
@@ -14,6 +16,8 @@ export const stateEngine = {
     ...vars,
     ...events,
     ...ext,
+    ...reg,
+    ...cap,
     ...deps,
     ...indep,
 };

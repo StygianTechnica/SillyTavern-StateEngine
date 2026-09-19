@@ -88,8 +88,10 @@ namespace__variableName     (the real, stored, single-string name)
 `namespace` identifies which extension owns the thing being addressed.
 This extension's own presets/variables use the namespace `se` (State
 Engine). A hypothetical Pretty Panels preset would use `pp`, and so on —
-the exact namespace string an extension uses is whatever it registers with
-`registerExtension()` (Section 3).
+the exact namespace string an extension uses is whatever it claims with
+`createNamespace()` (Section 8), and every claimed namespace is discoverable
+through `getNamespaces()` and, once the owner declares it,
+`getRegisteredExtensions()` / `getExtensionRegistration()`.
 
 **Ownership rules:**
 
@@ -138,12 +140,31 @@ current bodies are empty stubs (Section 5 status note applies).
 two arguments - e.g. `createVariable(extensionId, instanceId, def)`. The
 lists below show the remaining arguments only.
 
-**Extension Registration** (`src/api/extension-registry.js`)
+**Namespaces and Extension Registration** (`src/api/namespace-manager.js`,
+`src/api/extension-registration.js`, `src/api/extension-registry.js` — full
+specification in Section 8; this replaces the original
+`registerExtension(info)` / array-returning `getRegisteredExtensions()`,
+whose names now belong to the metadata-registration API)
 
 ```
-registerExtension(info)          // info: { namespace, name, ... } — claims a namespace
+createNamespace(extensionId, instanceId, namespace)   // claim a namespace (instance identity only)
+getNamespaces()                                        // every claimed namespace
+registerExtension(extensionId, instanceId, metadata)   // declare what the extension provides
+getRegisteredExtensions()                              // { extensionId: registration }
+getExtensionRegistration(extensionId)                  // registration | null
 unregisterExtension(id)
-getRegisteredExtensions()
+```
+
+**Extension Capability Graph** (`src/api/capability-graph.js` — full
+specification in Section 9)
+
+```
+declareCapabilities(extensionId, instanceId, capabilities)   // what the extension provides
+declareDependencies(extensionId, instanceId, capabilityList) // what the extension depends on
+getCapabilityGraph()                                          // { extensionId: { capabilities, dependsOn } }
+getExtensionsProviding(capability)                            // extensionId[]
+getExtensionCapabilities(extensionId)                         // string[]
+getExtensionDependencies(extensionId)                         // string[]
 ```
 
 **Preset CRUD** (`src/api/preset-api.js`)
@@ -220,9 +241,10 @@ None of the three are designed in detail yet — this module is a named
 placeholder for where that design will live, not a description of
 existing batching/dispatch behavior (there is none yet).
 
-**Introspection.** `getRegisteredExtensions()`, `listPresets()`,
-`listVariables()`, `getDependencies()`, and `getDependents()` together
-form the read-only introspection surface — everything a consumer needs to
+**Introspection.** `getNamespaces()`, `getRegisteredExtensions()`,
+`getExtensionRegistration()`, `listPresets()`, `listVariables()`,
+`getDependencies()`, and `getDependents()` together form the read-only
+introspection surface — everything a consumer needs to
 discover what exists without mutating anything.
 
 SECTION 4 — INVARIANTS
@@ -305,14 +327,17 @@ own explicit instruction to leave UI rewiring for a later pass.
 **Real implementation, by module:**
 
 - `namespace-manager.js` / `extension-registry.js` — `settings.extensions`
-  (keyed by namespace) is the registry. `registerExtension`/
-  `unregisterExtension`/`getRegisteredExtensions`/`validateNamespace`/
-  `ownsNamespace` are all real. `unregisterExtension` deletes every preset
+  (keyed by namespace) is the registry. `unregisterExtension`/
+  `validateNamespace`/`ownsNamespace` are real, and — as of Section 8
+  (2026-09-18) — so are `createNamespace`/`getNamespaces` (they were empty
+  stubs when this section was first written). The original
+  `registerExtension(info)` and array-returning `getRegisteredExtensions()`
+  that this bullet used to describe no longer exist in that form: Section 8
+  replaced them. `unregisterExtension` deletes every preset
   whose `preset.namespace` matches (via `preset-manager.js`'s own
   `deletePreset`, never reimplemented) plus their stored variable values
   (`chat-state.js`'s `deleteVariableValueEverywhere`), then refreshes
-  macros. `createNamespace`/`getNamespaces` remain empty stubs — not in
-  this pass's required-implementation list.
+  macros, and takes the extension's `registration` metadata with its record.
 - `preset-api.js` — `createPreset`/`updatePreset`/`deletePreset`/
   `activatePreset`/`deactivatePreset`/`listPresets` all delegate to
   `preset-manager.js` (`createPreset`, `renamePreset`, `deletePreset`,
@@ -751,9 +776,10 @@ Deviations from the request, each forced by what the code actually is:
    call, having already checked identity once) and an identity-checked
    exported wrapper.
 4. **Not covered:** `dependency-graph.js`'s `getDependencies`/
-   `getDependents`, and `extension-registry.js`/`namespace-manager.js`
-   (outside the named modules) remain unguarded. Dependency introspection
-   is therefore still readable across namespaces.
+   `getDependents`, and `unregisterExtension`/`validateNamespace`/
+   `ownsNamespace`/`getNamespaces` remain unguarded (Section 8 added
+   identity to `createNamespace` and `registerExtension` only).
+   Dependency introspection is therefore still readable across namespaces.
 5. **Manager-modal consequence.** The adapters always identify as `'se'`,
    so a preset owned by another namespace can no longer be renamed,
    deleted, or toggled from the manager modal. The adapters catch the
@@ -780,3 +806,416 @@ object and replacing `preset.variables[varId]` wholesale, mirroring how
 `src/ui/manager-modal/ui-events.js`'s inline editor already avoids this
 exact trap. Caught by this module's own functional smoke test, not by
 inspection.
+
+SECTION 8 — EXTENSION REGISTRATION API (2026-09-18)
+
+Lets an extension claim a namespace, declare what it provides there, and
+lets other extensions discover both. Three modules: `namespace-manager.js`
+(claiming and listing namespaces), `extension-registration.js` (the
+metadata declaration and discovery), `extension-registry.js` (only
+`unregisterExtension` remains there). All synchronous, like every other
+CRUD call in this layer (Section 4).
+
+**8.1 Namespace manager (updated)**
+
+Namespaces are now *discoverable*: any caller can list every claimed
+namespace, and see who declared what in it (8.2), with no identity.
+
+**`createNamespace` is the prerequisite for everything that follows.**
+`registerExtension` (8.2), `declareCapabilities` and `declareDependencies`
+(Section 9) all act on the caller's *own* namespace record, which only
+exists once `createNamespace` has run. Calling any of them for an
+extension that owns no namespace throws (`registerExtension`: `Extension
+'<id>' does not own namespace '<ns>'`; the two declare functions:
+`Extension '<id>' does not own a namespace - call createNamespace() first`).
+Unregistering an extension removes the namespace, so those calls are
+rejected again afterwards.
+
+```
+createNamespace(extensionId, instanceId, namespace)   -> record { id, namespace, name, registeredAt }
+getNamespaces()                                        -> string[]   (every claimed namespace, incl. built-in `se`)
+validateNamespace(namespace)                           -> boolean
+ownsNamespace(extensionId, namespace)                  -> boolean
+```
+
+- `createNamespace` checks the **instance** only (`validateInstanceId` in
+  `identity.js`), not ownership: it runs before the caller owns anything,
+  it is what creates the ownership. A wrong/missing/non-string `instanceId`
+  throws `State Engine API call rejected: wrong instance`; the instance is
+  checked before anything about the arguments.
+- Adds a record to `settings.extensions`, **keyed by namespace**, in the
+  same shape the core migration gives the built-in `se` record
+  (`{ id, namespace, name, registeredAt }`), and persists. `id` is the
+  `extensionId`. Ownership everywhere else (`ownsNamespace`,
+  `validateCallerIdentity`) matches on that `id`.
+- Uniqueness: a namespace already claimed by a *different* extension
+  throws `Namespace '<ns>' is already taken` (this includes `se`). An
+  extension owns **at most one** namespace - a second, different one
+  throws `Extension '<id>' already owns namespace '<ns>'`. Re-creating the
+  namespace an extension already owns is **idempotent**: it returns the
+  existing record and writes nothing, because settings persist across page
+  loads and an extension calling this on every startup must not fail on
+  its second load.
+- `namespace` must match `^[A-Za-z][A-Za-z0-9]*$`, else it throws
+  `Namespace '<x>' is invalid: ...`. A namespace is a prefix of every
+  qualified variable name (`pp__mood`, Section 2) and of every event name
+  (`pp.roll`), so it may contain neither `_` nor `.`, and must start with a
+  letter so the qualified name still tokenizes as one DSL identifier.
+- `getNamespaces` needs no identity and returns a fresh array. It lists a
+  namespace whether or not its owner ever called `registerExtension`.
+
+**8.2 Extension registration**
+
+```
+registerExtension(extensionId, instanceId, metadata)   -> registration (a copy of what was stored)
+getRegisteredExtensions()                               -> { [extensionId]: registration }
+getExtensionRegistration(extensionId)                   -> registration | null
+```
+
+*Identity requirements.* `registerExtension` runs the full
+`validateCallerIdentity(extensionId, instanceId, metadata.namespace)`
+(Section 7.4) **before anything else**: a wrong instance throws `State
+Engine API call rejected: wrong instance`; a missing `metadata.namespace`
+throws `... no target namespace supplied ...`. `getRegisteredExtensions`
+and `getExtensionRegistration` take no identity - discovery is open by
+design, read-only, and returns copies.
+
+*Namespace ownership requirements.* `extensionId` must own
+`metadata.namespace` (it created it with `createNamespace`). Otherwise it
+throws `Extension '<id>' does not own namespace '<ns>'` - so no extension
+can register, overwrite, or blank another extension's registration, and an
+unclaimed namespace can't be registered at all.
+
+*Metadata schema.* Exactly these five fields; anything else is rejected
+(`dependsOn` was added by Section 9, which also explains how
+`capabilities`/`dependsOn` are stored and shared with the capability graph):
+
+| field | type | required | default |
+|---|---|---|---|
+| `namespace` | non-empty string | yes | - |
+| `variables` | array of strings | no | `[]` |
+| `capabilities` | array of non-empty strings | no | `[]` |
+| `dependsOn` | array of non-empty strings | no | `[]` |
+| `description` | string | no | `''` |
+
+*Validation rules.* Checked after identity; every failure throws an
+`Error` whose message starts `Extension registration rejected: `, and
+nothing is written:
+- `metadata` must be an object; unknown fields are rejected (not silently
+  dropped) with `unknown metadata field '<key>'`.
+- **Variables must be fully qualified**: each entry must be exactly the
+  stored form a variable takes in the caller's own namespace -
+  `<namespace>__<localName>` - with a non-empty local part, and the whole
+  name a single valid identifier. `mood`, `zz__mood` (another namespace),
+  `pp__` (no local part), `pp.mood` (a dot breaks the expression DSL,
+  Section 2) and `pp__a.b` are all rejected with `variable '<name>' is not
+  fully qualified - expected '<ns>__<name>' in namespace '<ns>'`.
+- **Capabilities and dependencies must be strings**: any non-string or
+  empty-string entry in `capabilities` or `dependsOn` is rejected
+  (`metadata.capabilities must contain only non-empty strings`, likewise
+  `metadata.dependsOn`). Non-array `variables`/`capabilities`/`dependsOn`
+  and a non-string `description` are rejected too.
+- Declared variables **need not exist yet** - registration is a
+  declaration, not a reference check.
+- `variables`, `capabilities` and `dependsOn` are de-duplicated, first
+  occurrence wins.
+
+*Persistence.* The extension's own record in `settings.extensions` is the
+only thing written, and is persisted (`persistSettings`, i.e. the
+context's `saveSettingsDebounced`). The record's `registration` field holds
+`namespace`, `variables` and `description`; `capabilities` and `dependsOn`
+are written to the record itself, through `declareCapabilities` /
+`declareDependencies` (Section 9), and merged back into every registration
+that discovery returns - so they exist once, and can never disagree with
+the capability graph. Registering **replaces** any previous registration
+outright - it is not merged, and a field left out of the new call is
+cleared, not kept; that includes `capabilities` and `dependsOn`, so a
+registration that omits them clears the extension's capability graph
+entry. A rejected call leaves the previous registration and graph entry
+untouched (everything is validated before anything is written). What is stored and what is returned/discovered are
+copies: mutating a caller's input object, a return value, or a discovery
+result never changes the store. `unregisterExtension` removes the whole
+record, registration included; a namespace re-created afterwards starts
+with no registration.
+
+*Discovery semantics.* `getRegisteredExtensions()` returns only extensions
+that have called `registerExtension`, keyed by **extension id** (not
+namespace). An extension that merely claimed a namespace appears in
+`getNamespaces()` but not here, and `getExtensionRegistration(id)` returns
+`null` for it, for an unknown id, and for any non-string id.
+
+*No side effects.* Registration writes exactly one thing - the
+extension's own record in `settings.extensions` (its `registration`,
+`capabilities` and `dependsOn`). It does not create or
+touch variables or presets, does not seed, write, increment, or delete
+anything in chat-state, does not evaluate or recalculate anything or alter
+any dependency edge, does not refresh macros, and neither registers nor
+fires events. This is asserted by tests against the mocked chat-state,
+preset-manager, calculated-engine, macro-registration and event-engine
+(each mock's call history stays empty, and a before/after settings
+snapshot differs only in the extension record's own `registration`,
+`capabilities` and `dependsOn` fields).
+
+**8.3 Deviations from the request, each forced by what the code was**
+
+1. **Name collision.** `extension-registry.js` already exported
+   `registerExtension(info)` (claim a namespace, no identity) and an
+   array-returning `getRegisteredExtensions()`. Two star-exported
+   functions of the same name cannot coexist in the facade, so those two
+   were removed from `extension-registry.js` (only `unregisterExtension`
+   remains). Their namespace-claiming role is now `createNamespace`, and
+   the old array of records is `getNamespaces()` (names) plus the new
+   `getRegisteredExtensions()` (declared metadata). An old-style
+   `registerExtension({ namespace })` call now throws an identity error
+   rather than silently claiming a namespace.
+2. **`createNamespace` cannot use the full identity check.** The request
+   asked for an identity check, but `validateCallerIdentity` includes
+   `ownsNamespace`, which can never pass for a namespace that doesn't
+   exist yet. It uses the new instance-only `validateInstanceId`
+   (`validateCallerIdentity` now calls it internally - behaviour and
+   messages unchanged).
+3. **Storage key.** The request said
+   `settings.extensions[extensionId].registration`. The store is keyed by
+   *namespace* (the core-created `se` record already is, and
+   `validateNamespace`/`ownsNamespace` read it that way), so the
+   registration lives on the record found for that extension:
+   `settings.extensions[<namespace>].registration`. When the extension id
+   equals its namespace (the common case, and `se`) the two paths are the
+   same. Lookups by extension id use `findExtensionRecord`.
+4. **One namespace per extension, idempotent re-creation, namespace
+   format** (8.1) are additions the request left open; each closes an
+   ambiguity (which record holds `registration`? what happens on the
+   second page load? what is a legal prefix?).
+5. **Validation failures throw**, where `createPreset` and friends warn
+   and return `null`. A registration is a one-time declarative call; a
+   silent `null` would be easy to miss. Consistent with the identity
+   layer's "never silently no-op".
+
+**8.4 Honest limits**
+
+- Anyone holding the shared `instanceId` (Section 7.4 - a token in
+  settings, not a security boundary) can claim any free namespace string
+  for any extension id they choose, i.e. namespace squatting is possible.
+  The one-namespace-per-extension rule limits it to one squat per id.
+- `getRegisteredExtensions`/`getExtensionRegistration` are open, so a
+  registration's declared variables and capabilities are readable by every
+  extension. That is the point of discovery, but don't put anything in
+  `description` you would not want shown to all of them.
+- `variables` is a declaration only; nothing checks it against the
+  variables that actually exist, and nothing keeps it in sync when
+  variables are created or deleted afterwards.
+
+**8.5 Verification**
+
+`tests/api/extension-registration.test.js` (91 tests), the updated
+`namespace-manager.test.js` (49), `identity.test.js` and
+`state-engine-api.test.js`; the full suite passes under `npm test`.
+(Section 9 later changed where `capabilities` are stored and added
+`dependsOn`; the registration tests were updated to match.)
+
+SECTION 9 — EXTENSION CAPABILITY GRAPH (2026-09-18)
+
+**9.1 What it is**
+
+The capability graph is a global metadata layer over the extension records
+in `settings.extensions`. It describes:
+
+- the capabilities an extension **provides** (`record.capabilities`),
+- the capabilities an extension **depends on** (`record.dependsOn`),
+- and, derived from those two, the **relationships between extensions**:
+  extension A relates to extension B when A depends on a capability B
+  provides.
+
+A capability is a plain non-empty string. Dotted, lowercase names are the
+convention - `"ui.panel"`, `"data.inventory"`, `"world.location"`,
+`"character.stats"` - but that is convention, not syntax: nothing parses,
+namespaces, or validates the dots, and matching is exact string equality
+(`"ui"` does not match `"ui.panel"`).
+
+It is derived from **extension registration metadata**:
+`metadata.capabilities` -> provided capabilities, `metadata.dependsOn` ->
+required capabilities (9.3). `declareCapabilities` / `declareDependencies`
+are the same two writes, available on their own.
+
+It is a **separate layer from the variable dependency graph** (Section
+7.3, `getDependencies`/`getDependents`): that graph links calculated
+*variables* to the variables their expressions read; this one links
+*extensions* to abstract capability names. Nothing here creates, removes
+or evaluates a variable, and the two never share data.
+
+**9.2 API**
+
+```
+declareCapabilities(extensionId, instanceId, capabilities)    -> string[]  (a copy of what was stored)
+declareDependencies(extensionId, instanceId, capabilityList)  -> string[]
+getCapabilityGraph()                                          -> { [extensionId]: { capabilities: string[], dependsOn: string[] } }
+getExtensionsProviding(capability)                            -> extensionId[]
+getExtensionCapabilities(extensionId)                         -> string[]
+getExtensionDependencies(extensionId)                         -> string[]
+```
+
+*Storage.* `settings.extensions[<namespace>].capabilities` and
+`settings.extensions[<namespace>].dependsOn` on the extension's own record,
+persisted with `persistSettings` (the context's `saveSettingsDebounced`).
+These two fields are the **single source of truth**: registration does not
+keep a second copy (9.3), so a later `declareCapabilities` call can never
+leave a registration showing stale capabilities.
+
+*Semantics of the two writers.* Each **replaces** the whole list - it does
+not merge. An empty array clears it. Duplicates collapse (first occurrence
+wins). Each returns a copy of what was stored. The two lists are
+independent: writing one never touches the other. Validation completes
+before anything is written, so a rejected call leaves the previous list
+untouched.
+
+*Nothing requires a dependency to be satisfiable.* `declareDependencies`
+does not check that any extension provides the capability - a provider may
+simply not be installed yet. A consumer resolves a dependency with
+`getExtensionsProviding(cap)`; `[]` means unmet.
+
+*Discovery* - `getCapabilityGraph`, `getExtensionsProviding`,
+`getExtensionCapabilities`, `getExtensionDependencies` - takes **no
+identity**, is read-only, and always returns fresh copies (mutating a
+result never touches the store).
+- `getCapabilityGraph()` is keyed by **extension id** (not namespace) and
+  contains **every** extension that has claimed a namespace, including the
+  built-in `se`, with empty lists for one that has declared nothing. The
+  relationships between extensions are deliberately *not* stored as a
+  third field: they are derivable - for each capability in an extension's
+  `dependsOn`, `getExtensionsProviding` names the providers - and so stay
+  correct by construction.
+- `getExtensionsProviding(capability)` returns the ids of every extension
+  whose `capabilities` include that exact string, in namespace-claim
+  order; `[]` for none or for a non-string argument.
+- `getExtensionCapabilities` / `getExtensionDependencies` return the list,
+  or `[]` for an extension that declared nothing, an unknown id, or a
+  non-string id.
+
+**9.3 Integration with extension registration**
+
+`registerExtension(extensionId, instanceId, metadata)` (Section 8.2) now
+accepts `metadata.dependsOn` alongside `metadata.capabilities`, and
+writes both to the capability graph by calling `declareCapabilities` /
+`declareDependencies` internally, after the whole `metadata` object has
+been validated. Consequently:
+
+- The registration schema is now five fields: `namespace`, `variables`,
+  `capabilities`, `dependsOn`, `description`. **Unknown fields are still
+  rejected** (`unknown metadata field '<key>' (allowed: ...)`), so a
+  misspelling like `requires` or `provides` fails loudly instead of being
+  silently dropped.
+- The stored `registration` holds `namespace`, `variables` and
+  `description`. `capabilities` and `dependsOn` are read from the record
+  when a registration is returned, so `getExtensionRegistration(id)` and
+  `getRegisteredExtensions()` always agree with the capability graph -
+  including after a direct `declareCapabilities` call following
+  registration.
+- **A registration is the whole declaration.** Re-registering replaces the
+  previous metadata cleanly, and a registration that *omits*
+  `capabilities` or `dependsOn` **clears** them (exactly as it already
+  cleared `variables` and `description`). That includes capabilities the
+  extension had declared directly beforehand. An extension that wants to
+  manage its graph entry directly should not also call `registerExtension`
+  without them.
+- Both registration and the declare functions validate through one shared
+  function (`capability-rules.js`, internal - not exported from the
+  facade), so they can never disagree about what a legal list is; error
+  messages differ only in their prefix and label
+  (`Extension registration rejected: metadata.capabilities must ...` vs
+  `Capability declaration rejected: capabilities must ...`).
+- A rejected registration - bad `dependsOn`, bad `capabilities`, bad
+  `variables`, an unknown field, or failed identity - leaves both the
+  registration and the capability graph exactly as they were.
+- An extension that only ever called `declareCapabilities` /
+  `declareDependencies` appears in `getCapabilityGraph()` but not in
+  `getRegisteredExtensions()` (which lists only extensions that called
+  `registerExtension`).
+- `unregisterExtension` removes the whole record, so the extension leaves
+  the graph; a namespace re-created afterwards starts empty.
+
+**9.4 Validation rules**
+
+- **Identity enforcement.** Both writers check the *instance* first
+  (`validateInstanceId`: wrong/missing/non-string -> `State Engine API call
+  rejected: wrong instance`) - before the extension is even looked up, so
+  a wrong instance never reveals which extensions exist - and then run the
+  real `validateCallerIdentity`. They throw; they never return `null`.
+- **Namespace ownership enforcement.** Neither signature carries a
+  namespace, so the target is the **caller's own record**, found by
+  `findExtensionRecord(extensionId)`. An extension id that owns no
+  namespace (unknown, empty, non-string, a namespace string mistaken for
+  an id, or an extension since unregistered) is rejected with `Extension
+  '<id>' does not own a namespace - call createNamespace() first`. An
+  extension can therefore only ever write its own entry; there is no way to
+  address another's. **`createNamespace` (Section 8.1) is the
+  prerequisite** for any capability declaration.
+- **Capabilities must be strings.** `capabilities` must be an array of
+  non-empty strings (`capabilities must be an array of strings` /
+  `capabilities must contain only non-empty strings`).
+- **Dependencies must be strings.** Same rule for `capabilityList` /
+  `metadata.dependsOn` (`dependencies must ...` / `metadata.dependsOn must
+  ...`).
+- **Unknown fields are rejected** wherever a metadata object is accepted -
+  i.e. `registerExtension`. The two declare functions take a bare array, so
+  there is no field to be unknown; passing an object is rejected as a
+  non-array.
+- **No side effects** on chat-state, presets, the variable dependency
+  graph, macros, or events. Each write touches only
+  `settings.extensions[<namespace>].capabilities` / `.dependsOn` (and, for
+  `registerExtension`, `.registration`). Asserted by tests against the
+  mocked chat-state, preset-manager, calculated-engine, macro-registration
+  and event-engine (call histories stay empty; a before/after settings
+  snapshot differs only in the extension record's own fields).
+
+**9.5 Deviations from the request, each forced by what the code was**
+
+1. **One copy, not two.** Since capabilities already lived inside
+   `registration.capabilities`, also storing them at
+   `settings.extensions[namespace].capabilities` would have created two
+   copies that drift apart the first time `declareCapabilities` ran after
+   `registerExtension`. The record fields are the single source of truth
+   and `registration` is composed with them on read (9.3). Visible effect:
+   the stored `registration` no longer contains `capabilities`, though every
+   registration a caller *receives* does. This required updating the
+   previous section's registration tests, which asserted the old stored
+   shape.
+2. **No namespace parameter.** The requested signatures give the identity
+   check nothing to authorize against, so the target namespace is the
+   caller's own record (9.4). "Wrong namespace ownership" therefore means
+   "owns no namespace", and cross-extension writes are impossible rather
+   than merely rejected.
+3. **Omission clears.** "If `metadata.capabilities` exists, call
+   `declareCapabilities`" was implemented so that a registration is a
+   *complete* declaration: omitting a list clears it. The alternative (an
+   omitted list leaves the old one) would make "re-registering overwrites
+   previous metadata cleanly" false for exactly the case where an
+   extension removes its last capability.
+4. **`getCapabilityGraph()` lists every extension**, including the
+   built-in `se` and extensions that declared nothing, with empty lists -
+   the requested shape is a map over extensions, and omitting the empty
+   ones would make "is `x` known?" indistinguishable from "does `x` provide
+   nothing?".
+5. **Relationships are derived, not stored** (9.2), which keeps the
+   requested `{ capabilities, dependsOn }` shape exact.
+
+**9.6 Honest limits**
+
+- Capabilities are **self-declared and unverified**. Nothing checks that an
+  extension that claims `"data.inventory"` actually provides anything, or
+  that a `dependsOn` is satisfiable; a consumer must treat the graph as a
+  hint. Anyone holding the shared `instanceId` (Section 7.4 - not a
+  security boundary) can claim any free namespace and declare any
+  capability strings for it.
+- Capability discovery is open: every extension can read every other
+  extension's capabilities and dependencies.
+- There is no cycle detection, ordering, or transitive resolution - "A
+  depends on `x`, B provides `x` and depends on `y`" is not followed. The
+  graph only answers the direct questions above.
+
+**9.7 Verification**
+
+`tests/api/capability-graph.test.js` (112 tests: capabilities,
+dependencies, discovery, registration integration, atomicity, and no side
+effects), plus additions to `identity.test.js` and
+`state-engine-api.test.js`; the full suite (579 tests) passes under
+`npm test`.

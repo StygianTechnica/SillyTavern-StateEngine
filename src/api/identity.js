@@ -34,13 +34,20 @@ export function ensureInstanceId() {
     return record.instanceId;
 }
 
-// targetNamespace is a third parameter beyond the two the request named:
-// the ownership check needs to know which namespace the call is aimed at.
-export function validateCallerIdentity(extensionId, instanceId, targetNamespace) {
+// The instance half of the identity check on its own. createNamespace()
+// needs exactly this: it runs BEFORE the caller owns anything, so the
+// ownership half of validateCallerIdentity() could never pass for it.
+export function validateInstanceId(instanceId) {
     const expected = ensureInstanceId();
     if (typeof instanceId !== 'string' || instanceId !== expected) {
         throw new Error('State Engine API call rejected: wrong instance');
     }
+}
+
+// targetNamespace is a third parameter beyond the two the request named:
+// the ownership check needs to know which namespace the call is aimed at.
+export function validateCallerIdentity(extensionId, instanceId, targetNamespace) {
+    validateInstanceId(instanceId);
     if (!targetNamespace) {
         throw new Error(`State Engine API call rejected: no target namespace supplied by extension '${extensionId}'`);
     }
