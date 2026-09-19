@@ -132,6 +132,12 @@ All modules below live in `src/api/` and are re-exported through
 `src/api/state-engine-api.js`. Signatures here are the target contract;
 current bodies are empty stubs (Section 5 status note applies).
 
+**Signature note (2026-09-18, Section 7.4):** every function listed below in
+`preset-api.js`, `variable-api.js`, `event-api.js`, and
+`independent-presets.js` takes `(extensionId, instanceId, ...)` as its first
+two arguments - e.g. `createVariable(extensionId, instanceId, def)`. The
+lists below show the remaining arguments only.
+
 **Extension Registration** (`src/api/extension-registry.js`)
 
 ```
@@ -159,6 +165,10 @@ updateVariable(ref, patch)
 deleteVariable(ref)
 getVariable(ref)
 listVariables(namespace, presetName)
+
+// Calculated-variable support (added 2026-09-10, Section 7.3):
+validateCalculatedDefinition(def)      // def.type/def.expression/def.namespace/def.presetName -> { ok, deps } | { ok, error }
+applyCalculatedDefinition(ref, def, deps)  // stores deps, evaluates, cascades, refreshes macros
 ```
 
 `ref` in this module identifies one variable as
@@ -167,6 +177,11 @@ local, unqualified name (`"mood"`), not the stored `namespace__mood` form;
 resolving `ref` to a definition is exactly what re-derives that qualified
 name (Section 2). Enough to resolve to a single variable definition
 without needing its internal id.
+
+`createVariable(def)`/`updateVariable(ref, patch)` accept `def.type ===
+'calculated'`/`def.expression`, and reject `def.value`/`patch.value`
+outright (a variable's value is never set through its definition — see
+Section 7.3 for the full calculated-variable creation pipeline).
 
 **Events** (`src/api/event-api.js`)
 
@@ -604,6 +619,154 @@ activating BOTH the source and the clone for the same chat, and confirming
 they evaluate to genuinely independent values (changing the clone's
 dependency does not affect the source's calculated variable, and vice
 versa) — not just that the stored definition strings looked right.
+
+SECTION 7.3 — CALCULATED-VARIABLE CREATION THROUGH THE API (2026-09-10)
+
+`createVariable`/`updateVariable` now accept `def.type === 'calculated'` +
+`def.expression`, deriving the real dependency set directly from the
+expression rather than requiring the caller to hand-supply a matching
+`dependencies` array (the only prior source of a dependencies array in
+this codebase was the manager-modal UI's own checkbox list —
+`ui-events.js`'s dependency checkboxes — which this does not change or
+replace).
+
+**Three factual corrections to the request that specified this feature**,
+verified against the real code rather than assumed, per this project's
+standing instruction to report an instruction/reality mismatch instead of
+silently forcing an implementation that doesn't match either the request
+or reality:
+
+1. **"Extract dependencies using the same logic used internally by
+   calculated-engine.js"** — no such logic existed. `calculated-engine.js`
+   has never auto-derived dependencies from an expression string; every
+   caller (until now, only the manager-modal UI) supplies `dependencies`
+   by hand. Implemented as a genuinely new capability rather than a reuse
+   of something pre-existing: a new `extractIdentifiers(expression)`
+   export was added to `expression-dsl.js`, walking the exact same
+   AST `evaluateExpression()` already builds (same tokenizer, same
+   parser — not a second, separately-maintained parser). "Same logic" is
+   true in the sense that matters (one real grammar, one real parser,
+   zero duplication) even though the *specific* dependency-extraction
+   behavior itself is new.
+2. **"Register dependency edges in the dependency graph. Register reverse
+   edges."** — there is no persisted graph data structure in this
+   codebase to register edges into. `calculated-engine.js`'s
+   `buildCalculatedGraph`/`topoSortCalculated` (and this API layer's own
+   `dependency-graph.js`, Section 6) recompute the graph fresh, every
+   time, by reading each variable definition's own `dependencies` array —
+   the array itself *is* the graph's storage, not a separate structure.
+   Building a second, parallel "real" graph that the rest of the engine
+   never reads would have been actively misleading, not a faithful
+   implementation. "Registering an edge" here means exactly one thing:
+   correctly setting `def.dependencies` on the stored definition —
+   `applyCalculatedDefinition()` does this as its first action, and
+   `dependency-graph.js`'s `getDependents()` (already existing, Section 6)
+   picks up the reverse relationship automatically with no separate
+   registration step, since it already scans `def.dependencies` on demand.
+3. **"Enforce preset-local dependency rules (dependencies MUST exist in
+   the same preset)"**, described as something the core engine "already
+   enforces internally" — verified false by re-reading
+   `calculated-engine.js` fresh: its dependency resolution
+   (`buildCalculatedGraph`) is global-by-name across every preset active
+   for the chat, not preset-scoped, and nothing there currently rejects a
+   cross-preset dependency (a `blankDefinition()` comment states the
+   *design intent* — "in the same preset" — but no code checks it).
+   Enforcing this only at the new, stricter API entry point
+   (`validateCalculatedDefinition`) — never touching
+   `calculated-engine.js`'s existing, more permissive runtime behavior —
+   keeps this purely additive rather than a backwards-incompatible
+   tightening of what the manager-modal UI has always allowed.
+
+**Pipeline, synchronous and atomic throughout** (`createVariable`): reject
+`def.value` outright → validate namespace/preset/name-collision →
+`validateCalculatedDefinition(def)` (parses the expression, derives
+dependencies, checks preset-locality) → only on success, write the
+definition into `preset.variables` and persist → `applyCalculatedDefinition`
+(stores the derived `dependencies`, seeds if needed, evaluates the new
+variable, cascades to dependents, refreshes macros). A rejected validation
+touches no stored state at all — nothing is written until validation has
+already passed. No `await` anywhere in this path; JS's single-threaded
+execution model makes a synchronous call chain like this atomic from any
+external observer by construction, not by any additional locking.
+
+`updateVariable` re-runs validation/derivation only when the expression is
+actually changing (or the variable is becoming calculated for the first
+time) — an unrelated patch (label, description, `showInTracker`, …) to an
+already-calculated variable falls through to the existing generic path,
+which was already correct for it.
+
+A caller-supplied `dependencies` array, if present, is silently
+overridden by the expression-derived set — deliberate: the expression is
+now the single source of truth, closing a real class of bug the
+manual-checkbox UI has always been exposed to (a human forgetting to check
+a box that the expression actually references), verified explicitly by a
+test that supplies a wrong `dependencies` array and confirms it's ignored.
+
+**Verified**, not just written: every requirement checked through the real
+engine, not stored-string inspection — auto-derivation from an expression
+with zero `dependencies` supplied, a wrong caller-supplied `dependencies`
+array being overridden, a cross-preset dependency being rejected with
+nothing partially created, a syntactically invalid expression being
+rejected, `def.value`/`patch.value` rejected on both create and update
+with the real stored value confirmed unchanged, an expression-changing
+update re-deriving dependencies and actually re-evaluating to the new
+result, a non-expression update leaving existing dependencies untouched,
+and a real end-to-end cascade (changing a dependency's value and
+confirming the calculated variable recomputes through its
+auto-derived dependency chain).
+
+SECTION 7.4 — CALLER IDENTITY (2026-09-18)
+
+Every exported function in `preset-api.js`, `variable-api.js`,
+`event-api.js`, and `independent-presets.js` now takes `(extensionId,
+instanceId, ...)` first and calls `validateCallerIdentity(extensionId,
+instanceId, targetNamespace)` (`src/api/identity.js`) before doing
+anything. This closes the gap Section 6 #1 recorded: `ownsNamespace()` is
+now actually used. A wrong `instanceId` throws `State Engine API call
+rejected: wrong instance`; an extension that doesn't own the target
+namespace throws `Extension '<id>' does not own namespace '<ns>'`. The
+check runs outside each function's own try/catch (which otherwise converts
+failures into warn-and-return-null), so a rejection can never silently
+no-op. `runIndependentPreset` is deliberately a plain function that
+checks synchronously and then returns the async pipeline's Promise - an
+`async function` would have turned the throw into a rejected Promise.
+
+Deviations from the request, each forced by what the code actually is:
+
+1. **`validateCallerIdentity` takes a third argument, `targetNamespace`.**
+   The request specified two parameters but also required an
+   `ownsNamespace(extensionId, targetNamespace)` check, which needs one.
+2. **`instanceId` did not exist anywhere.** The core migration that
+   creates `settings.extensions.se` never wrote one and `src/core` was
+   off-limits, so `ensureInstanceId()` creates it lazily on first use. It
+   deliberately refuses (throws) if the `se` record doesn't exist yet
+   rather than creating it: `migrateToBuiltinNamespace()` is gated on that
+   record not existing, so a partial record made here would silently skip
+   the whole migration. An unset instanceId can never match `undefined`.
+3. **`listPresets`, `validateCalculatedDefinition`, and
+   `applyCalculatedDefinition` were added to the guarded set** - they live
+   in the named modules, and `listVariables`/`getVariable` (reads) were
+   already on the list. The two calculated helpers are split into an
+   unchecked internal function (what `createVariable`/`updateVariable`
+   call, having already checked identity once) and an identity-checked
+   exported wrapper.
+4. **Not covered:** `dependency-graph.js`'s `getDependencies`/
+   `getDependents`, and `extension-registry.js`/`namespace-manager.js`
+   (outside the named modules) remain unguarded. Dependency introspection
+   is therefore still readable across namespaces.
+5. **Manager-modal consequence.** The adapters always identify as `'se'`,
+   so a preset owned by another namespace can no longer be renamed,
+   deleted, or toggled from the manager modal. The adapters catch the
+   rejection and report it through `setStatus` rather than throwing into
+   click handlers that have no error handling.
+
+**Honest limit:** `instanceId` is a token in settings, readable by any code
+in the same page (and `identity.js` is importable by path). This stops
+wrong-instance and wrong-namespace calls - mismatched wiring, an extension
+reaching into another's namespace by mistake - it is not a security
+boundary against hostile code in the same JS context. `identity.js` is
+intentionally not re-exported from `src/api/index.js`/`stateEngine`, so
+the token isn't handed out through the public facade.
 
 **Bug found and fixed during this pass's own testing** (not present in any
 existing file): an early version of `updateVariable` applied a patch via

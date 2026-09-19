@@ -12,6 +12,7 @@
 
 import { LOG_PREFIX, getSettings, persistSettings } from '../core/settings-core.js';
 import { validateNamespace } from './namespace-manager.js';
+import { validateCallerIdentity } from './identity.js';
 import { dispatchNamespacedEvent } from '../events/event-engine.js';
 
 function getEventSourcesStore() {
@@ -25,7 +26,8 @@ function getEventSourcesStore() {
 // info: { namespace, eventName, ... }. Stored under the qualified key
 // "namespace.eventName" so fireEvent()'s namespace-prefix check and this
 // registry agree on the same addressing.
-export function registerEventSource(info) {
+export function registerEventSource(extensionId, instanceId, info) {
+    validateCallerIdentity(extensionId, instanceId, info?.namespace);
     try {
         if (!info || !info.namespace || !info.eventName) {
             console.warn(LOG_PREFIX, 'registerEventSource requires info.namespace and info.eventName');
@@ -46,12 +48,18 @@ export function registerEventSource(info) {
     }
 }
 
+// The target namespace is the event name's own prefix ("pp.rollDice" -> "pp").
+function eventNamespace(eventName) {
+    return typeof eventName === 'string' && eventName.includes('.') ? eventName.slice(0, eventName.indexOf('.')) : undefined;
+}
+
 // eventName must already be namespace-qualified ("pp.rollDice"). Only the
 // namespace prefix is validated here (per this pass's instructions) — not
 // whether this exact event was previously registered via
 // registerEventSource(), so an unregistered-but-namespace-valid event name
 // still dispatches.
-export function fireEvent(chatId, eventName) {
+export function fireEvent(extensionId, instanceId, chatId, eventName) {
+    validateCallerIdentity(extensionId, instanceId, eventNamespace(eventName));
     try {
         if (!eventName || typeof eventName !== 'string' || !eventName.includes('.')) {
             console.warn(LOG_PREFIX, `fireEvent: "${eventName}" is not a namespace-qualified event name`);

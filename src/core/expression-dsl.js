@@ -486,3 +486,75 @@ export function evaluateExpression(expression, dependencies, values) {
         return { ok: false, error: err?.message || String(err) };
     }
 }
+
+// Walks a parsed AST node collecting every identifier it references (the
+// `ident` node's `name`), into `into`. Covers every node kind the Parser
+// above can actually produce - not a generic/reflective walk, so adding a
+// new node kind to the parser without a matching case here would silently
+// under-collect, the same tradeoff evaluateNode() already accepts for its
+// own switch.
+function collectIdentifiers(node, into) {
+    switch (node.kind) {
+        case 'lit':
+            return;
+        case 'ident':
+            into.add(node.name);
+            return;
+        case 'neg':
+        case 'not':
+            collectIdentifiers(node.operand, into);
+            return;
+        case 'ternary':
+            collectIdentifiers(node.condition, into);
+            collectIdentifiers(node.thenExpr, into);
+            collectIdentifiers(node.elseExpr, into);
+            return;
+        case 'arith':
+        case 'compare':
+        case 'logical':
+            collectIdentifiers(node.left, into);
+            collectIdentifiers(node.right, into);
+            return;
+        case 'prop':
+            collectIdentifiers(node.target, into);
+            return;
+        case 'call':
+            collectIdentifiers(node.target, into);
+            for (const arg of node.args) collectIdentifiers(arg, into);
+            return;
+        case 'funcCall':
+            for (const arg of node.args) collectIdentifiers(arg, into);
+            return;
+        default:
+            return;
+    }
+}
+
+// Parses `expression` and returns every identifier it references, without
+// evaluating it - i.e. without needing any dependency/value context at
+// all. Reuses the exact same tokenizer/parser evaluateExpression() itself
+// uses (never a second, separately-maintained parser), so "is this
+// syntactically valid" and "what variables does it reference" are answered
+// from the one real source of truth. Added for src/api/variable-api.js's
+// validateCalculatedDefinition() - external callers creating a calculated
+// variable through the API supply an expression, not a hand-picked
+// dependencies array (the manager-modal UI's own checkbox list is the only
+// prior source of a dependencies array in this codebase; there was no
+// existing "extract dependencies from an expression" logic anywhere to
+// reuse before this function). Never throws; mirrors evaluateExpression()'s
+// { ok, ... } contract.
+export function extractIdentifiers(expression) {
+    try {
+        const expr = String(expression || '').trim();
+        if (!expr) return { ok: false, error: 'Expression is empty' };
+
+        const tokens = tokenize(expr);
+        const ast = new Parser(tokens).parse();
+        const identifiers = new Set();
+        collectIdentifiers(ast, identifiers);
+
+        return { ok: true, identifiers: [...identifiers] };
+    } catch (err) {
+        return { ok: false, error: err?.message || String(err) };
+    }
+}

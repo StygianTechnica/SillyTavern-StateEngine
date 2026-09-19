@@ -33,11 +33,13 @@
 
 import { LOG_PREFIX, persistSettings } from '../core/settings-core.js';
 import { validateNamespace } from './namespace-manager.js';
+import { validateCallerIdentity } from './identity.js';
 import { findPresetEntry } from './preset-api.js';
 import { blankDefinition } from '../core/variable-schema.js';
 import { isVariableNameTaken } from '../core/preset-manager.js';
 import { seedVariablesForChat, resetValueIfTypeChanged, deleteVariableValueEverywhere } from '../core/chat-state.js';
-import { recalculateAllForChat } from '../core/calculated-engine.js';
+import { recalculateAllForChat, evaluateCalculatedVariable, recalculateDependents } from '../core/calculated-engine.js';
+import { extractIdentifiers } from '../core/expression-dsl.js';
 import { refreshVariableMacros } from '../core/macro-registration.js';
 
 function qualifiedName(namespace, localName) {
@@ -62,10 +64,121 @@ function currentChatId() {
     }
 }
 
-export function createVariable(def) {
+// Validates a calculated-variable definition and derives its real
+// dependency set directly from def.expression via expression-dsl.js's
+// extractIdentifiers() - the same tokenizer/parser evaluateExpression()
+// itself uses, so "is this syntactically valid" and "what does it depend
+// on" are answered from one source of truth, never a separately-supplied
+// dependencies array that could drift out of sync with the expression (a
+// real gap in the manager-modal UI's own hand-picked-checkbox flow, which
+// this validates against but does not change).
+//
+// Preset-local dependency rule: every identifier the expression
+// references must exist as a variable's name in the SAME preset. This is
+// enforced HERE, at the API boundary, not inside calculated-engine.js
+// itself - the core engine's own dependency resolution
+// (calculated-engine.js's buildCalculatedGraph/getVar) is global-by-name
+// per chat, not preset-scoped, and nothing there currently enforces
+// preset-locality (verified by reading it fresh, not assumed - blankDefinition()'s
+// "in the same preset" comment states the design intent, but no code
+// actually checks it today). Enforcing it only at this new, stricter API
+// entry point - never touching calculated-engine.js's existing, more
+// permissive runtime behavior - keeps this additive rather than a
+// backwards-incompatible change to what the manager-modal UI already
+// allows.
+//
+// def: { type, expression, namespace, presetName, ... }. Returns
+// { ok: true, deps } or { ok: false, error } - never throws.
+function validateCalculatedDefinitionInternal(def) {
+    try {
+        if (def?.type !== 'calculated') {
+            return { ok: false, error: 'validateCalculatedDefinition: def.type must be "calculated"' };
+        }
+        if (!def.namespace || !def.presetName) {
+            return { ok: false, error: 'validateCalculatedDefinition requires def.namespace and def.presetName' };
+        }
+        const presetEntry = findPresetEntry(def.namespace, def.presetName);
+        if (!presetEntry) {
+            return { ok: false, error: `preset "${def.namespace}.${def.presetName}" not found` };
+        }
+        const [, preset] = presetEntry;
+
+        const parsed = extractIdentifiers(def.expression);
+        if (!parsed.ok) {
+            return { ok: false, error: `invalid expression: ${parsed.error}` };
+        }
+
+        const presetVarNames = new Set(Object.values(preset.variables || {}).map((v) => v?.name).filter(Boolean));
+        const missing = parsed.identifiers.find((name) => !presetVarNames.has(name));
+        if (missing) {
+            return { ok: false, error: `dependency "${missing}" does not exist in preset "${def.presetName}"` };
+        }
+
+        return { ok: true, deps: parsed.identifiers };
+    } catch (err) {
+        return { ok: false, error: err?.message || String(err) };
+    }
+}
+
+// Applies an already-validated calculated definition: stores the derived
+// dependencies onto `def`, evaluates it for the current chat, cascades
+// recalculation to whatever already depends on it, and refreshes macro
+// registration - the same lifecycle steps every other write path in this
+// codebase already performs (chat-state.js/calculated-engine.js/
+// macro-registration.js), centralized here so createVariable()/
+// updateVariable() share one implementation instead of two copies. `ref`
+// is accepted (not otherwise needed by this function's own logic) so a
+// caller/log line can always identify which variable this run was for -
+// see createVariable()/updateVariable()'s call sites.
+function applyCalculatedDefinitionInternal(ref, def, deps) {
+    try {
+        def.dependencies = deps;
+
+        const chatId = currentChatId();
+        if (chatId) {
+            // seedVariablesForChat() first, so this variable (and any
+            // dependency that isn't seeded yet either) has a real stored
+            // entry for evaluateCalculatedVariable()'s getVar() calls to
+            // read - never resets an existing value (1.12).
+            seedVariablesForChat(chatId);
+            evaluateCalculatedVariable(chatId, def);
+            recalculateDependents(chatId, def.name);
+        }
+        refreshVariableMacros();
+    } catch (err) {
+        console.warn(LOG_PREFIX, `applyCalculatedDefinition failed for "${ref?.namespace}.${ref?.presetName}.${ref?.variableName}" (gracefully handled)`, err);
+    }
+}
+
+// Identity-checked public wrappers. createVariable()/updateVariable() call
+// the unchecked *Internal versions directly - they already validated the
+// caller's identity once at their own entry point.
+export function validateCalculatedDefinition(extensionId, instanceId, def) {
+    validateCallerIdentity(extensionId, instanceId, def?.namespace);
+    return validateCalculatedDefinitionInternal(def);
+}
+
+export function applyCalculatedDefinition(extensionId, instanceId, ref, def, deps) {
+    validateCallerIdentity(extensionId, instanceId, ref?.namespace);
+    return applyCalculatedDefinitionInternal(ref, def, deps);
+}
+
+export function createVariable(extensionId, instanceId, def) {
+    validateCallerIdentity(extensionId, instanceId, def?.namespace);
     try {
         if (!def || !def.namespace || !def.presetName || !def.name) {
             console.warn(LOG_PREFIX, 'createVariable requires def.namespace, def.presetName, and def.name');
+            return null;
+        }
+        // A variable's value is never set through its definition - it lives
+        // exclusively in chat-state.js's isolated store, written only
+        // through setVar()/applyIncrement() (spec 1.1/1.6), and for a
+        // calculated variable specifically, only ever through
+        // calculated-engine.js's own expression evaluation (spec 1.17).
+        // Rejecting def.value outright (not silently stripping it) makes
+        // that invariant a definition-time error instead of a silent no-op.
+        if (def.value !== undefined) {
+            console.warn(LOG_PREFIX, 'createVariable: def.value is not allowed - a variable\'s value is never set through its definition');
             return null;
         }
         if (!validateNamespace(def.namespace)) {
@@ -85,10 +198,35 @@ export function createVariable(def) {
             return null;
         }
 
+        let validation = null;
+        if (def.type === 'calculated') {
+            validation = validateCalculatedDefinitionInternal(def);
+            if (!validation.ok) {
+                console.warn(LOG_PREFIX, `createVariable: invalid calculated definition - ${validation.error}`);
+                return null;
+            }
+        }
+
         const { namespace: _ns, presetName: _presetName, name: _localName, id: _ignoredId, ...rest } = def;
         const fullDef = { ...blankDefinition(), ...rest, name: target };
+
+        // Nothing is written to settings.presets until validation (above)
+        // has already passed - a rejected calculated definition never
+        // touches stored state at all.
         preset.variables[fullDef.id] = fullDef;
         persistSettings();
+
+        if (validation) {
+            // Calculated: dependency registration + initial evaluation +
+            // dependents recalculation + macro refresh, all synchronous -
+            // see applyCalculatedDefinition()'s own header comment.
+            applyCalculatedDefinitionInternal(
+                { namespace: def.namespace, presetName: def.presetName, variableName: def.name },
+                fullDef,
+                validation.deps,
+            );
+            return fullDef;
+        }
 
         const chatId = currentChatId();
         if (chatId) {
@@ -104,10 +242,17 @@ export function createVariable(def) {
     }
 }
 
-export function updateVariable(ref, patch) {
+export function updateVariable(extensionId, instanceId, ref, patch) {
+    validateCallerIdentity(extensionId, instanceId, ref?.namespace);
     try {
         if (!ref || !ref.namespace || !ref.presetName || !ref.variableName) {
             console.warn(LOG_PREFIX, 'updateVariable requires ref.namespace, ref.presetName, and ref.variableName');
+            return null;
+        }
+        // See createVariable()'s matching check - a variable's value is
+        // never set through its definition, calculated or otherwise.
+        if (patch && patch.value !== undefined) {
+            console.warn(LOG_PREFIX, 'updateVariable: patch.value is not allowed - a variable\'s value is never set through its definition');
             return null;
         }
         if (!validateNamespace(ref.namespace)) {
@@ -162,6 +307,36 @@ export function updateVariable(ref, patch) {
         // here, root-caused against this module's own functional smoke
         // test rather than assumed.
         const newDef = { ...def, ...safePatch };
+
+        // Re-validate and re-derive dependencies only when the expression
+        // is actually changing (including "just became calculated") - an
+        // unrelated patch (label, description, showInTracker, ...) to an
+        // already-calculated variable falls through to the generic path
+        // below, which is already correct for it (resetValueIfTypeChanged
+        // is a no-op when the type hasn't changed, recalculateAllForChat
+        // harmlessly re-evaluates everything as it always has).
+        const becameOrStaysCalculated = newDef.type === 'calculated';
+        const expressionChanged = becameOrStaysCalculated
+            && (def.type !== 'calculated' || safePatch.expression !== undefined);
+
+        if (becameOrStaysCalculated && expressionChanged) {
+            const validation = validateCalculatedDefinitionInternal({
+                type: 'calculated',
+                expression: newDef.expression,
+                namespace: ref.namespace,
+                presetName: ref.presetName,
+            });
+            if (!validation.ok) {
+                console.warn(LOG_PREFIX, `updateVariable: invalid calculated definition - ${validation.error}`);
+                return null;
+            }
+
+            preset.variables[varId] = newDef;
+            persistSettings();
+            applyCalculatedDefinitionInternal(ref, newDef, validation.deps);
+            return newDef;
+        }
+
         preset.variables[varId] = newDef;
         persistSettings();
 
@@ -179,7 +354,8 @@ export function updateVariable(ref, patch) {
     }
 }
 
-export function deleteVariable(ref) {
+export function deleteVariable(extensionId, instanceId, ref) {
+    validateCallerIdentity(extensionId, instanceId, ref?.namespace);
     try {
         if (!ref || !ref.namespace || !ref.presetName || !ref.variableName) {
             console.warn(LOG_PREFIX, 'deleteVariable requires ref.namespace, ref.presetName, and ref.variableName');
@@ -213,7 +389,8 @@ export function deleteVariable(ref) {
     }
 }
 
-export function getVariable(ref) {
+export function getVariable(extensionId, instanceId, ref) {
+    validateCallerIdentity(extensionId, instanceId, ref?.namespace);
     try {
         if (!ref || !ref.namespace || !ref.presetName || !ref.variableName) return undefined;
         const presetEntry = findPresetEntry(ref.namespace, ref.presetName);
@@ -227,7 +404,8 @@ export function getVariable(ref) {
     }
 }
 
-export function listVariables(namespace, presetName) {
+export function listVariables(extensionId, instanceId, namespace, presetName) {
+    validateCallerIdentity(extensionId, instanceId, namespace);
     try {
         const entry = findPresetEntry(namespace, presetName);
         if (!entry) return [];

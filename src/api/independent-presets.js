@@ -25,6 +25,7 @@
 
 import { LOG_PREFIX, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED_VARIABLE_RULES, getSettings, persistSettings } from '../core/settings-core.js';
 import { validateNamespace } from './namespace-manager.js';
+import { validateCallerIdentity } from './identity.js';
 import { findPresetEntry } from './preset-api.js';
 import { getVar, setVar, applyIncrement } from '../core/chat-state.js';
 import { recalculateDependents } from '../core/calculated-engine.js';
@@ -38,7 +39,8 @@ import { shouldSkipPromptedRefresh } from '../core/prompted-engine.js';
 // stateEngineMaxTokens override mechanism (src/core/background-llm.js) but
 // scoped per-preset: connectionProfileId, temperature, maxTokens,
 // promptedHeader, promptedRules.
-export function configureIndependentPreset(namespace, name, config) {
+export function configureIndependentPreset(extensionId, instanceId, namespace, name, config) {
+    validateCallerIdentity(extensionId, instanceId, namespace);
     try {
         if (!validateNamespace(namespace)) {
             console.warn(LOG_PREFIX, `configureIndependentPreset: namespace "${namespace}" is not registered`);
@@ -65,7 +67,16 @@ let independentRunInProgress = false;
 // prompted-engine.js's runPromptedStateUpdate) so a future sequential
 // dispatcher (Section 3, "Independent Presets") can run several of these
 // one at a time in order.
-export async function runIndependentPreset(chatId, presetRef) {
+export function runIndependentPreset(extensionId, instanceId, chatId, presetRef) {
+    // Deliberately NOT an `async function` itself: an async function turns a
+    // thrown identity error into a rejected Promise instead of a synchronous
+    // throw. The check runs synchronously here, then hands off to the
+    // (unchanged) async pipeline below - callers still get a Promise back.
+    validateCallerIdentity(extensionId, instanceId, presetRef?.namespace);
+    return runIndependentPresetInternal(chatId, presetRef);
+}
+
+async function runIndependentPresetInternal(chatId, presetRef) {
     try {
         if (!chatId || !presetRef || !presetRef.namespace || !presetRef.name) {
             console.warn(LOG_PREFIX, 'runIndependentPreset requires chatId and presetRef.{namespace, name}');

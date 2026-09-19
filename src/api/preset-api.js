@@ -4,16 +4,15 @@
 // module adds namespaced (namespace, name) addressing and ownership
 // checking on top, it never reimplements preset CRUD itself.
 //
-// Ownership note: every function below can only confirm that `namespace`
-// is a *registered* namespace (validateNamespace) — none of the function
-// signatures specified in docs/STATE ENGINE API SPECIFICATION.md Section 3
-// carry a caller/extension identity, so true per-caller ownership
-// enforcement (rejecting namespace A's code from writing into registered
-// namespace B) is not achievable here yet. See this pass's implementation
-// report (Part 8) — flagged, not forced.
+// Caller identity: every exported function takes (extensionId, instanceId)
+// first and calls validateCallerIdentity() (identity.js) before doing
+// anything - a wrong instance or a namespace the caller doesn't own throws,
+// it never silently no-ops. See docs/STATE ENGINE API SPECIFICATION.md
+// Section 7.4.
 
 import { LOG_PREFIX, getSettings, persistSettings } from '../core/settings-core.js';
 import { validateNamespace } from './namespace-manager.js';
+import { validateCallerIdentity } from './identity.js';
 import {
     createPreset as createPresetCore,
     renamePreset as renamePresetCore,
@@ -38,7 +37,8 @@ export function findPresetEntry(namespace, name) {
     return null;
 }
 
-export function createPreset(def) {
+export function createPreset(extensionId, instanceId, def) {
+    validateCallerIdentity(extensionId, instanceId, def?.namespace);
     try {
         if (!def || !def.namespace || !def.name) {
             console.warn(LOG_PREFIX, 'createPreset requires def.namespace and def.name');
@@ -68,7 +68,8 @@ export function createPreset(def) {
     }
 }
 
-export function updatePreset(namespace, name, patch) {
+export function updatePreset(extensionId, instanceId, namespace, name, patch) {
+    validateCallerIdentity(extensionId, instanceId, namespace);
     try {
         if (!validateNamespace(namespace)) {
             console.warn(LOG_PREFIX, `updatePreset: namespace "${namespace}" is not registered`);
@@ -105,7 +106,8 @@ export function updatePreset(namespace, name, patch) {
     }
 }
 
-export function deletePreset(namespace, name) {
+export function deletePreset(extensionId, instanceId, namespace, name) {
+    validateCallerIdentity(extensionId, instanceId, namespace);
     try {
         if (!validateNamespace(namespace)) {
             console.warn(LOG_PREFIX, `deletePreset: namespace "${namespace}" is not registered`);
@@ -131,7 +133,8 @@ export function deletePreset(namespace, name) {
     }
 }
 
-export function activatePreset(chatId, namespace, name) {
+export function activatePreset(extensionId, instanceId, chatId, namespace, name) {
+    validateCallerIdentity(extensionId, instanceId, namespace);
     try {
         if (!chatId) return false;
         if (!validateNamespace(namespace)) {
@@ -154,7 +157,8 @@ export function activatePreset(chatId, namespace, name) {
     }
 }
 
-export function deactivatePreset(chatId, namespace, name) {
+export function deactivatePreset(extensionId, instanceId, chatId, namespace, name) {
+    validateCallerIdentity(extensionId, instanceId, namespace);
     try {
         if (!chatId) return false;
         if (!validateNamespace(namespace)) {
@@ -175,7 +179,8 @@ export function deactivatePreset(chatId, namespace, name) {
     }
 }
 
-export function listPresets(namespace) {
+export function listPresets(extensionId, instanceId, namespace) {
+    validateCallerIdentity(extensionId, instanceId, namespace);
     try {
         const settings = getSettings();
         return Object.entries(settings.presets || {})

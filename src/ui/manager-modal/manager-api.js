@@ -19,6 +19,7 @@ import { setManagerApi } from './manager-modal.js';
 import { getSettings, persistSettings, toggleDebugMode, debugLog, BUILTIN_NAMESPACE } from '../../core/settings-core.js';
 import { getPresetsForChat, restoreDefaultPresets, isVariableNameTaken, generateUniqueVariableName } from '../../core/preset-manager.js';
 import { stateEngine } from '../../api/index.js';
+import { ensureInstanceId } from '../../api/identity.js';
 import { getDebugInfo } from '../../core/debug-engine.js';
 import { blankDefinition } from '../../core/variable-schema.js';
 import { isReservedVariable } from '../../core/validation-utils.js';
@@ -29,6 +30,26 @@ import { getCurrentChatId } from '../wand-ui.js';
 
 function findPresetById(presetId) {
     return getSettings().presets[presetId] || null;
+}
+
+// Every stateEngine.* call below is made AS the built-in extension:
+// extensionId = BUILTIN_NAMESPACE ('se'), instanceId =
+// settings.extensions.se.instanceId (ensureInstanceId() returns exactly
+// that field, creating it on first use). The UI's click handlers have no
+// error handling of their own, so an identity rejection thrown by the API
+// layer is caught here and reported through setStatus instead of silently
+// aborting the handler. Known consequence: this adapter always identifies
+// as 'se', so a preset belonging to another registered namespace can no
+// longer be renamed/deleted/toggled from the manager modal - the API layer
+// correctly rejects it as not owned by 'se'.
+function callAsBuiltin(fn) {
+    try {
+        return fn(BUILTIN_NAMESPACE, ensureInstanceId());
+    } catch (err) {
+        console.warn('[State Engine]', err);
+        setStatus(err?.message || String(err), true);
+        return undefined;
+    }
 }
 
 // preset-manager.js's own createPreset()/renamePreset() never enforced
@@ -56,7 +77,7 @@ function uniquePresetName(namespace, desiredName, excludePresetId) {
 export function createPresetAdapter(name) {
     const desired = (name || 'New Preset').trim() || 'New Preset';
     const finalName = uniquePresetName(BUILTIN_NAMESPACE, desired, null);
-    const created = stateEngine.createPreset({ namespace: BUILTIN_NAMESPACE, name: finalName });
+    const created = callAsBuiltin((extId, instId) => stateEngine.createPreset(extId, instId, { namespace: BUILTIN_NAMESPACE, name: finalName }));
     return created ? created.id : null;
 }
 
@@ -65,25 +86,25 @@ export function renamePresetAdapter(presetId, newName) {
     if (!preset) return;
     const namespace = preset.namespace || BUILTIN_NAMESPACE;
     const finalName = uniquePresetName(namespace, newName, presetId);
-    stateEngine.updatePreset(namespace, preset.name, { name: finalName });
+    callAsBuiltin((extId, instId) => stateEngine.updatePreset(extId, instId, namespace, preset.name, { name: finalName }));
 }
 
 export function deletePresetAdapter(presetId) {
     const preset = findPresetById(presetId);
     if (!preset) return;
-    stateEngine.deletePreset(preset.namespace || BUILTIN_NAMESPACE, preset.name);
+    callAsBuiltin((extId, instId) => stateEngine.deletePreset(extId, instId, preset.namespace || BUILTIN_NAMESPACE, preset.name));
 }
 
 export function addPresetToChatAdapter(chatId, presetId) {
     const preset = findPresetById(presetId);
     if (!preset) return;
-    stateEngine.activatePreset(chatId, preset.namespace || BUILTIN_NAMESPACE, preset.name);
+    callAsBuiltin((extId, instId) => stateEngine.activatePreset(extId, instId, chatId, preset.namespace || BUILTIN_NAMESPACE, preset.name));
 }
 
 export function removePresetFromChatAdapter(chatId, presetId) {
     const preset = findPresetById(presetId);
     if (!preset) return;
-    stateEngine.deactivatePreset(chatId, preset.namespace || BUILTIN_NAMESPACE, preset.name);
+    callAsBuiltin((extId, instId) => stateEngine.deactivatePreset(extId, instId, chatId, preset.namespace || BUILTIN_NAMESPACE, preset.name));
 }
 
 setManagerApi({
