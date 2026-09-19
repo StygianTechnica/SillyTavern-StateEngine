@@ -316,7 +316,7 @@ export function wireEvents(managerApi, managerState) {
         }
         if (values.type === 'datetime' && String(values.defaultValue ?? '').trim() !== ''
             && toScalar(values.calendar || previousCalendarId(preset, values.id), values.defaultValue) === null) {
-            alert('Default value must be a date-time written with a numeric month, such as "2026-09-18 22:00:00" (or "1203-08-17 12:00:00" on a fantasy calendar), or a number of seconds.');
+            alert(`Default value "${values.defaultValue}" is not a date-time in calendar "${values.calendar || previousCalendarId(preset, values.id)}". ` + variableSchema.datetimeDefaultPreview(values.calendar || previousCalendarId(preset, values.id), values.defaultValue) + ' (A number of seconds is accepted too.)');
             return;
         }
 

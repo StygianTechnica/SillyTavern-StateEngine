@@ -332,7 +332,7 @@ describe('the formatted default shows beside the input, not in it', () => {
     it('datetimeDefaultPreview shows the calendar form, or a hint', () => {
         expect(variableUiSchema.datetimeDefaultPreview('faerun_inspired', '1203-10-17 12:00:00')).toBe('Shown as: Starfall 17, Year 1203 — Nightseason');
         expect(variableUiSchema.datetimeDefaultPreview('solar_cycle', '7-04-20 03:00:00')).toBe('Shown as: Cold Cycle — Day 20 (Bloomreach 20)');
-        expect(variableUiSchema.datetimeDefaultPreview('faerun_inspired', 'garbage')).toMatch(/Not a readable date/);
+        expect(variableUiSchema.datetimeDefaultPreview('faerun_inspired', 'garbage')).toMatch(/Not a readable date in Faerûn-Inspired Calendar \(faerun_inspired\)/);
         expect(variableUiSchema.datetimeDefaultPreview('faerun_inspired', '')).toBe('');
         expect(variableUiSchema.datetimeDefaultPreview('nope', '0')).toBe('');
     });
@@ -344,5 +344,17 @@ describe('the formatted default shows beside the input, not in it', () => {
         expect(html).toContain('value="1203-10-17 12:00:00"');
         expect(html).toMatch(/se-manager-datetime-preview">Shown as: Starfall 17, Year 1203/);
         expect(html.indexOf('data-field="defaultValue"')).toBeLessThan(html.indexOf('se-manager-datetime-preview'));
+    });
+});
+
+describe('the default-date hint explains why a date is refused', () => {
+    it('names the calendar and the out-of-range part', () => {
+        // solar_cycle has 6 months, so month 9 does not exist there
+        expect(variableUiSchema.datetimeDefaultPreview('solar_cycle', '2022-09-11 01:00:00')).toBe('Not a date in Solar-Cycle Calendar (solar_cycle): month must be 1-6 (got 9).');
+        expect(variableUiSchema.datetimeDefaultPreview('three_moons', '2022-09-11 01:00:00')).toMatch(/^Shown as: /);
+        expect(variableUiSchema.datetimeDefaultPreview('faerun_inspired', '2022-09-11 01:00:00')).toMatch(/^Shown as: /);
+        expect(variableUiSchema.datetimeDefaultPreview('gregorian', '2022-09-11 01:00:00')).toMatch(/^Shown as: /);
+        expect(variableUiSchema.datetimeDefaultPreview('three_moons', '2022-01-37')).toMatch(/day must be 1-36 for 2022-01 \(got 37\)/);
+        expect(variableUiSchema.datetimeDefaultPreview('solar_cycle', '2022-01-01 30:00:00')).toMatch(/hour must be 0-29/);
     });
 });

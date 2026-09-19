@@ -3,7 +3,7 @@
 // variable definitions. Uses ES6 modules - imported by manager-modal.js
 
 import { DEFAULT_CALENDAR_ID } from '../../core/settings-core.js';
-import { getCalendar, toScalar, format } from '../../core/calendar-engine.js';
+import { getCalendar, toScalar, format, fromStructured } from '../../core/calendar-engine.js';
 
 export function mergeDefinition(defaults, varDef) {
     const d = Object.assign({}, defaults, varDef);
@@ -25,7 +25,20 @@ export function datetimeDefaultPreview(calendarId, text) {
     const id = calendarId || DEFAULT_CALENDAR_ID;
     if (!getCalendar(id)) return '';
     const scalar = toScalar(id, raw);
-    if (scalar === null) return 'Not a readable date - use YYYY-MM-DD HH:mm:ss with a numeric month.';
+    if (scalar === null) {
+        // Say WHY when the text has the numeric shape but names a date this
+        // calendar does not have (month 9 of a 6-month calendar, day 31 of a
+        // 30-day month, hour 24 of a 24-hour day).
+        const m = /^(-?\d{1,6})-(\d{1,2})-(\d{1,2})(?:[T ]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?\s*Z?$/i.exec(raw);
+        if (m) {
+            try {
+                fromStructured(id, { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]), hour: Number(m[4] ?? 0), minute: Number(m[5] ?? 0), second: Number(m[6] ?? 0) });
+            } catch (err) {
+                return `Not a date in ${getCalendar(id).label || id} (${id}): ${err.message}.`;
+            }
+        }
+        return `Not a readable date in ${getCalendar(id).label || id} (${id}) - use YYYY-MM-DD HH:mm:ss with a numeric month.`;
+    }
     try {
         return `Shown as: ${format(id, scalar, { style: 'full' })}`;
     } catch {
