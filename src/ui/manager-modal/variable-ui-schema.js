@@ -3,7 +3,7 @@
 // variable definitions. Uses ES6 modules - imported by manager-modal.js
 
 import { DEFAULT_CALENDAR_ID } from '../../core/settings-core.js';
-import { getCalendar, toScalar } from '../../core/calendar-engine.js';
+import { getCalendar, toScalar, format } from '../../core/calendar-engine.js';
 
 export function mergeDefinition(defaults, varDef) {
     const d = Object.assign({}, defaults, varDef);
@@ -13,6 +13,24 @@ export function mergeDefinition(defaults, varDef) {
     d.increment = Object.assign({}, defaults.increment, varDef?.increment);
     d.prompted = Object.assign({}, defaults.prompted, varDef?.prompted);
     return d;
+}
+
+// The line shown UNDER a datetime default's input: the date as the calendar
+// itself writes it ("Starfall 17, Year 1203 - Nightseason"), or a hint when the
+// text is not a readable date. The input keeps the numeric form (which always
+// reads back); this is display only.
+export function datetimeDefaultPreview(calendarId, text) {
+    const raw = String(text ?? '').trim();
+    if (raw === '') return '';
+    const id = calendarId || DEFAULT_CALENDAR_ID;
+    if (!getCalendar(id)) return '';
+    const scalar = toScalar(id, raw);
+    if (scalar === null) return 'Not a readable date - use YYYY-MM-DD HH:mm:ss with a numeric month.';
+    try {
+        return `Shown as: ${format(id, scalar, { style: 'full' })}`;
+    } catch {
+        return '';
+    }
 }
 
 export function canIncrement(type) {

@@ -229,8 +229,9 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
             ` : `
                 <input class="text_pole se-manager-var-field"
                     data-field="defaultValue"
-                    placeholder="${d.type === 'datetime' ? 'Default date-time, e.g. 2026-09-18 22:00:00' : 'Default value'}"
+                    placeholder="${d.type === 'datetime' ? 'Default date-time as YYYY-MM-DD HH:mm:ss (numeric month), e.g. 1203-08-17 12:00:00' : 'Default value'}"
                     value="${escapeHtml(d.defaultValue)}" />
+                ${d.type === 'datetime' ? `<small class="se-manager-datetime-preview">${escapeHtml(variableSchema.datetimeDefaultPreview(d.calendar, d.defaultValue))}</small>` : ''}
             `}
 
             <!-- Calculated variable: dependency selector + expression -->

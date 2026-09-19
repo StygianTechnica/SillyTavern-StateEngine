@@ -10,7 +10,7 @@ import { resetValueIfTypeChanged, hydrateMacroStoreForChat, seedVariablesForChat
 import { recalculateAllForChat, recalculateDependents, getCalculatedVariableError } from '../../core/calculated-engine.js';
 import { refreshVariableMacros } from '../../core/macro-registration.js';
 import { BUILTIN_NAMESPACE, DEFAULT_CALENDAR_ID, BUILTIN_CALENDAR_IDS } from '../../core/settings-core.js';
-import { formatScalar, getCalendar, toScalar } from '../../core/calendar-engine.js';
+import { formatIsoScalar, getCalendar, toScalar } from '../../core/calendar-engine.js';
 import {
     blankCalendarEditorValues, editorValuesFromDefinition, definitionFromEditorValues, updatePatchFromDefinition,
 } from './calendar-ui-schema.js';
@@ -316,7 +316,7 @@ export function wireEvents(managerApi, managerState) {
         }
         if (values.type === 'datetime' && String(values.defaultValue ?? '').trim() !== ''
             && toScalar(values.calendar || previousCalendarId(preset, values.id), values.defaultValue) === null) {
-            alert('Default value must be a date-time such as "2026-09-18 22:00:00" (or a number of seconds).');
+            alert('Default value must be a date-time written with a numeric month, such as "2026-09-18 22:00:00" (or "1203-08-17 12:00:00" on a fantasy calendar), or a number of seconds.');
             return;
         }
 
@@ -714,6 +714,20 @@ export function wireEvents(managerApi, managerState) {
         $('#se-cal-preview-output').html(uiTemplates.buildCalendarPreviewOutput(result));
     });
 
+    // A datetime default's formatted preview (under its input) follows what is
+    // typed and the chosen calendar. The input itself is never rewritten.
+    function refreshDatetimePreview($editor) {
+        const calendarId = $editor.find('[data-field="calendar"]').val();
+        const text = $editor.find('[data-field="defaultValue"]').val();
+        $editor.find('.se-manager-datetime-preview').text(variableSchema.datetimeDefaultPreview(calendarId, text));
+    }
+    $overlay.on('input', '[data-field="defaultValue"]', function () {
+        refreshDatetimePreview($(this).closest('.se-manager-variable-editor-inline'));
+    });
+    $overlay.on('change', '[data-field="calendar"]', function () {
+        refreshDatetimePreview($(this).closest('.se-manager-variable-editor-inline'));
+    });
+
     // Debug mode controls
     $overlay.on('click', '#se-manager-debug-toggle', function () {
         const enabled = managerApi.toggleDebugMode();
@@ -1076,7 +1090,7 @@ export function wireEvents(managerApi, managerState) {
         // exactly as typed.
         if (d.type === 'datetime') {
             const scalar = toScalar(d.calendar || DEFAULT_CALENDAR_ID, d.defaultValue);
-            const shown = scalar === null ? null : formatScalar(d.calendar || DEFAULT_CALENDAR_ID, scalar);
+            const shown = scalar === null ? null : formatIsoScalar(d.calendar || DEFAULT_CALENDAR_ID, scalar);
             if (shown) d.defaultValue = shown;
         }
 

@@ -12,6 +12,7 @@ import { runDeterministicIncrements } from '../src/core/deterministic-engine.js'
 import { getVar } from '../src/core/chat-state.js';
 import * as uiTemplates from '../src/ui/manager-modal/ui-templates.js';
 import { blankDefinition } from '../src/core/variable-schema.js';
+import { formatIsoScalar, toScalar } from '../src/core/calendar-engine.js';
 import * as variableUiSchema from '../src/ui/manager-modal/variable-ui-schema.js';
 
 const SEEDS = ['faerun_inspired', 'three_moons', 'solar_cycle'];
@@ -308,5 +309,40 @@ describe('built-in fantasy calendars: UI', () => {
             expect(variableUiSchema.normalizeCollectedValues({ type: 'datetime', calendar: 'vanished' }).calendar).toBe('gregorian');
             expect(variableUiSchema.normalizeCollectedValues({ type: 'datetime', calendar: 'solar_cycle' }).calendar).toBe('solar_cycle');
         });
+    });
+});
+
+describe('editing a fantasy default in the variable editor', () => {
+    it.each(BUILTIN_CALENDAR_IDS)('%s: the redisplayed default reads back to the same scalar', (id) => {
+        const t = id === 'gregorian' ? Date.UTC(2026, 8, 18, 22) / 1000 : at(id, 1203, 3, 5, 6);
+        const shown = formatIsoScalar(id, t);
+        expect(shown).toMatch(/^-?\d+-\d\d-\d\d \d\d:\d\d:\d\d$/);
+        expect(toScalar(id, shown)).toBe(t); // the save handler's check passes
+        expect(variableUiSchema.normalizeCollectedValues({ type: 'datetime', calendar: id, defaultValue: shown }).defaultValue).toBe(t);
+    });
+
+    it('the calendar display form is not what the editor input shows', () => {
+        expect(format('faerun_inspired', at('faerun_inspired', 1203, 10, 17, 12))).toContain('Nightseason');
+        expect(toScalar('faerun_inspired', format('faerun_inspired', at('faerun_inspired', 1203, 10, 17, 12)))).toBeNull();
+        expect(formatIsoScalar('faerun_inspired', at('faerun_inspired', 1203, 10, 17, 12))).toBe('1203-10-17 12:00:00');
+    });
+});
+
+describe('the formatted default shows beside the input, not in it', () => {
+    it('datetimeDefaultPreview shows the calendar form, or a hint', () => {
+        expect(variableUiSchema.datetimeDefaultPreview('faerun_inspired', '1203-10-17 12:00:00')).toBe('Shown as: Starfall 17, Year 1203 — Nightseason');
+        expect(variableUiSchema.datetimeDefaultPreview('solar_cycle', '7-04-20 03:00:00')).toBe('Shown as: Cold Cycle — Day 20 (Bloomreach 20)');
+        expect(variableUiSchema.datetimeDefaultPreview('faerun_inspired', 'garbage')).toMatch(/Not a readable date/);
+        expect(variableUiSchema.datetimeDefaultPreview('faerun_inspired', '')).toBe('');
+        expect(variableUiSchema.datetimeDefaultPreview('nope', '0')).toBe('');
+    });
+
+    it('the editor input holds the numeric form and the preview sits below it', () => {
+        const html = uiTemplates.buildInlineVariableEditor(variableUiSchema.mergeDefinition(blankDefinition(), {
+            name: 'c', type: 'datetime', calendar: 'faerun_inspired', defaultValue: '1203-10-17 12:00:00',
+        }), true, []);
+        expect(html).toContain('value="1203-10-17 12:00:00"');
+        expect(html).toMatch(/se-manager-datetime-preview">Shown as: Starfall 17, Year 1203/);
+        expect(html.indexOf('data-field="defaultValue"')).toBeLessThan(html.indexOf('se-manager-datetime-preview'));
     });
 });

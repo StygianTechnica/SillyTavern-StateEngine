@@ -237,6 +237,18 @@ export function toScalar(calendarId, raw) {
 // Scalar -> "2026-09-18 22:55:00", or null when it cannot be converted
 // (unknown calendar, non-finite scalar, calendar without formatting). Never
 // throws - a display-safe wrapper over format(calendarId, scalar, "full").
+// Scalar -> "YYYY-MM-DD HH:mm:ss" with a numeric month, whatever the calendar's
+// own patterns say, or null. This is the form toScalar() ALWAYS reads back, so
+// it is what an editable text field should show (the calendar's display form -
+// "Starfall 17, Year 1203 - Nightseason" - is not necessarily parseable).
+export function formatIsoScalar(calendarId, scalarTime) {
+    try {
+        return format(calendarId, Number(scalarTime), { style: 'custom', pattern: 'YYYY-MM-DD HH:mm:ss' });
+    } catch {
+        return null;
+    }
+}
+
 export function formatScalar(calendarId, scalarTime) {
     try {
         return format(calendarId, Number(scalarTime), { style: 'full' });
