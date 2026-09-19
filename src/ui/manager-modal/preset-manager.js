@@ -62,6 +62,15 @@ export function clonePreset(presetId, newName) {
     const renamedVariables = {};
 
     for (const def of Object.values(newPreset.variables || {})) {
+        // A datetime variable keeps its calendar (and unit) in the clone
+        // (requirements spec 1.22): the clone must read the same scalar
+        // seconds the same way. The JSON clone above already copies them;
+        // restating it from the source keeps that guarantee independent of
+        // how the clone is built.
+        const source = preset.variables?.[def.id];
+        if (typeof source?.calendar === 'string' && source.calendar) def.calendar = source.calendar;
+        if (typeof source?.unit === 'string' && source.unit) def.unit = source.unit;
+
         const newId = genId();
         const finalName = generateUniqueVariableName(def.name);
         if (finalName !== def.name) nameRenameMap.set(def.name, finalName);

@@ -3,6 +3,7 @@
 
 import * as uiTemplates from './ui-templates.js';
 import { escapeHtml } from './utils.js';
+import { format, fromStructured, variablesUsingCalendar } from '../../core/calendar-engine.js';
 
 export function renderPresetsTab(managerApi, managerCurrentPresetId) {
     const settings = managerApi.getSettings();
@@ -186,6 +187,33 @@ export function renderVariableManagementTab(managerApi) {
         .join('');
 
     $tab.html(uiTemplates.buildVariableManagementTab(rowsHtml));
+}
+
+// The list shows every calendar in settings.calendars - the built-in ones
+// (gregorian and the fantasy seeds) first, as getSettings() inserts them.
+// An example date for a calendar's list row: the first day of its first year
+// (2026 for Gregorian), at midday, through the calendar's own format().
+function calendarSample(cal) {
+    try {
+        const midday = Math.floor(cal.hoursPerDay / 2);
+        const scalar = fromStructured(cal.id, { year: cal.leapYearRule === 'gregorian' ? 2026 : 1, month: 1, day: 1, hour: midday });
+        return format(cal.id, scalar, { style: 'full' });
+    } catch {
+        return '';
+    }
+}
+
+// `editing` is calendar-ui-schema.js's editor values for the open editor, or
+// null when no calendar is being created/edited.
+export function renderCalendarsTab(managerApi, editing = null) {
+    const $tab = $('#se-manager-calendars-tab');
+    if (!$tab.length) return;
+
+    const rows = Object.values(managerApi.listCalendars())
+        .map((cal) => uiTemplates.buildCalendarRow(cal, calendarSample(cal), variablesUsingCalendar(cal.id).length))
+        .join('');
+
+    $tab.html(uiTemplates.buildCalendarsTabContainer(rows, editing ? uiTemplates.buildCalendarEditor(editing) : ''));
 }
 
 export function renderDebugTab(managerApi) {

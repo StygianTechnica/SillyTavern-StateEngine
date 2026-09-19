@@ -523,3 +523,59 @@ export function formatDateTimePartial(extensionId, instanceId, calendarId, scala
     resolveCallerRecord(extensionId, instanceId);
     return calendarEngine.formatPartial(calendarId, scalarTime, fields);
 }
+
+// ---------------------------------------------------------------------------
+// Calendar definition API (requirements spec 1.22.1)
+// ---------------------------------------------------------------------------
+//
+// Same identity rule as the formatting API above (resolveCallerRecord). Like
+// it, these THROW on failure - identity, an invalid definition, an id already
+// in use, an unknown calendar, the built-in calendar, a calendar still used by
+// a variable - because the caller needs the reason, not a silent null.
+// getCalendarDefinition() (above) is the read that returns null when missing.
+
+export function createCalendarDefinition(extensionId, instanceId, def) {
+    resolveCallerRecord(extensionId, instanceId);
+    return calendarEngine.createCalendar(def);
+}
+
+export function updateCalendarDefinition(extensionId, instanceId, calendarId, patch) {
+    resolveCallerRecord(extensionId, instanceId);
+    return calendarEngine.updateCalendar(calendarId, patch);
+}
+
+export function deleteCalendarDefinition(extensionId, instanceId, calendarId) {
+    resolveCallerRecord(extensionId, instanceId);
+    return calendarEngine.deleteCalendar(calendarId);
+}
+
+// Every calendar definition as an array (getCalendarDefinitions() above gives
+// the same data keyed by id).
+export function listCalendarDefinitions(extensionId, instanceId) {
+    resolveCallerRecord(extensionId, instanceId);
+    return Object.values(calendarEngine.listCalendars());
+}
+
+// A random, valid calendar definition. It is NOT stored - pass it to
+// createCalendarDefinition() to keep it.
+export function generateRandomCalendarDefinition(extensionId, instanceId, options) {
+    resolveCallerRecord(extensionId, instanceId);
+    return calendarEngine.generateRandomCalendarDefinition(options);
+}
+
+// Points a datetime variable at another calendar. `ref` is the same
+// { namespace, presetName, variableName } updateVariable() takes, and the
+// caller must own the namespace. Returns the updated definition; throws when
+// the variable is not a datetime or the calendar does not exist. The
+// variable's stored values are scalar seconds and are NOT converted - they are
+// simply read through the new calendar from now on.
+export function assignCalendarToVariable(extensionId, instanceId, ref, calendarId) {
+    validateCallerIdentity(extensionId, instanceId, ref?.namespace);
+    if (!getCalendar(calendarId)) throw new Error(`assignCalendarToVariable: calendar "${calendarId}" does not exist`);
+    const current = getVariable(extensionId, instanceId, ref);
+    if (!current) throw new Error(`assignCalendarToVariable: variable "${ref?.namespace}.${ref?.variableName}" not found`);
+    if (current.type !== 'datetime') throw new Error(`assignCalendarToVariable: "${ref.variableName}" is a ${current.type} variable, not a datetime`);
+    const updated = updateVariable(extensionId, instanceId, ref, { calendar: calendarId });
+    if (!updated) throw new Error(`assignCalendarToVariable: could not update "${ref.variableName}"`);
+    return updated;
+}

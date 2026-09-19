@@ -7,6 +7,7 @@ import { setVar } from '../core/chat-state.js';
 import { getDefaultValue } from '../core/variable-schema.js';
 import { coerceValue, validateValueStrict } from '../core/variable-validation.js';
 import { format } from '../core/calendar-engine.js';
+import { formatPartial } from '../core/calendar-engine.js';
 import { recalculateDependents, getCalculatedVariableError } from '../core/calculated-engine.js';
 import { formatValueForDisplay } from './formatting-utils.js';
 import { setStatus } from './settings-panel-ui.js';
@@ -45,15 +46,40 @@ export function resolveTrackerEdit(def, rawValue) {
     return { ok: true, value: coerceValue(def, rawValue) };
 }
 
-// A datetime's stored scalar as the tracker shows it, "2026-09-18 22:55:00",
-// via calendar-engine's format() - the one official formatter (spec 1.21.5).
-// A value or calendar format() refuses is shown as stored rather than
-// breaking the panel.
+// A datetime's stored scalar as the tracker shows it, via calendar-engine's
+// format() - the one official formatter (spec 1.21.5). A Gregorian calendar
+// gives "2026-09-18 22:55:00"; a fantasy calendar shows its own month name and
+// pattern ("Stormfall 17, 1203 12:00:00", spec 1.22.2). A value or calendar
+// format() refuses is shown as stored rather than breaking the panel.
 function datetimeText(def, scalar) {
     try {
         return format(def.calendar || DEFAULT_CALENDAR_ID, Number(scalar), { style: 'full' });
     } catch {
         return scalar ?? '';
+    }
+}
+
+// What the tracker edit box starts with. Always the numeric ISO form, which
+// every calendar can read back (a fantasy calendar's own pattern - an era, a
+// month name - need not be parseable), so committing an untouched box never
+// fails.
+function datetimeEditText(def, scalar) {
+    try {
+        return format(def.calendar || DEFAULT_CALENDAR_ID, Number(scalar), { style: 'custom', pattern: 'YYYY-MM-DD HH:mm:ss' });
+    } catch {
+        return scalar ?? '';
+    }
+}
+
+// The extra line a fantasy calendar adds under its date: the season and the
+// cycle position ("Deepfrost · Silver Moon day 5"). '' for a calendar with
+// neither (Gregorian), or when the value cannot be formatted.
+function datetimeDetail(def, scalar) {
+    try {
+        const p = formatPartial(def.calendar || DEFAULT_CALENDAR_ID, Number(scalar), ['season', 'cycle', 'cycleDay']);
+        return [p.season, p.cycle ? `${p.cycle} day ${p.cycleDay}` : ''].filter(Boolean).join(' · ');
+    } catch {
+        return '';
     }
 }
 
@@ -99,7 +125,7 @@ function buildStaticValueEditor(def, currentValue, onCommit, onCancel) {
     // ISO form ("2026-09-18 22:55:00"); a plain number of seconds is accepted
     // back too (resolveTrackerEdit above).
     const displayVal = def.type === 'datetime'
-        ? datetimeText(def, currentValue)
+        ? datetimeEditText(def, currentValue)
         : Array.isArray(currentValue) ? JSON.stringify(currentValue) : (currentValue ?? '');
     const $input = $('<input type="text" class="text_pole se-tracker-edit-input" />').val(displayVal);
     $input.on('keydown', (e) => {
@@ -182,6 +208,16 @@ export function renderTrackerPanel() {
         const $value = $('<span></span>')
             .addClass('se-tracker-value')
             .text(def.type === 'datetime' ? String(datetimeText(def, value)) : formatValueForDisplay(value, def));
+
+        // A fantasy calendar's season/cycle rides under its date, in the
+        // value's tooltip and as a small second line (spec 1.22).
+        if (def.type === 'datetime') {
+            const detail = datetimeDetail(def, value);
+            if (detail) {
+                $value.attr('title', detail);
+                $value.append($('<small></small>').addClass('se-tracker-datetime-detail').css('display', 'block').text(detail));
+            }
+        }
 
         //$row.append($('<span></span>').addClass(`se-badge se-badge-${def.category} se-tracker-badge`).text(categoryLabel(def.category)));//111111111111
         $row.append($label, $value);

@@ -98,7 +98,10 @@ describe('calendar formatting', () => {
         });
     });
 
-    describe('non-gregorian calendars (first-pass rule)', () => {
+    describe('calendars the engine cannot format with', () => {
+        // Fantasy calendars format by their own rules since spec 1.22 (see
+        // tests/fantasy-calendar.test.js); what still throws is a definition the
+        // engine cannot convert with, and an id that does not exist.
         beforeEach(() => {
             settings.get().calendars.harptos = {
                 id: 'harptos', label: 'Harptos', unit: 'seconds', secondsPerMinute: 60, minutesPerHour: 60, hoursPerDay: 24,
@@ -106,25 +109,25 @@ describe('calendar formatting', () => {
             };
         });
 
-        it('format throws, even for a calendar that exists', () => {
-            expect(() => format('harptos', T)).toThrow('Formatting not implemented for this calendar');
-            expect(() => format('harptos', T, { style: 'month' })).toThrow('Formatting not implemented for this calendar');
+        it('format throws for a calendar whose leap rule does not fit its months', () => {
+            expect(() => format('harptos', T)).toThrow(/twelve Gregorian months/);
+            expect(() => format('harptos', T, { style: 'month' })).toThrow(/twelve Gregorian months/);
         });
 
         it('formatPartial throws', () => {
-            expect(() => formatPartial('harptos', T, ['month'])).toThrow('Formatting not implemented for this calendar');
+            expect(() => formatPartial('harptos', T, ['month'])).toThrow(/twelve Gregorian months/);
         });
 
         it('and so does a calendar that does not exist', () => {
-            expect(() => format('nope', T)).toThrow('Formatting not implemented for this calendar');
-            expect(() => format(undefined, T)).toThrow('Formatting not implemented for this calendar');
+            expect(() => format('nope', T)).toThrow('Unknown calendar "nope"');
+            expect(() => format(undefined, T)).toThrow('Unknown calendar');
         });
     });
 
     describe('calendar definitions (calendar-engine)', () => {
         it('listCalendars returns settings.calendars, getCalendarDefinition one entry or null', () => {
             expect(listCalendars()).toBe(settings.get().calendars);
-            expect(Object.keys(listCalendars())).toEqual(['gregorian']);
+            expect(Object.keys(listCalendars())).toEqual(['gregorian', 'faerun_inspired', 'three_moons', 'solar_cycle']);
             expect(getCalendarDefinition('gregorian')).toBe(settings.get().calendars.gregorian);
             expect(getCalendarDefinition('nope')).toBeNull();
         });
@@ -139,7 +142,7 @@ describe('calendar formatting', () => {
 
         it('getCalendarDefinitions()', () => {
             const all = stateEngine.getCalendarDefinitions('pp', instanceId);
-            expect(Object.keys(all)).toEqual(['gregorian']);
+            expect(Object.keys(all)).toEqual(['gregorian', 'faerun_inspired', 'three_moons', 'solar_cycle']);
             expect(all.gregorian.label).toBe('Gregorian Calendar');
             expect(all.gregorian.months).toHaveLength(12);
         });
@@ -164,8 +167,8 @@ describe('calendar formatting', () => {
         });
 
         it('formatting failures throw rather than return null', () => {
-            expect(() => stateEngine.formatDateTime('pp', instanceId, 'harptos', T)).toThrow('Formatting not implemented for this calendar');
-            expect(() => stateEngine.formatDateTimePartial('pp', instanceId, 'harptos', T, ['day'])).toThrow('Formatting not implemented for this calendar');
+            expect(() => stateEngine.formatDateTime('pp', instanceId, 'harptos', T)).toThrow('Unknown calendar "harptos"');
+            expect(() => stateEngine.formatDateTimePartial('pp', instanceId, 'harptos', T, ['day'])).toThrow('Unknown calendar "harptos"');
         });
 
         describe('identity', () => {
@@ -230,7 +233,7 @@ describe('calendar formatting', () => {
             for (const fn of ['getCalendarDefinitions', 'getCalendarDefinition', 'formatDateTime', 'formatDateTimePartial']) {
                 expect(api, fn).toContain(fn);
             }
-            expect(api).toContain('Only `"gregorian"` is implemented');
+            expect(api).toContain('Unknown calendar');
             expect(api).toContain('scalar\n  seconds');
         });
     });

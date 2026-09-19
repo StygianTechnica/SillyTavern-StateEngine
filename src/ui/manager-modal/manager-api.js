@@ -27,6 +27,7 @@ import { renderVarTable } from '../manager-modal-ui.js';
 import { renderTrackerPanel } from '../tracker-panel-ui.js';
 import { setStatus } from '../settings-panel-ui.js';
 import { getCurrentChatId } from '../wand-ui.js';
+import { previewCalendarDefinition, validateCalendarDefinition } from '../../core/calendar-engine.js';
 
 function findPresetById(presetId) {
     return getSettings().presets[presetId] || null;
@@ -107,6 +108,25 @@ export function removePresetFromChatAdapter(chatId, presetId) {
     callAsBuiltin((extId, instId) => stateEngine.deactivatePreset(extId, instId, chatId, preset.namespace || BUILTIN_NAMESPACE, preset.name));
 }
 
+// Calendar operations for the Calendars tab, made AS the built-in extension
+// through stateEngine.* like the preset adapters above. Unlike callAsBuiltin(),
+// these let the API's errors propagate: the editor needs the reason (an
+// invalid definition, an id in use, a calendar still used by a variable) to
+// show next to the form, not a status-bar line.
+function asBuiltin(fn) {
+    return fn(BUILTIN_NAMESPACE, ensureInstanceId());
+}
+
+export const calendarAdapters = {
+    listCalendars: () => getSettings().calendars || {},
+    createCalendar: (def) => asBuiltin((e, i) => stateEngine.createCalendarDefinition(e, i, def)),
+    updateCalendar: (id, patch) => asBuiltin((e, i) => stateEngine.updateCalendarDefinition(e, i, id, patch)),
+    deleteCalendar: (id) => asBuiltin((e, i) => stateEngine.deleteCalendarDefinition(e, i, id)),
+    generateRandomCalendar: (options) => asBuiltin((e, i) => stateEngine.generateRandomCalendarDefinition(e, i, options)),
+    validateCalendar: validateCalendarDefinition,
+    previewCalendar: previewCalendarDefinition,
+};
+
 setManagerApi({
     getSettings,
     persistSettings,
@@ -127,5 +147,6 @@ setManagerApi({
     isReservedVariable,
     blankDefinition,
     isVariableNameTaken,
-    generateUniqueVariableName
+    generateUniqueVariableName,
+    ...calendarAdapters
 });

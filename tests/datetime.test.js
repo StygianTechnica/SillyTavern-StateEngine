@@ -808,11 +808,11 @@ describe('datetime variables', () => {
             }
         });
 
-        it('documents that fantasy calendars are pluggable, unimplemented and not in the UI', () => {
+        it('documents that fantasy calendars are pluggable and points to 1.22 for their implementation', () => {
             const fantasy = section.slice(section.indexOf('Fantasy calendars'));
             expect(fantasy).toMatch(/pluggable/);
-            expect(fantasy).toMatch(/ONLY "gregorian" is implemented/);
-            expect(fantasy).toMatch(/UI does not expose it/);
+            expect(fantasy).toMatch(/superseded: see 1\.22/);
+            expect(fantasy).toMatch(/still\s+refused/);
         });
 
         it('records the 1.20 batching change and lists calendar-engine.js among the modules', () => {

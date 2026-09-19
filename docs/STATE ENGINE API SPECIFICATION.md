@@ -1267,16 +1267,17 @@ formatDateTimePartial(..., 'gregorian', t, ['month', 'day'])          { month: "
 
 **10.3 Behavior**
 
-- Formatting is calendar-specific. Only `"gregorian"` is implemented in this
-  first pass: any other calendar id throws `Formatting not implemented for
-  this calendar`, even one that exists in `settings.calendars`. Fantasy
-  calendars will supply their own formatting rules later.
+- Formatting is calendar-specific. Gregorian keeps its original output. Since
+  the fantasy pass (Section 11, requirements spec 1.22) any valid calendar
+  formats by its own `formattingRules`; an id that is not defined throws
+  `Unknown calendar "<id>"` (this used to be `Formatting not implemented for
+  this calendar`, which was the first-pass refusal of every non-Gregorian
+  calendar).
 - The macro store is unchanged: `{{name}}` / `getvar` still show scalar
   seconds. Formatting is something a consumer asks for, never something
   stored or substituted.
 - `getCalendarDefinitions()` returns the live settings object, not a copy -
-  treat it as read-only. There is deliberately no API to add or edit a
-  calendar yet.
+  treat it as read-only. Calendars are added and changed through Section 11.
 
 **10.4 Errors, and how this differs from your request**
 
@@ -1288,10 +1289,116 @@ formatDateTimePartial(..., 'gregorian', t, ['month', 'day'])          { month: "
   (`createNamespace()` first). Calendar data is not namespaced, so no
   further ownership is checked.
 - Identity failures **throw**, and so do formatting failures (bad scalar,
-  unknown style, unknown field, unimplemented calendar, `custom` without a
+  unknown style, unknown field, unknown or unusable calendar, `custom` without a
   pattern). Unlike this module's warn-and-null CRUD calls, a caller asking
   for a string is never handed a silent `null` in its place.
 
 **10.5 Verification**
 
 `tests/calendar-format.test.js`; the full suite passes under `npm test`.
+
+
+SECTION 11 — CALENDAR DEFINITION API (2026-09-19)
+
+**Numbering.** The request asked for this as "Section 10" with sub-sections
+10.1 (assignment) and 10.2 (formatting). Section 10 already exists - it is the
+Calendar Formatting API above, and other documents and tests refer to it by
+that number - so this is Section 11 and Section 10 stays the formatting API
+("10.2 Calendar Formatting API (already implemented)" = Section 10 itself).
+
+**11.0 What it is**
+
+Create, edit, delete and read the calendar definitions datetime variables use
+(requirements spec 1.22). Same file and same identity rule as Section 10:
+`src/api/variable-api.js`, exposed on `stateEngine`, backed by
+`src/core/calendar-engine.js`. `resolveCallerRecord` identifies the caller (the
+`instanceId` must match and the extension must already own a namespace).
+Calendar data is not namespaced, so any registered extension may manage
+calendars - the same trust level as reading them.
+
+```
+createCalendarDefinition(extensionId, instanceId, def)
+  -> the stored definition (a copy, version 1)
+updateCalendarDefinition(extensionId, instanceId, calendarId, patch)
+  -> the stored definition (a copy, version + 1)
+deleteCalendarDefinition(extensionId, instanceId, calendarId)
+  -> true
+listCalendarDefinitions(extensionId, instanceId)
+  -> [definition, ...]            (getCalendarDefinitions() gives the same keyed by id)
+getCalendarDefinition(extensionId, instanceId, calendarId)
+  -> definition, or null          (Section 10)
+generateRandomCalendarDefinition(extensionId, instanceId, options)
+  -> a valid definition, NOT stored
+```
+
+**11.1 Calendar Assignment API**
+
+```
+assignCalendarToVariable(extensionId, instanceId, ref, calendarId)
+  -> the updated variable definition
+```
+
+`ref` is `{ namespace, presetName, variableName }`, exactly what
+`updateVariable` takes, and the caller must own `ref.namespace`. It sets the
+datetime variable's `calendar`. Throws when the calendar does not exist, the
+variable does not exist, or the variable is not a datetime. Stored values are
+scalar seconds and are not converted - they are read through the new calendar
+from then on.
+
+**11.2 Calendar Formatting API (already implemented)**
+
+`formatDateTime()` and `formatDateTimePartial()` - Section 10. Since 1.22
+they format any valid calendar (fantasy ones by their `formattingRules`);
+`formatDateTimePartial` also accepts `"season"`, `"cycle"` and `"cycleDay"`,
+and `formatDateTime` accepts any style named in the calendar's
+`formattingRules.patterns` besides the built-in ones.
+
+**11.3 Definition shape**
+
+```
+{
+  id: 'aldoria', label: 'Calendar of Aldoria', unit: 'seconds',
+  secondsPerMinute: 50, minutesPerHour: 50, hoursPerDay: 20,
+  months: [{ name: 'Frostwane', days: 30 }, ...],
+  seasons: [{ name: 'Winter', startDay: 256, endDay: 30 }],   // wraps the year end
+  cycles:  [{ name: 'Silver Moon', length: 28 }],
+  leapYearRule: 'none',
+  formattingRules: { era: 'AR', monthAbbreviationLength: 3,
+                     patterns: { full: 'MMMM D, YYYY ERA HH:mm:ss' },
+                     monthNames: [...], seasonNames: [...] },
+  nlRules: { unitAliases: { moon: 'cycle' }, advanceVerbs: ['let time pass'] }
+}
+```
+
+Full rules (validation, tokens, increment and natural-language behavior) are
+in requirements spec 1.22 - 1.22.5.
+
+**11.4 Errors and behavior**
+
+- Every function here **throws** on failure - identity, an invalid definition
+  (the message lists every problem), an id already in use, an unknown
+  calendar, editing or deleting the built-in `"gregorian"` calendar, and
+  deleting a calendar a datetime variable still uses. This differs from the
+  warn-and-null CRUD in Sections 3-5 for the same reason as Section 10: the
+  caller needs the reason. `getCalendarDefinition` is the read that returns
+  `null`.
+- `update` merges `patch` onto the stored definition and re-validates the
+  merged result; a `null` value removes an optional field (`seasons`,
+  `cycles`, `formattingRules`, `nlRules`, `leapYearRule`). `id` and `version`
+  cannot be patched. Nothing is written when validation fails.
+- The built-in calendars (`gregorian`, `faerun_inspired`, `three_moons`,
+  `solar_cycle`) are listed by the read functions, can be assigned to
+  variables and duplicated (create with a new id), but `update`/`delete` on
+  them throws (requirements spec 1.22.7).
+- Changing a calendar's clock constants or months changes what every datetime
+  variable using it means (their stored seconds are unchanged). That is by
+  design - the definition is the meaning of the number.
+- Definitions are persisted in the settings blob on every change.
+- `createCalendarDefinition` stores a copy; later edits to the object you
+  passed do not change the calendar. Returned definitions are copies too.
+  (`getCalendarDefinition`/`getCalendarDefinitions` still return the live
+  settings objects, as in Section 10 - treat them as read-only.)
+
+**11.5 Verification**
+
+`tests/fantasy-calendar.test.js`; the full suite passes under `npm test`.

@@ -53,6 +53,9 @@ export function buildManagerModal() {
             <button class="se-manager-tab-btn" data-tab="variables">
                 <i class="fa-solid fa-list"></i> Variables
             </button>
+            <button class="se-manager-tab-btn" data-tab="calendars">
+                <i class="fa-solid fa-calendar-days"></i> Calendars
+            </button>
             <button class="se-manager-tab-btn" data-tab="worldinfo">
                 <i class="fa-solid fa-book"></i> World Info
             </button>
@@ -70,6 +73,7 @@ export function buildManagerModal() {
         .html(`
             <div class="se-manager-tab-pane se-manager-tab-active" data-tab="presets" id="se-manager-presets-tab"></div>
             <div class="se-manager-tab-pane" data-tab="variables" id="se-manager-variables-tab"></div>
+            <div class="se-manager-tab-pane" data-tab="calendars" id="se-manager-calendars-tab"></div>
             <div class="se-manager-tab-pane" data-tab="worldinfo" id="se-manager-worldinfo-tab"></div>
             <div class="se-manager-tab-pane" data-tab="varmgmt" id="se-manager-varmgmt-tab"></div>
             <div class="se-manager-tab-pane" data-tab="debug" id="se-manager-debug-tab"></div>
@@ -82,6 +86,7 @@ export function buildManagerModal() {
     // Initial tab rendering
     uiRender.renderPresetsTab(managerApi, managerCurrentPresetId);
     managerCurrentPresetId = uiRender.renderVariablesTab(managerApi, managerCurrentPresetId);
+    uiRender.renderCalendarsTab(managerApi);
     uiRender.renderWorldInfoTab(managerApi);
 
     // Wire events

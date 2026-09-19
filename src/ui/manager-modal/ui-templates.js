@@ -4,6 +4,8 @@
 
 import { escapeHtml } from './utils.js';
 import * as variableSchema from './variable-ui-schema.js';
+import { listCalendars } from '../../core/calendar-engine.js';
+import { BUILTIN_CALENDAR_IDS } from '../../core/settings-core.js';
 
 export function buildPresetRow(presetId, preset, chatPresets, TRIGGER_KEYS, currentChatId) {
     const isActive = chatPresets.includes(presetId);
@@ -138,7 +140,7 @@ function buildArrayItemRow(val, i, itemType, itemEnumValuesArray) {
     `;
 }
 
-export function buildInlineVariableEditor(d, canIncrement, otherVars) {
+export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars = listCalendars()) {
     otherVars = Array.isArray(otherVars) ? otherVars : [];
     // enumValuesMultiline carries the live (possibly-unsaved) list-editor rows
     // across editor re-renders (type toggle, prompted/increment toggles both
@@ -154,6 +156,10 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars) {
         : (Array.isArray(d.itemEnumValues) ? d.itemEnumValues : []);
 
     const itemType = d.itemType || 'any';
+
+    // A datetime variable pointing at a calendar that is not in the list
+    // (deleted or corrupt settings) is warned about, never silently re-pointed.
+    const calendarMissing = d.type === 'datetime' && !!d.calendar && !Object.values(calendars || {}).some((c) => c.id === d.calendar);
 
     // The array-default-value row editor round-trips through
     // collectInlineVariableValues() the same way enumValuesMultiline does,
@@ -195,6 +201,19 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars) {
                 <option value="calculated" ${d.type === 'calculated' ? 'selected' : ''}>Calculated</option>
                 <option value="datetime" ${d.type === 'datetime' ? 'selected' : ''}>Date &amp; time</option>
             </select>
+
+            ${d.type === 'datetime' ? `
+                <label class="se-manager-label">Calendar</label>
+                <select class="text_pole se-manager-var-field" data-field="calendar">
+                    ${Object.values(calendars || {}).map((c) => `
+                        <option value="${escapeHtml(c.id)}" ${(d.calendar || 'gregorian') === c.id ? 'selected' : ''}>${escapeHtml(c.label || c.id)}</option>
+                    `).join('')}
+                    ${calendarMissing ? `<option value="${escapeHtml(d.calendar)}" selected>⚠ ${escapeHtml(d.calendar)} (missing)</option>` : ''}
+                </select>
+                ${calendarMissing ? `<div class="se-cal-missing-warning" style="color: #e57373;">
+                    This variable uses the calendar "${escapeHtml(d.calendar)}", which no longer exists. Pick another calendar before saving.
+                </div>` : ''}
+            ` : ''}
 
             ${d.type === 'array' ? `
                 <label class="se-manager-label">Default values</label>
@@ -706,5 +725,190 @@ export function buildDebugTabContainer(activePresetsHtml, variablesHtml, isEnabl
                 Click "Copy JSON" to copy all debug data to clipboard, or "Log to Console" to inspect in the browser developer tools.
             </small>
         </div>
+    `;
+}
+
+// ---------------------------------------------------------------------------
+// Calendars tab (requirements spec 1.22)
+// ---------------------------------------------------------------------------
+
+export function buildCalendarsTabContainer(rowsHtml, editorHtml) {
+    return `
+        <div class="se-manager-section">
+            <div class="se-manager-section-header">
+                <h3>Calendars</h3>
+                <div class="se-manager-section-buttons">
+                    <button id="se-cal-import" class="menu_button" title="Import a calendar from pasted JSON">
+                        <i class="fa-solid fa-file-import"></i> Import
+                    </button>
+                    <button id="se-cal-random" class="menu_button" title="Generate a random fantasy calendar to edit">
+                        <i class="fa-solid fa-dice"></i> Random
+                    </button>
+                    <button id="se-cal-new" class="menu_button" title="Create a new calendar">
+                        <i class="fa-solid fa-plus"></i> New
+                    </button>
+                </div>
+            </div>
+            <small>
+                Calendars turn a datetime variable's stored seconds into dates. Pick one per datetime
+                variable in the Variables tab. The built-in Gregorian calendar cannot be edited - duplicate it instead.
+            </small>
+            <div class="se-cal-list">
+                ${rowsHtml || '<div class="se-empty">No calendars.</div>'}
+            </div>
+        </div>
+        ${editorHtml || ''}
+    `;
+}
+
+// One row of the calendar list. `sample` is a formatted example date (or ''),
+// `usedBy` the number of variables using this calendar.
+export function buildCalendarRow(cal, sample = '', usedBy = 0) {
+    const builtin = BUILTIN_CALENDAR_IDS.includes(cal.id);
+    const yearDays = (cal.months || []).reduce((n, m) => n + (Number(m.days) || 0), 0);
+    const seasons = (cal.seasons || []).length;
+    const cycles = (cal.cycles || []).length;
+    return `
+        <div class="se-cal-row" data-calendar-id="${escapeHtml(cal.id)}">
+            <div class="se-cal-row-main">
+                <strong>${escapeHtml(cal.label || cal.id)}</strong>
+                <small>${escapeHtml(cal.id)} · v${escapeHtml(cal.version || 1)}${builtin ? ' · built in' : ''}</small>
+                <small>${(cal.months || []).length} months, ${yearDays}${cal.leapYearRule === 'gregorian' ? '+' : ''} days/year,
+                    ${escapeHtml(cal.hoursPerDay)}h × ${escapeHtml(cal.minutesPerHour)}m × ${escapeHtml(cal.secondsPerMinute)}s${seasons ? ` · ${seasons} seasons` : ''}${cycles ? ` · ${cycles} cycles` : ''}
+                    · used by ${usedBy} variable(s)</small>
+                ${sample ? `<small class="se-cal-sample">Example: ${escapeHtml(sample)}</small>` : ''}
+            </div>
+            <div class="se-manager-section-buttons">
+                ${builtin ? '' : '<button class="menu_button se-cal-edit" title="Edit"><i class="fa-solid fa-pen"></i></button>'}
+                <button class="menu_button se-cal-duplicate" title="Duplicate"><i class="fa-solid fa-clone"></i></button>
+                <button class="menu_button se-cal-export" title="Copy as JSON"><i class="fa-solid fa-copy"></i></button>
+                ${builtin ? '' : '<button class="menu_button se-cal-delete" title="Delete"><i class="fa-solid fa-trash"></i></button>'}
+            </div>
+        </div>
+    `;
+}
+
+const calInput = (field, value, placeholder = '', extra = '') => `
+    <input class="text_pole se-cal-field" data-cal-field="${field}" placeholder="${escapeHtml(placeholder)}"
+        value="${escapeHtml(value ?? '')}" ${extra} />`;
+
+const calTextarea = (field, value, placeholder = '', rows = 3) => `
+    <textarea class="text_pole se-cal-field" data-cal-field="${field}" rows="${rows}"
+        placeholder="${escapeHtml(placeholder)}">${escapeHtml(value ?? '')}</textarea>`;
+
+export function buildCalendarMonthRow(month = {}) {
+    return `
+        <div class="se-cal-month-row se-cal-item-row"${month.leap !== undefined ? ` data-leap="${escapeHtml(month.leap)}"` : ''}>
+            <input class="text_pole se-cal-month-name" placeholder="Month name" value="${escapeHtml(month.name ?? '')}" />
+            <input class="text_pole se-cal-month-days" type="number" min="1" placeholder="Days" value="${escapeHtml(month.days ?? '')}" />
+            <button type="button" class="menu_button se-cal-remove-row" title="Remove"><i class="fa-solid fa-xmark"></i></button>
+        </div>`;
+}
+
+export function buildCalendarSeasonRow(season = {}) {
+    return `
+        <div class="se-cal-season-row se-cal-item-row">
+            <input class="text_pole se-cal-season-name" placeholder="Season name" value="${escapeHtml(season.name ?? '')}" />
+            <input class="text_pole se-cal-season-start" type="number" min="1" placeholder="Start day" value="${escapeHtml(season.startDay ?? '')}" />
+            <input class="text_pole se-cal-season-end" type="number" min="1" placeholder="End day" value="${escapeHtml(season.endDay ?? '')}" />
+            <button type="button" class="menu_button se-cal-remove-row" title="Remove"><i class="fa-solid fa-xmark"></i></button>
+        </div>`;
+}
+
+export function buildCalendarCycleRow(cycle = {}) {
+    return `
+        <div class="se-cal-cycle-row se-cal-item-row">
+            <input class="text_pole se-cal-cycle-name" placeholder="Cycle name" value="${escapeHtml(cycle.name ?? '')}" />
+            <input class="text_pole se-cal-cycle-length" type="number" min="1" placeholder="Length (days)" value="${escapeHtml(cycle.length ?? '')}" />
+            <button type="button" class="menu_button se-cal-remove-row" title="Remove"><i class="fa-solid fa-xmark"></i></button>
+        </div>`;
+}
+
+// The calendar editor. `v` is calendar-ui-schema.js's editor values.
+export function buildCalendarEditor(v) {
+    const leapRule = v.leapYearRule === 'gregorian' ? 'gregorian' : 'none';
+    return `
+        <div class="se-manager-section se-cal-editor" data-editing-new="${v.isNew ? 'true' : 'false'}">
+            <div class="se-manager-section-header">
+                <h3>${v.isNew ? 'New calendar' : `Edit calendar: ${escapeHtml(v.label || v.id)}`}</h3>
+                <div class="se-manager-section-buttons">
+                    <button id="se-cal-save" class="menu_button"><i class="fa-solid fa-check"></i> Save</button>
+                    <button id="se-cal-cancel" class="menu_button"><i class="fa-solid fa-xmark"></i> Cancel</button>
+                </div>
+            </div>
+
+            <label class="se-manager-label">Id (letters, digits, - and _)</label>
+            ${calInput('id', v.id, 'e.g. aldoria', v.isNew ? '' : 'readonly')}
+            <label class="se-manager-label">Label</label>
+            ${calInput('label', v.label, 'Display name')}
+
+            <label class="se-manager-label">Clock</label>
+            <div class="se-cal-clock">
+                ${calInput('hoursPerDay', v.hoursPerDay, 'Hours per day', 'type="number" min="1"')}
+                ${calInput('minutesPerHour', v.minutesPerHour, 'Minutes per hour', 'type="number" min="1"')}
+                ${calInput('secondsPerMinute', v.secondsPerMinute, 'Seconds per minute', 'type="number" min="1"')}
+            </div>
+            <input type="hidden" class="se-cal-field" data-cal-field="leapYearRule" value="${leapRule}" />
+
+            <label class="se-manager-label">Months</label>
+            <div class="se-cal-months">${(v.months || []).map(buildCalendarMonthRow).join('')}</div>
+            <button type="button" class="menu_button se-cal-add-month"><i class="fa-solid fa-plus"></i> Add month</button>
+
+            <label class="se-manager-label">Seasons (day of the year, inclusive; a start after the end wraps the year end)</label>
+            <div class="se-cal-seasons">${(v.seasons || []).map(buildCalendarSeasonRow).join('')}</div>
+            <button type="button" class="menu_button se-cal-add-season"><i class="fa-solid fa-plus"></i> Add season</button>
+
+            <label class="se-manager-label">Cycles (repeating periods, in days - the first is shown and used by "1cycle")</label>
+            <div class="se-cal-cycles">${(v.cycles || []).map(buildCalendarCycleRow).join('')}</div>
+            <button type="button" class="menu_button se-cal-add-cycle"><i class="fa-solid fa-plus"></i> Add cycle</button>
+
+            <h4>Formatting rules</h4>
+            <small>Tokens: YYYY MM DD HH mm ss MMM MMMM, plus D (day), SEASON, CYCLE, CDAY, ERA.</small>
+            <label class="se-manager-label">Era text (ERA)</label>
+            ${calInput('era', v.era, 'e.g. AR')}
+            <label class="se-manager-label">Short month name length (MMM)</label>
+            ${calInput('monthAbbreviationLength', v.monthAbbreviationLength, '3', 'type="number" min="1"')}
+            <label class="se-manager-label">Patterns (one "style = pattern" per line; styles: full, date, time, month, or your own)</label>
+            ${calTextarea('patternsText', v.patternsText, 'full = MMMM D, YYYY ERA HH:mm:ss')}
+            <label class="se-manager-label">Month display names (optional, one per line, in month order)</label>
+            ${calTextarea('monthNamesText', v.monthNamesText)}
+            <label class="se-manager-label">Season display names (optional, one per line)</label>
+            ${calTextarea('seasonNamesText', v.seasonNamesText)}
+
+            <h4>Natural-language rules</h4>
+            <label class="se-manager-label">Unit words (one "word = unit" per line, e.g. "moon = cycle" or "tenday = day * 10")</label>
+            ${calTextarea('unitAliasesText', v.unitAliasesText)}
+            <label class="se-manager-label">Extra "advance" phrases (one per line)</label>
+            ${calTextarea('advanceVerbsText', v.advanceVerbsText, 'let time pass', 2)}
+            <label class="se-manager-label">Extra "rewind" phrases (one per line)</label>
+            ${calTextarea('rewindVerbsText', v.rewindVerbsText, '', 2)}
+            <label class="se-manager-label">Extra "set to" phrases (one per line)</label>
+            ${calTextarea('setVerbsText', v.setVerbsText, '', 2)}
+
+            <h4>Preview</h4>
+            <div class="se-cal-preview-inputs">
+                <input class="text_pole" id="se-cal-preview-scalar" placeholder="Moment: seconds or a date (blank = day 1, midday)" />
+                <input class="text_pole" id="se-cal-preview-delta" placeholder="Increment, e.g. 1mo, 1season, 1cycle" />
+                <input class="text_pole" id="se-cal-preview-nl" placeholder="Instruction, e.g. advance 1 season / next cycle / move to Stormfall 17" />
+                <button type="button" id="se-cal-preview-run" class="menu_button"><i class="fa-solid fa-eye"></i> Preview</button>
+            </div>
+            <div id="se-cal-preview-output" class="se-cal-preview-output"></div>
+        </div>
+    `;
+}
+
+// The preview panel's HTML for previewCalendarDefinition()'s result.
+export function buildCalendarPreviewOutput(result) {
+    if (!result?.valid) {
+        return `<div class="se-cal-preview-errors">${(result?.errors || ['No preview available']).map((e) => `<div>${escapeHtml(e)}</div>`).join('')}</div>`;
+    }
+    const p = result.partial || {};
+    const extras = [p.season ? `Season: ${p.season}` : '', p.cycle ? `${p.cycle}: day ${p.cycleDay}` : ''].filter(Boolean);
+    return `
+        ${result.scalarError ? `<div><em>${escapeHtml(result.scalarError)}</em></div>` : ''}
+        <div><strong>${escapeHtml(result.full)}</strong></div>
+        ${extras.length ? `<div><small>${escapeHtml(extras.join(' · '))}</small></div>` : ''}
+        ${result.incremented ? `<div>+ ${escapeHtml(result.incremented.delta)} → ${result.incremented.error ? `<em>${escapeHtml(result.incremented.error)}</em>` : escapeHtml(result.incremented.text)}</div>` : ''}
+        ${result.resolved ? `<div>"${escapeHtml(result.resolved.instruction)}" → ${result.resolved.text === null ? '<em>not understood</em>' : escapeHtml(result.resolved.text)}</div>` : ''}
     `;
 }

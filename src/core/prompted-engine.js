@@ -3,7 +3,7 @@
 import { LOG_PREFIX, DEFAULT_CALENDAR_ID, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED_VARIABLE_RULES, getSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
 import { DEFAULT_BATCH, TIME_BATCH, batchOf, getDefaultValue } from './variable-schema.js';
-import { formatScalar, resolveInstruction, toScalar } from './calendar-engine.js';
+import { format, resolveInstruction, toScalar } from './calendar-engine.js';
 import { getVar, setVar, applyIncrement, loadChatState } from './chat-state.js';
 import { recalculateDependents } from './calculated-engine.js';
 import { callBackgroundLLM } from './background-llm.js';
@@ -29,12 +29,18 @@ export function selectBatchVariables(variables, batchName = DEFAULT_BATCH) {
     return Object.values(variables || {}).filter((def) => wanted.includes(batchOf(def)));
 }
 
-// A datetime variable's value as the model should see it: the calendar's
-// "YYYY-MM-DD HH:MM:SS" form, not raw scalar seconds. Every other type is
-// shown as stored.
+// A datetime variable's value as the model should see it: calendarEngine.format()
+// in the variable's own calendar (spec 1.22.2) - "2026-09-18 22:55:00" for
+// Gregorian, the calendar's own month name and pattern for a fantasy one -
+// never raw scalar seconds. Every other type is shown as stored. A value the
+// calendar cannot format is shown as stored.
 function valueForPrompt(def, value) {
     if (def.type !== 'datetime') return value;
-    return formatScalar(def.calendar || DEFAULT_CALENDAR_ID, value) ?? value;
+    try {
+        return format(def.calendar || DEFAULT_CALENDAR_ID, Number(value), { style: 'full' });
+    } catch {
+        return value;
+    }
 }
 
 // Fires the background "prompted variable" LLM update and returns``
@@ -235,8 +241,13 @@ export async function runPromptedStateUpdate(triggerType) {
                                     // ("2026-09-18 22:00"), never raw seconds
                                     // - calendar-engine turns either into the
                                     // new scalar (incrementScalar/fromStructured
-                                    // underneath). An answer it can't
-                                    // understand is skipped, not written.
+                                    // underneath). resolveInstruction() dispatches
+                                    // to the variable's own calendar, so its
+                                    // nlRules ("advance 1 season", "next cycle",
+                                    // "move to Stormfall 17") apply here without
+                                    // any calendar-specific code in this file. An
+                                    // answer it can't understand is skipped, not
+                                    // written.
                                     const calendarId = def.calendar || DEFAULT_CALENDAR_ID;
                                     const stored = getVar(chatId, def.name)?.value ?? getDefaultValue(def);
                                     const next = resolveInstruction(calendarId, toScalar(calendarId, stored) ?? 0, rawValue);

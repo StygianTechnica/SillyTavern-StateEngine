@@ -32,16 +32,33 @@ export const DEFAULT_UNIFIED_VARIABLE_RULES = [
             '- The JSON object MUST contain one key for every update variable AND every boolean-condition variable.'
         ].join('\n');
 
-// Calendar definitions for datetime variables (requirements spec 1.21).
-// Pluggable objects, keyed by id, that src/core/calendar-engine.js reads to
-// convert a variable's scalar seconds to and from a structured date. Only
-// "gregorian" is implemented; the fields beyond it (months, leapYearRule) are
-// the shape a fantasy calendar would fill in later.
+// Calendar definitions for datetime variables (requirements specs 1.21 and
+// 1.22). Pluggable objects, keyed by id, that src/core/calendar-engine.js reads
+// to convert a variable's scalar seconds to and from a structured date. This
+// is the built-in one; fantasy calendars are added next to it (through
+// calendar-engine's createCalendar(), the Calendars tab, or the API) and share
+// the same shape, plus the optional seasons, cycles, formattingRules and
+// nlRules. Every stored definition carries a `version`, bumped on each edit.
 export const DEFAULT_CALENDAR_ID = 'gregorian';
-export const DEFAULT_CALENDARS = Object.freeze({
+
+function deepFreeze(value) {
+    if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+        Object.freeze(value);
+        Object.values(value).forEach(deepFreeze);
+    }
+    return value;
+}
+
+const MONTHS_OF = (names, days) => names.map((name) => ({ name, days }));
+
+// The built-in calendars. Every one is copied into settings.calendars when
+// missing (getSettings), cannot be changed or deleted, and can be duplicated.
+// Season days are 1-based days of the year, inclusive (requirements spec 1.22).
+export const DEFAULT_CALENDARS = deepFreeze({
     gregorian: Object.freeze({
         id: 'gregorian',
         label: 'Gregorian Calendar',
+        version: 1,
         unit: 'seconds',
         secondsPerMinute: 60,
         minutesPerHour: 60,
@@ -62,7 +79,94 @@ export const DEFAULT_CALENDARS = Object.freeze({
         ]),
         leapYearRule: 'gregorian',
     }),
+    faerun_inspired: {
+        id: 'faerun_inspired',
+        label: 'Faerûn-Inspired Calendar',
+        unit: 'seconds',
+        secondsPerMinute: 60,
+        minutesPerHour: 60,
+        hoursPerDay: 24,
+        months: MONTHS_OF(['Deepwinter', 'Rainswell', 'Greengold', 'Suncrest', 'Highheat', 'Emberfall',
+            'Harvestwane', 'Frostwane', 'Darktide', 'Starfall', 'Longnight', 'Dawnbreak'], 30),
+        seasons: [
+            { name: 'Winter', startDay: 1, endDay: 60 },
+            { name: 'Spring', startDay: 61, endDay: 120 },
+            { name: 'Summer', startDay: 121, endDay: 180 },
+            { name: 'Autumn', startDay: 181, endDay: 240 },
+            { name: 'Nightseason', startDay: 241, endDay: 360 },
+        ],
+        cycles: [{ name: 'Lunar', length: 28 }, { name: 'Astral', length: 60 }],
+        formattingRules: {
+            patterns: {
+                full: '{monthName} {day}, Year {year} — {season}',
+                date: '{monthName} {day}, {year}',
+                time: '{HH}:{mm}:{ss}',
+            },
+        },
+        nlRules: {
+            nextSeason: ['next season', 'advance season'],
+            nextCycle: ['next cycle', 'advance cycle'],
+            moveToDay: ['move to'],
+        },
+        version: 1,
+    },
+    three_moons: {
+        id: 'three_moons',
+        label: 'Three-Moon Calendar',
+        unit: 'seconds',
+        secondsPerMinute: 60,
+        minutesPerHour: 60,
+        hoursPerDay: 24,
+        months: MONTHS_OF(['Firstlight', 'Brightmarch', 'Highcrest', 'Lowfall', 'Duskreach',
+            'Nightdeep', 'Starwake', 'Moonrise', 'Shadowturn', 'Dawnhold'], 36),
+        cycles: [{ name: 'Red Moon', length: 18 }, { name: 'Blue Moon', length: 24 }, { name: 'White Moon', length: 30 }],
+        formattingRules: {
+            patterns: {
+                full: '{monthName} {day}, Year {year} — Moons: {cycle:red}/{cycle:blue}/{cycle:white}',
+                date: '{monthName} {day}, {year}',
+                time: '{HH}:{mm}:{ss}',
+            },
+        },
+        nlRules: {
+            nextRedMoon: ['next red moon'],
+            nextBlueMoon: ['next blue moon'],
+            nextWhiteMoon: ['next white moon'],
+            nextCycle: ['next cycle'],
+        },
+        version: 1,
+    },
+    solar_cycle: {
+        id: 'solar_cycle',
+        label: 'Solar-Cycle Calendar',
+        unit: 'seconds',
+        secondsPerMinute: 100,
+        minutesPerHour: 100,
+        hoursPerDay: 30,
+        months: MONTHS_OF(['Scorchrise', 'Fadewind', 'Coldrest', 'Bloomreach', 'Highbloom', 'Lowbloom'], 50),
+        // The year is 6 x 50 = 300 days, so four seasons of 75 days (the request's
+        // 0-399 ranges ran past the end of the year).
+        seasons: [
+            { name: 'Scorch', startDay: 1, endDay: 75 },
+            { name: 'Fade', startDay: 76, endDay: 150 },
+            { name: 'Cold', startDay: 151, endDay: 225 },
+            { name: 'Bloom', startDay: 226, endDay: 300 },
+        ],
+        formattingRules: {
+            patterns: {
+                full: '{season} Cycle — Day {dayOfSeason} ({monthName} {day})',
+                date: '{monthName} {day}, {year}',
+                time: '{HH}:{mm}:{ss}',
+            },
+        },
+        nlRules: {
+            nextSeason: ['next season'],
+            moveToSeason: ['move to season'],
+            moveToDay: ['move to'],
+        },
+        version: 1,
+    },
 });
+export const BUILTIN_CALENDAR_IDS = Object.freeze(Object.keys(DEFAULT_CALENDARS));
 
 // Debug mode - session-only, not persisted
 window.seDebugMode = false;
@@ -354,9 +458,16 @@ export function getSettings() {
     if (!settings.extensions || typeof settings.extensions !== 'object') settings.extensions = {};
     if (!settings.eventSources || typeof settings.eventSources !== 'object') settings.eventSources = {};
     if (!settings.calendars || typeof settings.calendars !== 'object') settings.calendars = {};
-    // The built-in calendar is always present, so a datetime variable's
-    // default calendar reference can never dangle.
-    if (!settings.calendars[DEFAULT_CALENDAR_ID]) settings.calendars[DEFAULT_CALENDAR_ID] = structuredCloneSafe(DEFAULT_CALENDARS[DEFAULT_CALENDAR_ID]);
+    // A calendar entry that is not an object (hand-edited or corrupted
+    // settings) is dropped - every reader of settings.calendars assumes one.
+    for (const [calendarId, calendar] of Object.entries(settings.calendars)) {
+        if (!calendar || typeof calendar !== 'object' || Array.isArray(calendar)) delete settings.calendars[calendarId];
+    }
+    // The built-in calendars are always present (gregorian is what a datetime
+    // variable's default calendar reference points at, so it can never dangle).
+    for (const builtinId of BUILTIN_CALENDAR_IDS) {
+        if (!settings.calendars[builtinId]) settings.calendars[builtinId] = structuredCloneSafe(DEFAULT_CALENDARS[builtinId]);
+    }
 
 
     return settings;

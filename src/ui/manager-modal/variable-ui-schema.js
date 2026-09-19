@@ -3,7 +3,7 @@
 // variable definitions. Uses ES6 modules - imported by manager-modal.js
 
 import { DEFAULT_CALENDAR_ID } from '../../core/settings-core.js';
-import { toScalar } from '../../core/calendar-engine.js';
+import { getCalendar, toScalar } from '../../core/calendar-engine.js';
 
 export function mergeDefinition(defaults, varDef) {
     const d = Object.assign({}, defaults, varDef);
@@ -62,6 +62,17 @@ export function normalizeCollectedValues(values) {
         }
         out.enumValues = cleaned;
     }
+    // A datetime variable's calendar (requirements spec 1.22): must be one
+    // that exists in settings.calendars - an unknown id falls back to the
+    // default calendar rather than being stored dangling (the save handler
+    // in ui-events.js refuses it with a message before it gets here).
+    // The choices offered are every calendar in settings.calendars, built-in
+    // ones included (ui-templates.js).
+    if (values.calendar !== undefined) {
+        const calendarId = String(values.calendar || '').trim();
+        out.calendar = getCalendar(calendarId) ? calendarId : DEFAULT_CALENDAR_ID;
+    }
+
     if (values.defaultValue !== undefined) {
         // The defaultValue input is a plain text field regardless of type
         // (jQuery .val() is always a string), so a number-type variable's
@@ -81,7 +92,7 @@ export function normalizeCollectedValues(values) {
         out.defaultValue = values.type === 'number'
             ? (Number.isFinite(Number(values.defaultValue)) ? Number(values.defaultValue) : 0)
             : values.type === 'datetime'
-                ? (toScalar(values.calendar || DEFAULT_CALENDAR_ID, values.defaultValue) ?? 0)
+                ? (toScalar(out.calendar || values.calendar || DEFAULT_CALENDAR_ID, values.defaultValue) ?? 0)
                 : values.defaultValue;
     }
 

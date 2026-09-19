@@ -879,3 +879,52 @@
     white-space: pre-wrap;
     word-break: break-all;
 }
+
+/* Calendars tab (requirements spec 1.22) */
+.se-cal-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.se-cal-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    background-color: var(--bg-secondary, #222);
+    border: 1px solid var(--border-color, #333);
+    border-radius: 4px;
+}
+
+.se-cal-row-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+}
+
+.se-cal-item-row,
+.se-cal-clock,
+.se-cal-preview-inputs {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.se-cal-preview-inputs {
+    flex-wrap: wrap;
+}
+
+.se-cal-preview-output {
+    padding: 8px;
+    background-color: var(--bg-color, #1a1a1a);
+    border-radius: 3px;
+}
+
+.se-cal-preview-errors {
+    color: #e57373;
+}

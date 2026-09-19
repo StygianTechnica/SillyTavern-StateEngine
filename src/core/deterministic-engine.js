@@ -38,9 +38,13 @@ export function runDeterministicIncrements(chatId, triggerType) {
                 // numeric addition: applyIncrement() (chat-state.js) routes
                 // it through calendar-engine's incrementScalar() - the one
                 // write path every increment shares - with delta as a string
-                // such as "1h"/"1d"/"1mo"/"1y". An unparseable delta is
-                // reported here, by variable, instead of silently doing
-                // nothing inside applyIncrement().
+                // such as "1h"/"1d"/"1mo"/"1y" - or, on a fantasy calendar
+                // (spec 1.22.3), "1season"/"1cycle". isValidDelta() checks
+                // the delta against THAT calendar's own units, so "1season"
+                // is valid on a calendar with seasons and skipped (with this
+                // warning) on one without. An unparseable delta is reported
+                // here, by variable, instead of silently doing nothing
+                // inside applyIncrement().
                 if (def.type === 'datetime' && !isValidDelta(def.calendar || DEFAULT_CALENDAR_ID, def.increment.delta)) {
                     console.warn(LOG_PREFIX, `datetime increment skipped for "${def.name}": invalid delta ${JSON.stringify(def.increment.delta)} for calendar "${def.calendar || DEFAULT_CALENDAR_ID}"`);
                     continue;

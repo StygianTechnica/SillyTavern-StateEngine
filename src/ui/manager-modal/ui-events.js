@@ -9,8 +9,11 @@ import { generateUUID, escapeHtml } from './utils.js';
 import { resetValueIfTypeChanged, hydrateMacroStoreForChat, seedVariablesForChat } from '../../core/chat-state.js';
 import { recalculateAllForChat, recalculateDependents, getCalculatedVariableError } from '../../core/calculated-engine.js';
 import { refreshVariableMacros } from '../../core/macro-registration.js';
-import { BUILTIN_NAMESPACE, DEFAULT_CALENDAR_ID } from '../../core/settings-core.js';
-import { formatScalar, toScalar } from '../../core/calendar-engine.js';
+import { BUILTIN_NAMESPACE, DEFAULT_CALENDAR_ID, BUILTIN_CALENDAR_IDS } from '../../core/settings-core.js';
+import { formatScalar, getCalendar, toScalar } from '../../core/calendar-engine.js';
+import {
+    blankCalendarEditorValues, editorValuesFromDefinition, definitionFromEditorValues, updatePatchFromDefinition,
+} from './calendar-ui-schema.js';
 
 // Every variable created/edited through the manager modal is stored under
 // the reserved BUILTIN_NAMESPACE (see settings-core.js's
@@ -46,6 +49,10 @@ export function wireEvents(managerApi, managerState) {
         }
     });
 
+    // The Calendars tab's open editor (calendar-ui-schema.js editor values),
+    // or null. Kept here so a tab switch re-renders it rather than losing it.
+    let calendarEditing = null;
+
     // Tab switching
     $overlay.on('click', '.se-manager-tab-btn', function () {
         const tab = $(this).attr('data-tab');
@@ -57,6 +64,7 @@ export function wireEvents(managerApi, managerState) {
         // Re-render the tab content
         if (tab === 'presets') uiRender.renderPresetsTab(managerApi, managerState.currentPresetId);
         else if (tab === 'variables') managerState.currentPresetId = uiRender.renderVariablesTab(managerApi, managerState.currentPresetId);
+        else if (tab === 'calendars') uiRender.renderCalendarsTab(managerApi, calendarEditing);
         else if (tab === 'worldinfo') uiRender.renderWorldInfoTab(managerApi);
         else if (tab === 'varmgmt') uiRender.renderVariableManagementTab(managerApi);
         else if (tab === 'debug') uiRender.renderDebugTab(managerApi);
@@ -302,8 +310,12 @@ export function wireEvents(managerApi, managerState) {
         // (via the calendar's fromStructured()). Text that is neither a date
         // nor a number is refused here rather than silently saved as 0. An
         // empty box just means "no default" (0 = 1970-01-01 00:00:00).
+        if (values.type === 'datetime' && values.calendar !== undefined && !getCalendar(values.calendar)) {
+            alert(`Calendar "${values.calendar}" does not exist. Pick one from the Calendar list.`);
+            return;
+        }
         if (values.type === 'datetime' && String(values.defaultValue ?? '').trim() !== ''
-            && toScalar(previousCalendarId(preset, values.id), values.defaultValue) === null) {
+            && toScalar(values.calendar || previousCalendarId(preset, values.id), values.defaultValue) === null) {
             alert('Default value must be a date-time such as "2026-09-18 22:00:00" (or a number of seconds).');
             return;
         }
@@ -333,10 +345,12 @@ export function wireEvents(managerApi, managerState) {
         if (typeof previousDef?.batch === 'string' && previousDef.batch) newVariable.batch = previousDef.batch;
 
         // Same trap for a datetime's calendar/unit (requirements spec 1.21):
-        // the editor has no field for them (calendars are not exposed in the
-        // UI yet), so the rebuilt definition would reset them to the
-        // Gregorian default on every save.
-        if (typeof previousDef?.calendar === 'string' && previousDef.calendar) newVariable.calendar = previousDef.calendar;
+        // the editor has a calendar selector (1.22) only while the type is
+        // datetime, and no unit field at all, so a rebuilt definition without
+        // them would reset both to the Gregorian default on every save. An
+        // explicit calendar choice from the selector wins; otherwise the
+        // stored one is carried over.
+        if (values.calendar === undefined && typeof previousDef?.calendar === 'string' && previousDef.calendar) newVariable.calendar = previousDef.calendar;
         if (typeof previousDef?.unit === 'string' && previousDef.unit) newVariable.unit = previousDef.unit;
 
         // A variable that has just become a datetime lands in batch "time",
@@ -514,6 +528,190 @@ export function wireEvents(managerApi, managerState) {
         uiRender.renderVariableManagementTab(managerApi);
         managerApi.setStatus(`Imported stored variables for "${chatId}".`);
         managerApi.renderTrackerPanel();
+    });
+
+    // ---------------------------------------------------------------------
+    // Calendars tab (requirements spec 1.22). Every mutation goes through
+    // managerApi's calendar adapters (stateEngine.*CalendarDefinition), whose
+    // errors are shown to the user as-is.
+    // ---------------------------------------------------------------------
+
+    function renderCalendars() {
+        uiRender.renderCalendarsTab(managerApi, calendarEditing);
+    }
+
+    function reportCalendarError(err) {
+        console.warn('[State Engine]', err);
+        alert(err?.message || String(err));
+    }
+
+    function uniqueCalendarId(base) {
+        const existing = managerApi.listCalendars();
+        let candidate = base;
+        for (let n = 2; Object.prototype.hasOwnProperty.call(existing, candidate); n++) candidate = `${base}-${n}`;
+        return candidate;
+    }
+
+    function calendarIdOfRow(el) {
+        return $(el).closest('.se-cal-row').attr('data-calendar-id');
+    }
+
+    // The open editor's DOM -> editor values (calendar-ui-schema.js).
+    function collectCalendarEditorValues() {
+        const $editor = $('#se-manager-calendars-tab .se-cal-editor');
+        const values = { isNew: $editor.attr('data-editing-new') === 'true', months: [], seasons: [], cycles: [] };
+        $editor.find('.se-cal-field').each(function () {
+            values[$(this).attr('data-cal-field')] = $(this).val();
+        });
+        $editor.find('.se-cal-month-row').each(function () {
+            const month = { name: $(this).find('.se-cal-month-name').val(), days: $(this).find('.se-cal-month-days').val() };
+            // A stored Gregorian-rule month keeps its leap-year length.
+            if ($(this).attr('data-leap') !== undefined) month.leap = $(this).attr('data-leap');
+            values.months.push(month);
+        });
+        $editor.find('.se-cal-season-row').each(function () {
+            values.seasons.push({
+                name: $(this).find('.se-cal-season-name').val(),
+                startDay: $(this).find('.se-cal-season-start').val(),
+                endDay: $(this).find('.se-cal-season-end').val(),
+            });
+        });
+        $editor.find('.se-cal-cycle-row').each(function () {
+            values.cycles.push({ name: $(this).find('.se-cal-cycle-name').val(), length: $(this).find('.se-cal-cycle-length').val() });
+        });
+        return values;
+    }
+
+    $overlay.on('click', '#se-cal-new', function () {
+        calendarEditing = blankCalendarEditorValues();
+        renderCalendars();
+    });
+
+    // A generated calendar opens in the editor unsaved - nothing is stored
+    // until Save.
+    $overlay.on('click', '#se-cal-random', function () {
+        try {
+            calendarEditing = { ...editorValuesFromDefinition(managerApi.generateRandomCalendar({})), isNew: true };
+            renderCalendars();
+        } catch (err) {
+            reportCalendarError(err);
+        }
+    });
+
+    $overlay.on('click', '.se-cal-edit', function () {
+        const def = managerApi.listCalendars()[calendarIdOfRow(this)];
+        if (!def) return;
+        // Built-in calendars are read-only (their row has no Edit button);
+        // guarded here too so a stray click can never open one.
+        if (BUILTIN_CALENDAR_IDS.includes(def.id)) return;
+        calendarEditing = editorValuesFromDefinition(def);
+        renderCalendars();
+    });
+
+    $overlay.on('click', '.se-cal-duplicate', function () {
+        const source = managerApi.listCalendars()[calendarIdOfRow(this)];
+        if (!source) return;
+        try {
+            const copy = JSON.parse(JSON.stringify(source));
+            delete copy.version;
+            copy.id = uniqueCalendarId(`${source.id}-copy`);
+            copy.label = `${source.label || source.id} (copy)`;
+            const created = managerApi.createCalendar(copy);
+            calendarEditing = editorValuesFromDefinition(created);
+            renderCalendars();
+            managerApi.setStatus(`Duplicated calendar as "${created.id}".`);
+        } catch (err) {
+            reportCalendarError(err);
+        }
+    });
+
+    $overlay.on('click', '.se-cal-export', function () {
+        const def = managerApi.listCalendars()[calendarIdOfRow(this)];
+        if (!def) return;
+        navigator.clipboard.writeText(JSON.stringify(def, null, 2)).then(() => {
+            managerApi.setStatus(`Copied calendar "${def.id}" to clipboard.`);
+        }).catch((err) => {
+            console.error('Failed to copy:', err);
+            managerApi.setStatus('Failed to copy to clipboard.', true);
+        });
+    });
+
+    $overlay.on('click', '#se-cal-import', function () {
+        const raw = window.prompt('Paste a calendar definition (JSON) to import.', '');
+        if (raw === null || raw.trim() === '') return;
+        try {
+            const def = JSON.parse(raw);
+            if (!def || typeof def !== 'object') throw new Error('That JSON is not a calendar definition.');
+            delete def.version;
+            // An id already in use is never overwritten - the import is kept
+            // as a new calendar under a free id.
+            if (typeof def.id === 'string') def.id = uniqueCalendarId(def.id);
+            const created = managerApi.createCalendar(def);
+            renderCalendars();
+            managerApi.setStatus(`Imported calendar "${created.id}".`);
+        } catch (err) {
+            reportCalendarError(err);
+        }
+    });
+
+    $overlay.on('click', '.se-cal-delete', function () {
+        const id = calendarIdOfRow(this);
+        if (BUILTIN_CALENDAR_IDS.includes(id)) return;
+        if (!window.confirm(`Delete calendar "${id}"? This cannot be undone.`)) return;
+        try {
+            managerApi.deleteCalendar(id);
+            if (calendarEditing && calendarEditing.id === id) calendarEditing = null;
+            renderCalendars();
+            managerApi.setStatus(`Deleted calendar "${id}".`);
+        } catch (err) {
+            reportCalendarError(err);
+        }
+    });
+
+    $overlay.on('click', '.se-cal-add-month', function () {
+        $('#se-manager-calendars-tab .se-cal-months').append(uiTemplates.buildCalendarMonthRow());
+    });
+    $overlay.on('click', '.se-cal-add-season', function () {
+        $('#se-manager-calendars-tab .se-cal-seasons').append(uiTemplates.buildCalendarSeasonRow());
+    });
+    $overlay.on('click', '.se-cal-add-cycle', function () {
+        $('#se-manager-calendars-tab .se-cal-cycles').append(uiTemplates.buildCalendarCycleRow());
+    });
+    $overlay.on('click', '#se-manager-calendars-tab .se-cal-remove-row', function () {
+        $(this).closest('.se-cal-item-row').remove();
+    });
+
+    $overlay.on('click', '#se-cal-cancel', function () {
+        calendarEditing = null;
+        renderCalendars();
+    });
+
+    $overlay.on('click', '#se-cal-save', function () {
+        try {
+            const values = collectCalendarEditorValues();
+            const def = definitionFromEditorValues(values);
+            const saved = values.isNew
+                ? managerApi.createCalendar(def)
+                : managerApi.updateCalendar(def.id, updatePatchFromDefinition(def));
+            calendarEditing = null;
+            renderCalendars();
+            managerApi.setStatus(`Saved calendar "${saved.id}" (v${saved.version}).`);
+        } catch (err) {
+            // Stay in the editor so nothing typed is lost.
+            reportCalendarError(err);
+        }
+    });
+
+    // Preview: runs the real engine over the DRAFT in the editor.
+    $overlay.on('click', '#se-cal-preview-run', function () {
+        const def = definitionFromEditorValues(collectCalendarEditorValues());
+        if (!def.id) def.id = 'draft';
+        const result = managerApi.previewCalendar(def, {
+            scalarText: String($('#se-cal-preview-scalar').val() || ''),
+            delta: String($('#se-cal-preview-delta').val() || ''),
+            instruction: String($('#se-cal-preview-nl').val() || ''),
+        });
+        $('#se-cal-preview-output').html(uiTemplates.buildCalendarPreviewOutput(result));
     });
 
     // Debug mode controls

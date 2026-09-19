@@ -1,7 +1,7 @@
 // State Engine — display/text formatting helpers
 
 import { DEFAULT_CALENDAR_ID } from '../core/settings-core.js';
-import { formatScalar } from '../core/calendar-engine.js';
+import { formatScalar, getCalendar } from '../core/calendar-engine.js';
 
 export function stripHtml(str) {
     return String(str ?? '').replace(/<[^>]*>/g, '').trim();
@@ -33,6 +33,21 @@ export function describeConstraint(def) {
     }
     if (def.type === 'boolean') return 'true or false';
     if (def.type === 'datetime') {
+        // A calendar other than Gregorian (spec 1.22) is described in its own
+        // terms: the model sees the date in that calendar's names, so its
+        // answer options are the relative phrases that calendar understands
+        // (seasons and cycles only where it has them) or a numeric-month date.
+        const calendar = getCalendar(def.calendar || DEFAULT_CALENDAR_ID);
+        if (calendar && calendar.leapYearRule !== 'gregorian') {
+            const extras = [
+                calendar.seasons?.length ? ', "advance 1 season"' : '',
+                calendar.cycles?.length ? ', "next cycle"' : '',
+            ].join('');
+            return `date and time in the ${calendar.label || calendar.id} calendar. Reply with how far to move it from its current value `
+                + `(e.g. "advance 3 hours", "advance 1 day", "advance 1 month"${extras}), `
+                + 'or a new date-time as "YYYY-MM-DD HH:MM:SS" with the month as its number (e.g. "1203-08-17 12:00:00"). '
+                + 'If no time has passed, repeat the current value';
+        }
         return 'date and time. Reply with either a new date-time as "YYYY-MM-DD HH:MM:SS" (e.g. "2026-09-18 22:00:00"), '
             + 'or how far to move it from its current value (e.g. "advance 3 hours", "advance 1 day", "advance 1 month"). '
             + 'If no time has passed, repeat the current value';

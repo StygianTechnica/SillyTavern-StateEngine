@@ -1217,21 +1217,18 @@ Rules:
   on a typo would be a silent loss). The manager-modal inline editor shows the
   default as an ISO string and saves it as scalar seconds; it offers a "Date
   & time" type and an "Advance by" field for the delta. The editor has no
-  calendar or unit field - the stored definition's are carried over on save,
-  the same way `batch` is - so no calendar choice is exposed.
+  unit field - the stored one is carried over on save, the same way `batch`
+  is. Since 1.22 it has a calendar selector while the type is datetime.
 
-Fantasy calendars (bones only):
+Fantasy calendars (bones only in 1.21, implemented in 1.22):
 
 - Calendar definitions are pluggable objects: anything registered under
   settings.calendars with the fields above. The shape (months with their own
-  lengths, leapYearRule, clock constants) is what a fantasy calendar would
-  fill in.
-- ONLY "gregorian" is implemented. calendar-engine.js refuses (throws, and
-  every user-facing caller treats that as invalid input) any definition whose
-  leapYearRule it does not implement, instead of converting with the wrong
-  rules.
-- The API for definitions exists (getCalendar and the settings.calendars
-  store); the UI does not expose it yet - no calendar picker, no editor.
+  lengths, leapYearRule, clock constants) is what a fantasy calendar fills in.
+- 1.21 implemented ONLY "gregorian" and refused every other leapYearRule. That
+  is superseded: see 1.22 for fantasy calendars, their editor UI and the
+  calendar CRUD API. A leapYearRule the engine does not implement is still
+  refused (throws), never converted with the wrong rules.
 
 1.21.5 Calendar Formatting (2026-09-18)
 
@@ -1258,13 +1255,201 @@ Fantasy calendars (bones only):
   getCalendarDefinition, formatDateTime and formatDateTimePartial
   (docs/STATE ENGINE API SPECIFICATION.md, Section 10), backed by
   calendarEngine.listCalendars() and getCalendarDefinition().
-- First pass: only "gregorian" is formatted. Any other calendar id throws
-  "Formatting not implemented for this calendar". Fantasy calendars will
-  override formatting rules later; there are no fantasy formatting rules and
-  no fantasy calendar UI yet.
+- First pass (superseded by 1.22.2): only "gregorian" was formatted and any
+  other calendar id threw "Formatting not implemented for this calendar".
+  Fantasy calendars were to override formatting rules later - they now do
+  (1.22.2); an id that is not defined throws "Unknown calendar".
 - The tracker displays a datetime with calendarEngine.format(def.calendar,
   scalar, { style: "full" }). formatScalar() remains as a never-throws
   wrapper over format(...full) for display code that wants null on failure.
+
+1.22 Fantasy Calendar Definitions (2026-09-19)
+
+Second pass of the datetime system. 1.21 built the scalar-seconds model with
+one implemented calendar; 1.22 makes calendars user- and API-definable, so a
+datetime variable can run on a fantasy calendar. Everything in 1.21 still
+holds - stored values are scalar seconds, only calendar-engine.js does date
+math, Gregorian behavior is unchanged.
+
+- Calendar definitions are global objects stored under settings.calendars,
+  keyed by id.
+- Each calendar definition has:
+  - id (string; letters, digits, "-" and "_", starting with a letter/digit)
+  - label (string)
+  - unit ("seconds")
+  - secondsPerMinute
+  - minutesPerHour
+  - hoursPerDay
+  - months: [{ name, days }]  (Gregorian-rule calendars may add `leap`)
+  - seasons: optional [{ name, startDay, endDay }]  (1-based day of the year,
+    inclusive; a start after the end wraps the year end; seasons may not
+    overlap; fixed-length-year calendars only)
+  - cycles: optional [{ name, length }]  (a repeating period measured in DAYS)
+  - leapYearRule: optional string - "gregorian", or "none"/absent
+  - formattingRules: optional object
+  - nlRules: optional object (natural language parsing rules)
+  - version: a positive whole number. createCalendarDefinition() stores 1 and
+    every update increments it.
+- Two arithmetic models exist, chosen by leapYearRule. "gregorian" is the
+  real Gregorian calendar (12 months, leap years, scalar 0 = 1970-01-01). A
+  FANTASY calendar ("none"/absent) has fixed-length years - the sum of its
+  months' days - and scalar 0 is year 1, month 1, day 1, 00:00:00. Any other
+  leapYearRule is refused (validation, and at use). Fantasy leap rules are not
+  implemented; a fixed-length year is the only fantasy model.
+- Calendar definitions must be editable via API and UI.
+- Variables reference calendars via def.calendar. The manager modal's
+  datetime editor has a calendar selector (`data-field="calendar"`, filled
+  from listCalendars()); its choice is validated (it must exist) and is
+  carried over on save. The stored values are NOT converted when the calendar
+  changes - the same seconds are simply read through the new calendar.
+- Calendar definitions must be versioned and persisted. They live in the
+  extension's settings blob and are saved on every create/update/delete.
+- Calendar definitions must be validated before saving
+  (validateCalendarDefinition(def) -> { valid, errors }): known fields only,
+  positive whole clock constants, a non-empty list of uniquely named months
+  with positive whole days, non-overlapping seasons inside the year, uniquely
+  named cycles with a positive length, well-formed formattingRules and
+  nlRules. A failing definition is refused and nothing is written.
+- Calendar definitions must be accessible via API for external apps
+  (docs/STATE ENGINE API SPECIFICATION.md, Section 11).
+- The built-in "gregorian" calendar cannot be updated or deleted (it is what
+  every datetime variable falls back to); it can be duplicated. A calendar
+  that a datetime variable still uses cannot be deleted.
+
+1.22.1 Calendar CRUD Rules
+
+- createCalendarDefinition()
+- updateCalendarDefinition()
+- deleteCalendarDefinition()
+- listCalendarDefinitions()
+- getCalendarDefinition()
+- assignCalendarToVariable() points a datetime variable at another calendar.
+- The API functions are thin, identity-checked wrappers over calendar-engine.js
+  (createCalendar, updateCalendar, deleteCalendar, listCalendars,
+  getCalendarDefinition, validateCalendarDefinition).
+- create refuses an invalid definition or an id already in use. update merges
+  a patch onto the stored definition, re-validates the merged result, and
+  increments `version`; the id cannot be patched, and a null patch value
+  removes an optional field. Failures THROW (like the formatting API) so the
+  caller gets the reason.
+- The Calendars tab of the manager modal lists, creates, edits, deletes,
+  duplicates, exports (JSON to the clipboard) and imports (pasted JSON; an
+  id already in use is never overwritten - the import gets a free id)
+  calendars, and generates random ones. Its editor covers label, the three
+  clock constants, months, seasons, cycles, formattingRules and nlRules, and
+  previews the DRAFT (a formatted date, an increment, a natural-language
+  instruction) through the real engine before anything is saved
+  (previewCalendarDefinition()).
+
+1.22.2 Calendar Formatting Rules
+
+- calendarEngine.format() must dispatch to calendar-specific formattingRules.
+- Gregorian formatting remains default: its output, tokens and padding are
+  exactly what 1.21.5 specified.
+- Fantasy calendars may override:
+  - month names (formattingRules.monthNames, else the month's own name)
+  - season names (formattingRules.seasonNames, else the season's own name)
+  - cycles (the first cycle's name and day are available as tokens)
+  - custom patterns (formattingRules.patterns: style name -> pattern, which
+    replaces a built-in style's default or adds a new named style)
+  - formattingRules.era (the ERA token) and monthAbbreviationLength (MMM)
+- Fantasy calendars add the pattern tokens D (day, unpadded), SEASON, CYCLE,
+  CDAY (1-based day within the first cycle) and ERA to the 1.21.5 set; their
+  YYYY is not zero-padded. Their default styles are full "MMMM D, YYYY
+  HH:mm:ss", date "MMMM D, YYYY", time "HH:mm:ss", month "MMMM".
+- formatPartial() also accepts "season", "cycle" and "cycleDay" (null when the
+  calendar has none).
+- The tracker displays a datetime through calendarEngine.format(def.calendar,
+  scalar, { style: "full" }); for a calendar with seasons or cycles it adds a
+  second line, e.g. "Deepfrost · Silver Moon day 5". Its edit box starts with
+  the numeric ISO form, which every calendar can read back. The prompted
+  update shows the model calendarEngine.format()'s text.
+- format() throws "Unknown calendar" for an id that is not defined; a stored
+  definition it cannot convert with (unsupported leapYearRule, a "gregorian"
+  rule without the twelve Gregorian months) throws too.
+
+1.22.3 Calendar Increment Rules
+
+- calendarEngine.incrementScalar() must dispatch to calendar-specific month
+  lengths, year lengths, cycles.
+- Units: everything in 1.21 ("1s", "1h", "1d", "1w", "1mo", "1y") plus
+  "1season" and "1cycle". "1mo"/"1y" follow the calendar's own months (a
+  fantasy year is its months' total); the clamp rule is unchanged (day 30 of a
+  30-day month + 1mo into a 20-day month lands on day 20).
+- "1cycle" is the first cycle's length in days (an exact, fixed step).
+- "1season" keeps the position within the season - the same number of days
+  into the next season, and the same time of day - clamped to the target
+  season's length, the season analogue of the month rule. It counts whole
+  seasons only, follows the order of the seasons by startDay and rolls into the
+  next year after the last. A date outside every season cannot be stepped by
+  season (an error; nothing is written).
+- "1season" on a calendar without seasons, and "1cycle" on one without cycles,
+  are invalid deltas: isValidDelta() is false, so a deterministic increment
+  skips the variable with a warning (deterministic-engine.js needs no
+  calendar-specific code - it asks the calendar).
+- A calendar's nlRules.unitAliases add unit words ("moon = cycle",
+  "tenday = day * 10") to the delta grammar as well as to natural language.
+
+1.22.4 Calendar Natural Language Rules
+
+- calendarEngine.resolveInstruction() must dispatch to calendar-specific
+  nlRules.
+- Understood for every calendar: everything in 1.21 ("advance 3 hours",
+  "rewind 2 days", "set time to 2026-09-18 22:00", a bare date or number) plus
+  "advance 1 season", "next cycle" / "next month" (also "following"),
+  "previous season" (also "prior", "last"), and "move to Stormfall 17" /
+  "set to the 17th of Stormfall" / a bare "Stormfall 17". A month-and-day
+  target keeps the CURRENT year unless one is written ("Stormfall 17, 1203")
+  and the time of day is 00:00:00 unless one is written ("... at 14:30"); a
+  calendar's own written full date ("Stormfall 17, 1203 12:00:00") reads back
+  exactly (toScalar() accepts it, year required).
+- nlRules (all optional): unitAliases { word: unit | { unit, multiplier } },
+  advanceVerbs, rewindVerbs, setVerbs (extra phrases, e.g. "let time pass").
+- The prompted engine needs no calendar-specific code: it already calls
+  resolveInstruction(def.calendar, ...), so a variable's own calendar's nlRules
+  apply. An answer it does not understand is skipped, never guessed.
+
+1.22.5 Random Calendar Generator
+
+- generateRandomCalendarDefinition() must produce a valid calendar definition.
+- options: seed (number or string - the same seed always gives the same
+  calendar), id, label, monthCount (3-24), seasonCount (0-7), includeCycle.
+  The result is validated before it is returned and is NOT stored; pass it to
+  createCalendarDefinition() to keep it. The Calendars tab's "Random" button
+  opens one in the editor unsaved.
+
+1.22.6 Preset cloning
+
+- Cloning a preset preserves each variable's `calendar` (and `unit`) - a
+  cloned datetime variable reads its seconds through the same calendar.
+
+1.22.7 Built-in Fantasy Calendars (2026-09-19)
+
+- settings-core.js DEFAULT_CALENDARS holds four built-in calendars: "gregorian"
+  and three fantasy ones - "faerun_inspired" (12 x 30 days, 5 seasons, cycles
+  Lunar 28 / Astral 60), "three_moons" (10 x 36 days, cycles Red Moon 18 /
+  Blue Moon 24 / White Moon 30, no seasons) and "solar_cycle" (100x100x30
+  clock, 6 x 50 days, 4 seasons of 75 days, no cycles). getSettings() copies
+  any that is missing into settings.calendars (an existing entry is left
+  alone). BUILTIN_CALENDAR_IDS lists them.
+- Built-ins cannot be updated or deleted (API and UI); they can be duplicated
+  and the duplicate is an ordinary editable calendar. They appear in the
+  Calendars tab (marked "built in", no Edit/Delete button) and in the variable
+  editor's calendar dropdown. A datetime variable whose calendar is missing
+  gets a warning and a "(missing)" option in that dropdown, and the save is
+  refused until another calendar is chosen.
+- Seeds use the 1.22 schema: season days are 1-based; formattingRules.patterns
+  holds full/date/time. A pattern containing "{" is a brace template:
+  {monthName} {month} {day} {year} {HH} {mm} {ss} {season} {dayOfSeason}
+  {era} {cycle} and {cycle:<name>} (the day in the cycle whose name is, or
+  starts with, <name>; "{cycle:red}" = Red Moon). Unknown placeholders are
+  left as written.
+- nlRules may also hold phrase lists: nextSeason, nextCycle, moveToDay,
+  moveToSeason, and next<CycleName> (nextRedMoon...). nextSeason/nextCycle
+  are exact phrases (one season / the first cycle); next<CycleName> advances
+  that cycle's length in days; moveToSeason "<phrase> <season>" goes to
+  midnight on that season's first day this year; moveToDay "<phrase> <month>
+  <day>" behaves as "move to".
 
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
@@ -1318,6 +1503,16 @@ scalar time <-> structured time and datetime increments (getCalendar,
 toStructured, fromStructured, incrementScalar, 1.21). Reads calendar
 definitions from settings.calendars; imports only settings-core.js. Owns ALL
 calendar arithmetic - no other module does its own date math.
+Since 1.22 it also owns calendar definition validation and CRUD
+(validateCalendarDefinition, createCalendar, updateCalendar, deleteCalendar,
+listCalendars, getCalendarDefinition), the fantasy formatting / increment /
+natural-language rules (format, formatPartial, incrementScalar,
+resolveInstruction), the draft preview (previewCalendarDefinition) and the
+random generator (generateRandomCalendarDefinition).
+
+calendar-ui-schema.js (src/ui/manager-modal)
+pure conversion between a calendar definition and the Calendars tab editor's
+flat form values (1.22.1). No DOM, no settings access.
 
 expression-dsl.js
 Tiny Expression DSL tokenizer/parser/evaluator for calculated variables
