@@ -312,6 +312,14 @@ export function wireEvents(managerApi, managerState) {
         }
 
         // ⭐ FIX: Save or update the variable in the preset
+        // Batch membership (requirements spec 1.20) has no field in this
+        // editor, so `newVariable` above just took blankDefinition()'s
+        // default ("core") - saving an edit would silently pull a variable
+        // that was assigned to another batch (via the API) back into the
+        // main prompt. Carry the stored batch over instead.
+        const previousDef = preset.variables[newVariable.id];
+        if (typeof previousDef?.batch === 'string' && previousDef.batch) newVariable.batch = previousDef.batch;
+
         preset.variables[newVariable.id] = newVariable;
 
         const chatId = managerApi.getCurrentChatId();

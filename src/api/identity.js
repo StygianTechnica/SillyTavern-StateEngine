@@ -16,7 +16,7 @@
 
 import { getSettings, persistSettings, BUILTIN_NAMESPACE } from '../core/settings-core.js';
 import { genId } from '../core/variable-schema.js';
-import { ownsNamespace } from './namespace-manager.js';
+import { ownsNamespace, findExtensionRecord } from './namespace-manager.js';
 
 // Returns settings.extensions.se.instanceId, creating and persisting it on
 // first use. Never creates the `se` record itself: settings-core.js's
@@ -54,4 +54,20 @@ export function validateCallerIdentity(extensionId, instanceId, targetNamespace)
     if (!ownsNamespace(extensionId, targetNamespace)) {
         throw new Error(`Extension '${extensionId}' does not own namespace '${targetNamespace}'`);
     }
+}
+
+// For calls whose signature carries no namespace (declareCapabilities,
+// assignBatch, ...): the target is the caller's OWN namespace record. Instance
+// first (a wrong instance never reveals whether an extension exists), then
+// the record, then the real ownership check - trivially satisfied for a
+// record found by id, but it keeps every write on the same identity path.
+// Returns the extension's record.
+export function resolveCallerRecord(extensionId, instanceId) {
+    validateInstanceId(instanceId);
+    const record = findExtensionRecord(extensionId);
+    if (!record) {
+        throw new Error(`Extension '${extensionId}' does not own a namespace - call createNamespace() first`);
+    }
+    validateCallerIdentity(extensionId, instanceId, record.namespace);
+    return record;
 }

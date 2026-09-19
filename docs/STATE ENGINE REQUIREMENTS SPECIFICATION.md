@@ -977,6 +977,132 @@ Reserved-name protection is inherited from variable creation itself
 (isReservedVariable already blocks creating a variable named after a known
 SillyTavern built-in), not re-validated here.
 
+1.20 Variable Batching System (2026-09-18)
+
+Batching controls WHICH VARIABLES APPEAR IN A PROMPT. It exists so that a
+large set of variables does not bloat the one prompt the main prompted update
+sends, and so independent presets can build small prompts of their own
+instead of inheriting everything.
+
+Rules:
+
+- Every variable belongs to exactly one batch. The default batch is "core".
+- Batch membership is variable metadata: `batch` on the variable definition
+  (variable-schema.js). blankDefinition() sets `batch: 'core'`, and
+  variable-schema.js exports DEFAULT_BATCH ('core') and batchOf(def).
+  batchOf() returns def.batch when it is a non-empty string and "core"
+  otherwise, so a definition that predates batching - no `batch` field at all
+  - is in "core" with NO data migration, and every existing variable behaves
+  exactly as it did. getDefaultValue(), clampNumber() and every other schema
+  helper never read or alter `batch`.
+- Batch membership is snapshotted per chat, inside entry.def in chat-state.js,
+  like every other definition field (Section 6: entry.def is a per-write
+  snapshot for inspection only and must never source a live decision).
+  Because setVar() and resetValueIfTypeChanged() snapshot the whole def they
+  are handed, `batch` travels with it automatically. The one gap this closes:
+  a caller that hands over a def with NO `batch` field (a legacy def, or the
+  minimal { name, type } stand-in applyIncrement() falls back to) would
+  replace the snapshot and silently drop the batch it previously recorded.
+  chat-state.js's keepSnapshotBatch() carries the previous snapshot's batch
+  forward in exactly that case, and only that case - a def that has its own
+  batch is stored as the very same object it always was, and the caller's def
+  is never copied or altered. The snapshot changes when the variable is next
+  WRITTEN, not when its batch is reassigned.
+- Batches are NOT presets. A preset is an arbitrary folder a user groups
+  variables into; a batch is a prompt scope. One preset's variables can sit in
+  any mix of batches, and a batch spans every preset (and every extension's
+  namespace) active in a chat. Nothing about batching creates, renames,
+  moves or binds a preset.
+- Which batch a prompt uses is decided from the LIVE definitions of the
+  presets active for the chat (getPresetsForChat / getAllVariablesFromPresets),
+  never from entry.def.
+
+Main prompted update (prompted-engine.js):
+
+- The main prompted update asks the model only about variables in batch
+  "core". prompted-engine.js's selectBatchVariables(variables, batch = 'core')
+  picks them, and the existing classification (update / prompted increment /
+  deterministic) runs over that selection unchanged. A prompted variable in
+  any other batch is left out of the prompt, and is never updated by that
+  update even if the model answers for it. When every prompted variable is in
+  another batch, no LLM call is made at all.
+- Batching governs prompts only. It does not affect deterministic increments,
+  calculated-variable evaluation, macros, or seeding.
+- The main prompt is NOT assembled from batchPrompt("core"), and this is
+  deliberate. batchPrompt emits value-only lines (`name = JSON`), but each
+  line the main prompt sends the model also carries that variable's
+  constraint description, its current value, its instructions, and - for a
+  prompted increment - the "[true or false]" framing the response parsing
+  depends on. Swapping in batchPrompt would drop all of that and change what
+  the model is told, i.e. regress the prompted update, which 1.5 forbids. Only
+  the SELECTION of variables uses batching; the per-variable wording is
+  untouched. batchPrompt is for callers that want a compact state view -
+  independent presets are the intended consumer.
+- Independent presets (Section 3 / src/api/independent-presets.js) are what
+  batching is for: each is meant to build its prompt from batchPrompt() of its
+  own batch rather than from all variables. They do not do so yet.
+
+API (src/api/batching.js; exposed on stateEngine):
+
+  assignBatch(extensionId, instanceId, variableName, batchName)
+  removeBatch(extensionId, instanceId, variableName)
+  getBatch(batchName, chatId)
+  getBatches(chatId)
+  batchPrompt(batchName, chatId)
+
+- assignBatch moves one of the caller's variables into batchName and returns
+  the stored (whitespace-trimmed) name. removeBatch puts it back in "core".
+  Both replace the variable's definition object with a copy carrying the new
+  batch (never mutating it in place - the same rule updateVariable follows,
+  since a chat's entry.def can be the same object) and persist settings.
+- Validation, all before anything is written, all thrown as errors (never a
+  silent null): identity is enforced (a wrong, missing or non-string
+  instanceId throws `State Engine API call rejected: wrong instance`, checked
+  first); neither signature carries a namespace, so the target is the
+  caller's OWN namespace, and an extension that owns none throws `Extension
+  '<id>' does not own a namespace - call createNamespace() first`; the
+  variable must exist in the caller's namespace (given as the local name or
+  the stored `namespace__name`) - a variable in another namespace does not
+  exist as far as the caller is concerned, so one extension can never move
+  another's; batchName must be a non-empty string that is not whitespace-only
+  and contains no line break (it is written into a prompt heading, and a line
+  break would let a name start a new prompt line).
+- The same batch-name rule applies when `batch` arrives inside a definition
+  passed to createVariable() or a patch passed to updateVariable(); there an
+  invalid batch fails the call the way that module's other bad payloads do
+  (warn, return null) and nothing is written.
+- getBatch(batchName, chatId) returns [{ name, value, def }] for every
+  variable in that batch that is active for the chat - value is the stored
+  value (getVar), or the type default if it has not been seeded, and def is a
+  copy. getBatches(chatId) returns { batchName: [variableName, ...] } for
+  every active variable; only non-empty batches appear, and every active
+  variable appears in exactly one. batchPrompt(batchName, chatId) returns
+  `### <BATCH NAME>` (upper-cased) followed by one `name = JSON.stringify(value)`
+  line per variable in definition order - no chat transcript, no instructions,
+  and no variable from any other batch - or '' when the batch is empty so a
+  caller can skip it. A JSON-encoded value can never contain a raw line
+  break, so a value cannot start a new prompt line. Invalid arguments return
+  []/{}/'' rather than throwing.
+- The three read functions take no identity and are keyed by chat, not by
+  namespace: they expose every active variable's name and value, across all
+  namespaces, to any caller. That is inherent to a per-chat prompt scope and
+  differs from getVariable()/listVariables(), which are namespace-scoped.
+- No side effects: assigning, removing or reading a batch does not touch the
+  variable dependency graph (no recalculation, no edge changes), presets
+  (nothing created, renamed, deleted, bound or moved), chat-state values
+  (no setVar/seed/increment/delete; stored values and existing snapshots are
+  unchanged), macros, events, extension registration, or the capability
+  graph. The only change is one variable definition's `batch` field.
+
+Manager modal (src/ui/manager-modal/ui-events.js):
+
+- The inline editor has no batch field, and the definition it saves is built
+  as blankDefinition() plus the form's values - which would set `batch` back
+  to "core" on every edit and silently pull a variable that was assigned
+  elsewhere into the main prompt. The save handler therefore carries the
+  stored definition's batch over onto the rebuilt one. Batches are assigned
+  through the API; the editor neither shows nor changes them.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 
@@ -997,6 +1123,9 @@ write‑path (setVar, applyIncrement)
 
 macro mirroring
 
+carrying a snapshot's batch forward when a def with no batch replaces it
+(keepSnapshotBatch, 1.20) - nothing else about batching lives here
+
 macro-store.js
 macro store operations (getMacroValue, setMacroValue, deleteMacroValue,
 macroStore). Named "macro", not "var", deliberately - this is the
@@ -1004,6 +1133,9 @@ macroStore). Named "macro", not "var", deliberately - this is the
 outside chat-state.js should call these directly.
 
 prompted-engine.js
+selecting only batch "core" variables for the main prompted update
+(selectBatchVariables, 1.20)
+
 classification of prompted variables
 
 LLM‑driven updates
@@ -1124,7 +1256,9 @@ use defaultValue for defaults
 
 preserve type, behaviors, increment
 
-never invent new fields
+never invent new fields (`batch`, 1.20, is a sanctioned field - added to
+blankDefinition() with default 'core'; this rule still forbids inventing any
+other)
 
 never rename schema fields
 

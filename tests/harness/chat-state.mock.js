@@ -35,7 +35,13 @@ export function getVar(chatId, varName) {
 
 export const setVar = vi.fn((chatId, varName, value, def) => {
     const state = loadChatState(chatId);
-    state.variables[varName] = { value, def: def ?? state.variables[varName]?.def ?? null };
+    const previous = state.variables[varName]?.def;
+    let snapshot = def ?? previous ?? null;
+    // Mirrors the real snapshot rule (src/core/chat-state.js keepSnapshotBatch):
+    // a def with no `batch` keeps the batch the previous snapshot recorded.
+    // The REAL function is tested directly in batching.test.js via importActual.
+    if (snapshot && snapshot.batch === undefined && typeof previous?.batch === 'string') snapshot = { ...snapshot, batch: previous.batch };
+    state.variables[varName] = { value, def: snapshot };
     persistSettings();
     context.variables.local.set(varName, value);
 });

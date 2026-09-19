@@ -34,6 +34,7 @@
 import { LOG_PREFIX, persistSettings } from '../core/settings-core.js';
 import { validateNamespace } from './namespace-manager.js';
 import { validateCallerIdentity } from './identity.js';
+import { normalizeBatchName } from './batch-rules.js';
 import { findPresetEntry } from './preset-api.js';
 import { blankDefinition } from '../core/variable-schema.js';
 import { isVariableNameTaken } from '../core/preset-manager.js';
@@ -54,6 +55,19 @@ function findVariableEntry(preset, namespace, localName) {
         if (def?.name === target) return [varId, def];
     }
     return null;
+}
+
+// A `batch` carried by a definition or patch goes through the same rule as
+// assignBatch() (batch-rules.js), so no entry point can store a batch name
+// the others would refuse. Follows this module's convention for a bad
+// payload: warn and signal failure (ok: false), never throw.
+function checkedBatch(value, fnName) {
+    try {
+        return { ok: true, batch: normalizeBatchName(value, (reason) => { throw new Error(reason); }) };
+    } catch (err) {
+        console.warn(LOG_PREFIX, `${fnName}: ${err.message}`);
+        return { ok: false };
+    }
 }
 
 function currentChatId() {
@@ -209,6 +223,11 @@ export function createVariable(extensionId, instanceId, def) {
 
         const { namespace: _ns, presetName: _presetName, name: _localName, id: _ignoredId, ...rest } = def;
         const fullDef = { ...blankDefinition(), ...rest, name: target };
+        if (def.batch !== undefined) {
+            const checked = checkedBatch(def.batch, 'createVariable');
+            if (!checked.ok) return null;
+            fullDef.batch = checked.batch;
+        }
 
         // Nothing is written to settings.presets until validation (above)
         // has already passed - a rejected calculated definition never
@@ -306,6 +325,12 @@ export function updateVariable(extensionId, instanceId, ref, patch) {
         // object and replacing preset.variables[id] wholesale — mirrored
         // here, root-caused against this module's own functional smoke
         // test rather than assumed.
+        if (safePatch.batch !== undefined) {
+            const checked = checkedBatch(safePatch.batch, 'updateVariable');
+            if (!checked.ok) return null;
+            safePatch.batch = checked.batch;
+        }
+
         const newDef = { ...def, ...safePatch };
 
         // Re-validate and re-derive dependencies only when the expression

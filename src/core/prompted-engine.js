@@ -2,6 +2,7 @@
 
 import { LOG_PREFIX, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED_VARIABLE_RULES, getSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
+import { DEFAULT_BATCH, batchOf } from './variable-schema.js';
 import { getVar, setVar, applyIncrement, loadChatState } from './chat-state.js';
 import { recalculateDependents } from './calculated-engine.js';
 import { callBackgroundLLM } from './background-llm.js';
@@ -11,6 +12,17 @@ import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
 
 export function shouldSkipPromptedRefresh(def) {
     return !!(def && def.skipPromptedRefresh);
+}
+
+// Variable batching (requirements spec 1.20): the definitions, out of
+// `variables` (the { id: def } map getAllVariablesFromPresets() returns),
+// that belong to `batchName`. The main prompted update below only ever asks
+// the model about batch "core"; a variable assigned to any other batch is
+// kept out of this prompt, which is what stops a large preset from bloating
+// it. A definition with no `batch` field counts as "core", so every
+// pre-batching variable is included exactly as before.
+export function selectBatchVariables(variables, batchName = DEFAULT_BATCH) {
+    return Object.values(variables || {}).filter((def) => batchOf(def) === batchName);
 }
 
 // Fires the background "prompted variable" LLM update and returns``
@@ -44,7 +56,7 @@ export async function runPromptedStateUpdate(triggerType) {
         const updateVars = [];
         const incrementVars = [];
 
-        for (const def of Object.values(variables)) {
+        for (const def of selectBatchVariables(variables)) {
             if (!def?.name) continue;
 
             // Arrays follow the exact same classification every other type

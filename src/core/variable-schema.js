@@ -9,6 +9,22 @@ export function genId() {
 // Variable definition helpers
 // ---------------------------------------------------------------------------
 
+// Variable batching (docs/STATE ENGINE REQUIREMENTS SPECIFICATION.md 1.20):
+// every variable belongs to exactly one batch, and a batch is a PROMPT SCOPE
+// - which variables appear together in a prompt - not a folder (that's a
+// preset). "core" is where every variable lives unless assigned elsewhere,
+// and the only batch the main prompted update asks about.
+export const DEFAULT_BATCH = 'core';
+
+// The batch a definition belongs to. A definition with no `batch` field at
+// all (anything created before batching existed) is in DEFAULT_BATCH - so
+// legacy variables keep behaving exactly as they always did, with no data
+// migration. Lives here (not in src/api) so core modules such as
+// prompted-engine.js can use it without importing upward from the API layer.
+export function batchOf(def) {
+    return typeof def?.batch === 'string' && def.batch ? def.batch : DEFAULT_BATCH;
+}
+
 export function blankDefinition() {
     return {
         id: genId(),
@@ -49,6 +65,10 @@ export function blankDefinition() {
         // Numeric constraints
         min: null,
         max: null,
+
+        // Prompt scope (see DEFAULT_BATCH above). Never read or altered by
+        // getDefaultValue()/clampNumber() below.
+        batch: DEFAULT_BATCH,
 
         // Behavior flags
         resetOnNewChat: false,

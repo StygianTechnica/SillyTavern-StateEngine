@@ -212,6 +212,18 @@ export function applyArrayOperation(currentArray, operation, value, def) {
     }
 }
 
+// Batch membership (def.batch, variable-schema.js) is snapshotted into
+// entry.def with everything else. A caller that hands over a definition with
+// NO `batch` field - a legacy definition, or the minimal { name, type } stand-
+// in applyIncrement() falls back to - would otherwise replace the snapshot
+// and silently drop the batch the previous snapshot recorded. This carries
+// the previous batch forward in that one case; a def that has its own batch
+// (the normal case) is stored exactly as before, same object, no copy.
+function keepSnapshotBatch(def, previousDef) {
+    if (!def || def.batch !== undefined || typeof previousDef?.batch !== 'string') return def;
+    return { ...def, batch: previousDef.batch };
+}
+
 function defaultChatState(characterAvatar, groupId) {
     return {
         variables: {},
@@ -319,7 +331,7 @@ export function setVar(chatId, varName, value, def) {
         // 1. Update the isolated store: the value, plus a snapshot of the
         // canonical schema (def) that produced it.
         const existing = state.variables[varName] || {};
-        const effectiveDef = def ?? existing.def ?? null;
+        const effectiveDef = keepSnapshotBatch(def ?? existing.def ?? null, existing.def);
 
         // Array values are validated/sanitized here (itemType, maxLength,
         // unique, sorted) so the isolated store - the source of truth, spec
@@ -462,7 +474,7 @@ export function resetValueIfTypeChanged(chatId, def) {
         const next = getDefaultValue(def);
         state.variables[def.name] = {
             value: next,
-            def,
+            def: keepSnapshotBatch(def, entry.def),
         };
         saveChatState(chatId, state);
 

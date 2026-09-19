@@ -16,7 +16,7 @@
 // Graph".
 
 import { persistSettings } from '../core/settings-core.js';
-import { validateInstanceId, validateCallerIdentity } from './identity.js';
+import { resolveCallerRecord } from './identity.js';
 import { getExtensionsStore, findExtensionRecord } from './namespace-manager.js';
 import { normalizeStringList } from './capability-rules.js';
 
@@ -26,27 +26,12 @@ function reject(reason) {
 
 const copy = (list) => (Array.isArray(list) ? [...list] : []);
 
-// The signatures carry no namespace, so the target is the caller's OWN
-// record. Instance first (a wrong instance never reveals whether an
-// extension exists), then the record, then the real ownership check - which
-// is trivially satisfied for a record found by id, but keeps this on the
-// same identity path as every other write in the layer.
-function ownRecord(extensionId, instanceId) {
-    validateInstanceId(instanceId);
-    const record = findExtensionRecord(extensionId);
-    if (!record) {
-        throw new Error(`Extension '${extensionId}' does not own a namespace - call createNamespace() first`);
-    }
-    validateCallerIdentity(extensionId, instanceId, record.namespace);
-    return record;
-}
-
 // Replaces (does not merge) the list of capabilities this extension
 // provides. An empty array clears it. Validates completely before writing,
 // so a rejected call leaves the previous list untouched. Returns a copy of
 // what was stored.
 export function declareCapabilities(extensionId, instanceId, capabilities) {
-    const record = ownRecord(extensionId, instanceId);
+    const record = resolveCallerRecord(extensionId, instanceId);
     record.capabilities = normalizeStringList(capabilities, 'capabilities', reject);
     persistSettings();
     return copy(record.capabilities);
@@ -57,7 +42,7 @@ export function declareCapabilities(extensionId, instanceId, capabilities) {
 // (its provider not installed yet); getExtensionsProviding() is how a
 // consumer resolves one.
 export function declareDependencies(extensionId, instanceId, capabilityList) {
-    const record = ownRecord(extensionId, instanceId);
+    const record = resolveCallerRecord(extensionId, instanceId);
     record.dependsOn = normalizeStringList(capabilityList, 'dependencies', reject);
     persistSettings();
     return copy(record.dependsOn);

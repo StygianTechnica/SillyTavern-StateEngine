@@ -240,6 +240,74 @@ describe('identity', () => {
         });
     });
 
+    // Same shape as the capability-graph writers: no namespace parameter, the
+    // target is the caller's own namespace, and the variable must live there.
+    describe.each([
+        ['assignBatch', (ext, inst, variable = 'v') => stateEngine.assignBatch(ext, inst, variable, 'extra')],
+        ['removeBatch', (ext, inst, variable = 'v') => stateEngine.removeBatch(ext, inst, variable)],
+    ])('%s', (_name, call) => {
+        beforeEach(() => {
+            registerNamespaces('pp', 'zz');
+            stateEngine.createPreset('pp', instanceId, { namespace: 'pp', name: 'P' });
+            stateEngine.createVariable('pp', instanceId, { namespace: 'pp', presetName: 'P', name: 'v', type: 'number' });
+            stateEngine.createPreset('zz', instanceId, { namespace: 'zz', name: 'Z' });
+            stateEngine.createVariable('zz', instanceId, { namespace: 'zz', presetName: 'Z', name: 'w', type: 'number' });
+        });
+
+        it.each([
+            ['a wrong instanceId', 'nope'],
+            ['a missing instanceId', undefined],
+            ['a null instanceId', null],
+            ['a non-string instanceId', 7],
+        ])('rejects %s and throws', (_label, bad) => {
+            expect(() => call('pp', bad)).toThrow(WRONG_INSTANCE);
+        });
+
+        it('checks the instance before anything about the extension or the variable', () => {
+            expect(() => call('ghost', 'nope', 'nothing')).toThrow(WRONG_INSTANCE);
+        });
+
+        it.each([['ghost'], [undefined], [''], [null]])('rejects an extension that owns no namespace (%j)', (id) => {
+            expect(() => call(id, instanceId)).toThrow('does not own a namespace - call createNamespace() first');
+        });
+
+        it('rejects a variable that lives in another extension\'s namespace - it cannot even address it', () => {
+            expect(() => call('pp', instanceId, 'w')).toThrow("does not exist in namespace 'pp'");
+            expect(() => call('pp', instanceId, 'zz__w')).toThrow("does not exist in namespace 'pp'");
+            expect(() => call('zz', instanceId, 'w')).not.toThrow(); // its owner can
+        });
+
+        it('a rejected call has no side effects', () => {
+            const before = JSON.stringify(settings.snapshot());
+            context.saveSettingsDebounced.mockClear();
+
+            expect(() => call('pp', 'nope')).toThrow();
+            expect(() => call('ghost', instanceId)).toThrow();
+            expect(() => call('pp', instanceId, 'w')).toThrow();
+
+            expect(JSON.stringify(settings.snapshot())).toBe(before);
+            expect(context.saveSettingsDebounced).not.toHaveBeenCalled();
+        });
+
+        it('allows the correct identity for a variable in the caller\'s own namespace', () => {
+            expect(() => call('pp', instanceId)).not.toThrow();
+        });
+
+        it('follows namespace ownership: rejected again once the extension is unregistered', () => {
+            expect(() => call('pp', instanceId)).not.toThrow();
+            stateEngine.unregisterExtension('pp');
+            expect(() => call('pp', instanceId)).toThrow(/does not own a namespace/);
+        });
+
+        it('is identity-checked through the real validateCallerIdentity path (agrees with ownsNamespace)', () => {
+            for (const ext of ['pp', 'zz', 'ghost']) {
+                const variable = ext === 'zz' ? 'w' : 'v';
+                const allowed = (() => { try { call(ext, instanceId, variable); return true; } catch { return false; } })();
+                expect(allowed).toBe(ownsNamespace(ext, ext));
+            }
+        });
+    });
+
     describe('createNamespace (instance identity only - it runs before the caller owns anything)', () => {
         it.each([
             ['a wrong instanceId', 'nope'],
