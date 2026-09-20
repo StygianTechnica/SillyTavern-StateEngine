@@ -2,6 +2,8 @@
 // Uses ES6 modules - imported by manager-modal.js
 
 import * as presetManager from './preset-manager.js';
+import { exportPreset, importPresetDetailed } from '../../core/preset-export.js';
+import { downloadJson, pickJsonFile } from '../file-io.js';
 import * as variableSchema from './variable-ui-schema.js';
 import * as uiTemplates from './ui-templates.js';
 import * as uiRender from './ui-render.js';
@@ -133,6 +135,33 @@ export function wireEvents(managerApi, managerState) {
             presetManager.clonePreset(presetId, newName.trim());
             uiRender.renderPresetsTab(managerApi, managerState.currentPresetId);
             managerApi.setStatus(`Cloned preset "${preset.name}".`);
+        }
+    });
+
+    // Export a preset as a JSON file / import one as a NEW preset (never an
+    // overwrite; colliding variable names get a unique name - preset-export.js).
+    $overlay.on('click', '.se-manager-export-preset', function () {
+        const presetId = $(this).attr('data-preset-id');
+        const data = exportPreset(presetId);
+        if (!data) return;
+        downloadJson(`${data.name || 'preset'}.preset`, data);
+        managerApi.setStatus(`Exported preset "${data.name}".`);
+    });
+
+    $overlay.on('click', '#se-manager-import-preset', async function () {
+        try {
+            const file = await pickJsonFile();
+            if (!file) return;
+            const imported = importPresetDetailed(file.data?.preset ?? file.data);
+            if (!imported) {
+                alert('That file is not a State Engine preset (expected an object with a "variables" object).');
+                return;
+            }
+            uiRender.renderPresetsTab(managerApi, managerState.currentPresetId);
+            managerApi.setStatus(`Imported preset "${managerApi.getSettings().presets[imported.presetId].name}".`);
+        } catch (err) {
+            console.error('[State Engine]', err);
+            alert(err?.message || 'Import failed.');
         }
     });
 

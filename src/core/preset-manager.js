@@ -5,6 +5,7 @@ import { genId, blankDefinition } from './variable-schema.js';
 import { seedVariablesForChat } from './chat-state.js';
 import { recalculateAllForChat } from './calculated-engine.js';
 import { refreshVariableMacros } from './macro-registration.js';
+import { clearDeclinesForPreset } from './lorebook-bindings.js';
 
 function getStarterPresetBlueprints() {
     const makeVar = (overrides) => {
@@ -500,6 +501,10 @@ export function addPresetToChat(chatId, presetId) {
     if (!binding.presetLoadOrder.includes(presetId)) {
         binding.presetLoadOrder.push(presetId);
     }
+
+    // Activating a preset by hand (or by answering Yes) ends any earlier "No" to
+    // a lorebook prompt about it in this chat.
+    clearDeclinesForPreset(chatId, presetId);
 
     persistSettings();
     seedVariablesForChat(chatId);

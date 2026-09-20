@@ -1,7 +1,7 @@
 // State Engine — condition UI injected directly into the World Info entry editor
 
 import { LOG_PREFIX } from '../core/settings-core.js';
-import { makeWIEntryKey, getWIConditions, setWICondition, deleteWICondition, getAvailableVariablesForConditions } from './wi-conditions.js';
+import { makeWIEntryKey, normalizeWorldName, getWIConditions, setWICondition, updateWICondition, deleteWICondition, getAvailableVariablesForConditions } from './wi-conditions.js';
 
 function injectWIConditionUI() {
     // Inject condition UI into the WI entry editor dialog
@@ -14,7 +14,7 @@ function injectWIConditionUI() {
 
     // Build the condition UI HTML
     const conditionsHTML = `
-        <div class="se-wi-injected-conditions" style="margin-top: 12px; padding: 8px; background: rgba(128,128,128,0.05); border-radius: 3px; border-left: 3px solid #4a9eff;">
+        <div class="se-wi-injected-conditions se-wi-box">
             <div style="margin-bottom: 8px;">
                 <label style="font-weight: bold; display: block; margin-bottom: 4px;">
                     <i class="fa-solid fa-filter"></i> State Engine Conditions
@@ -25,7 +25,7 @@ function injectWIConditionUI() {
             <button type="button" class="se-wi-add-condition-btn menu_button" style="font-size: 0.9em;">
                 <i class="fa-solid fa-plus"></i> Add condition
             </button>
-            <div id="se_wi_injected_condition_editor" style="display: none; margin-top: 8px; padding: 8px; background: rgba(255,255,255,0.3); border-radius: 3px;">
+            <div id="se_wi_injected_condition_editor" class="se-wi-editor" style="display: none;">
                 <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px;">
                     <div>
                         <label for="se_wi_injected_cond_variable" style="font-size: 0.9em;">Variable</label>
@@ -85,8 +85,14 @@ function getWIEditorEntryKey() {
         const uid = uidInput.value || uidInput.getAttribute('data-uid') || uidInput.textContent;
         // Try to get the world/book name
         const worldInput = document.querySelector('[name="world"], [data-world], .world-info-entry-world');
-        const world = worldInput ? (worldInput.value || worldInput.getAttribute('data-world') || 'unknown') : 'unknown';
-        if (uid) return makeWIEntryKey(world, uid);
+        // ST's own editor has no [name="world"] element - the book being edited
+        // is the selected option of #world_editor_select - so fall back to that,
+        // and to normalizeWorldName()'s default, so this key matches the one the
+        // filter builds from the entry's own `world`.
+        const editorBook = document.querySelector('#world_editor_select option:checked');
+        const world = (worldInput && (worldInput.value || worldInput.getAttribute('data-world')))
+            || (editorBook && editorBook.textContent);
+        if (uid) return makeWIEntryKey(normalizeWorldName({ world }), uid);
     }
     return null;
 }
@@ -94,6 +100,10 @@ function getWIEditorEntryKey() {
 // Cached by handleWIAddCondition each time the editor opens, so the
 // variable-select change handler doesn't need to re-fetch it.
 let cachedConditionVariables = [];
+
+// The condition being edited ({ entryKey, index }), or null when the editor is
+// adding a new one. Module state, so it survives the list re-rendering.
+let editingCondition = null;
 
 const BASE_OPERATORS = [
     { value: 'equals', label: 'equals' },
@@ -127,8 +137,71 @@ function arrayOperators(itemType) {
     return ops;
 }
 
-function escapeAttr(text) {
-    return String(text ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// ---------------------------------------------------------------------------
+// Pure helpers (no DOM) - exported so they can be tested
+// ---------------------------------------------------------------------------
+
+// Escapes text for safe use in HTML content AND in attribute values.
+// Everything the editor renders from stored or user-typed data goes through
+// this: variable names, preset names, operator names, values, entry keys.
+export function escapeText(text) {
+    return String(text ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// An array whose items are objects. Conditions on these are not supported yet:
+// there is no field selector, so nothing a condition could compare against.
+export function isObjectArray(varMeta) {
+    return varMeta?.type === 'array' && varMeta.itemType === 'object';
+}
+
+// The operators the editor offers for a variable (null meta = none chosen yet).
+// Object arrays get none.
+export function operatorsFor(varMeta) {
+    if (isObjectArray(varMeta)) return [];
+    return varMeta?.type === 'array' ? arrayOperators(varMeta.itemType) : BASE_OPERATORS;
+}
+
+// <option>s for the variable dropdown: value = what a condition stores (the
+// variable's id), text = "<preset name> / <variable name>".
+export function variableOptionsHtml(variables) {
+    return '<option value="">-- Select variable --</option>' + (variables || []).map((v) =>
+        `<option value="${escapeText(v.name)}">${escapeText(v.presetName)} / ${escapeText(v.variableName || v.name)}</option>`).join('');
+}
+
+// "0:sword" -> { index: '0', value: 'sword' } for index_eq (only the first
+// colon separates); anything else -> { index: '', value: <as is> }.
+export function splitConditionValue(operator, stored) {
+    const raw = String(stored ?? '');
+    if (operator !== 'index_eq') return { index: '', value: raw };
+    const at = raw.indexOf(':');
+    return at === -1 ? { index: '', value: raw } : { index: raw.slice(0, at), value: raw.slice(at + 1) };
+}
+
+// One row of the condition list. `labelFor(variableKey)` gives the variable's
+// display name; unknown variables show as stored. Everything is escaped.
+export function conditionItemHtml(cond, index, entryKey, labelFor = (v) => v) {
+    const variable = escapeText(labelFor(cond?.variable) ?? cond?.variable);
+    const operator = escapeText(cond?.operator);
+    const value = escapeText(cond?.value);
+    const key = escapeText(entryKey);
+    return `
+        <div class="se-condition-item se-wi-condition-item">
+            <span class="se-condition-text"><code>${variable}</code> ${operator} <code>${value}</code></span>
+            <span class="se-wi-condition-actions">
+                <button type="button" class="se-edit-injected-condition menu_button" data-entry-key="${key}" data-index="${index}" title="Edit">
+                    <i class="fa-solid fa-pen"></i>
+                </button>
+                <button type="button" class="se-delete-injected-condition menu_button" data-entry-key="${key}" data-index="${index}" title="Delete">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+            </span>
+        </div>
+    `;
 }
 
 // Rebuilds the operator dropdown for the currently-selected variable's type,
@@ -138,17 +211,22 @@ function updateOperatorAndValueUI(varName) {
     if (!operatorSelect) return;
 
     const varMeta = cachedConditionVariables.find(v => v.name === varName) || null;
-    const options = varMeta?.type === 'array' ? arrayOperators(varMeta.itemType) : BASE_OPERATORS;
+    const options = operatorsFor(varMeta);
 
-    operatorSelect.innerHTML = options.map(o => `<option value="${o.value}">${o.label}</option>`).join('');
+    operatorSelect.innerHTML = isObjectArray(varMeta)
+        ? '<option value="">Not available for object arrays</option>'
+        : options.map(o => `<option value="${escapeText(o.value)}">${escapeText(o.label)}</option>`).join('');
+    operatorSelect.disabled = isObjectArray(varMeta);
     updateValueUI(varMeta, operatorSelect.value);
 }
 
 // Swaps the value input between a plain text field, a dropdown of
-// itemEnumValues (array of enum), or an object-array placeholder, and
-// shows/hides the separate index field for index_eq. The value element
-// keeps the id se_wi_injected_cond_value regardless of shape (input or
-// select both expose .value), so save/read code doesn't need to care which.
+// itemEnumValues (array of enum), or a disabled field with an explanation
+// (array of object), and shows/hides the separate index field for index_eq.
+// The value element keeps the id se_wi_injected_cond_value regardless of shape
+// (input or select both expose .value), so save/read code doesn't need to care
+// which - it exists in EVERY branch except the hidden boolean one, where it is
+// simply left as it was.
 function updateValueUI(varMeta, operator) {
     const valueContainer = document.getElementById('se_wi_injected_cond_value_container');
     const indexContainer = document.getElementById('se_wi_injected_cond_index_container');
@@ -159,16 +237,20 @@ function updateValueUI(varMeta, operator) {
     if (indexContainer) indexContainer.style.display = operator === 'index_eq' ? 'block' : 'none';
     if (isBoolean) return;
 
-    if (varMeta?.type === 'array' && varMeta.itemType === 'enum') {
-        const opts = (varMeta.itemEnumValues || []).map(v => `<option value="${escapeAttr(v)}">${escapeAttr(v)}</option>`).join('');
+    if (isObjectArray(varMeta)) {
+        valueContainer.innerHTML = `
+            <label for="se_wi_injected_cond_value" style="font-size: 0.9em;">Value</label>
+            <input id="se_wi_injected_cond_value" type="text" class="text_pole" style="font-size: 0.9em;" disabled placeholder="Not available" />
+            <div class="se-wi-object-array-note" style="font-size: 0.85em; opacity: 0.8;">
+                Conditions on arrays of objects are not supported yet (there is no way to pick a field to compare).
+                Choose a different variable.
+            </div>
+        `;
+    } else if (varMeta?.type === 'array' && varMeta.itemType === 'enum') {
+        const opts = (varMeta.itemEnumValues || []).map(v => `<option value="${escapeText(v)}">${escapeText(v)}</option>`).join('');
         valueContainer.innerHTML = `
             <label for="se_wi_injected_cond_value" style="font-size: 0.9em;">Value</label>
             <select id="se_wi_injected_cond_value" class="text_pole" style="font-size: 0.9em;">${opts}</select>
-        `;
-    } else if (varMeta?.type === 'array' && varMeta.itemType === 'object') {
-        valueContainer.innerHTML = `
-            <label style="font-size: 0.9em;">Value</label>
-            <div style="font-size: 0.85em; opacity: 0.7;">Field selector coming soon for object-array items.</div>
         `;
     } else {
         valueContainer.innerHTML = `
@@ -217,23 +299,71 @@ function wireInjectedWIConditionUI() {
     }
 }
 
+function setSaveButtonLabel() {
+    const saveBtn = document.querySelector('.se-wi-save-condition-btn');
+    if (saveBtn) saveBtn.textContent = editingCondition ? 'Save changes' : 'Add condition';
+}
+
+// Opens the editor for a NEW condition.
 function handleWIAddCondition() {
     const editor = document.getElementById('se_wi_injected_condition_editor');
     if (!editor) return;
 
+    editingCondition = null;
+    setSaveButtonLabel();
+
     cachedConditionVariables = getAvailableVariablesForConditions();
     const varSelect = document.getElementById('se_wi_injected_cond_variable');
-    varSelect.innerHTML = '<option value="">-- Select variable --</option>' +
-        cachedConditionVariables.map(v => `<option value="${v.name}">${v.presetName} / ${v.name}</option>`).join('');
+    varSelect.innerHTML = variableOptionsHtml(cachedConditionVariables);
 
     updateOperatorAndValueUI(null);
 
     editor.style.display = 'block';
 }
 
+// Opens the editor filled in with an existing condition; saving replaces it.
+function handleWIEditCondition(e) {
+    const btn = e.target.closest('button');
+    const entryKey = btn.getAttribute('data-entry-key');
+    const index = parseInt(btn.getAttribute('data-index'), 10);
+    const list = getWIConditions(entryKey);
+    const cond = Array.isArray(list) ? list[index] : undefined;
+    const editor = document.getElementById('se_wi_injected_condition_editor');
+    if (!cond || !editor) return;
+
+    cachedConditionVariables = getAvailableVariablesForConditions();
+    const varSelect = document.getElementById('se_wi_injected_cond_variable');
+    let options = variableOptionsHtml(cachedConditionVariables);
+    // The condition's variable may not be available right now (its preset is not
+    // active): keep it selectable so saving does not silently change it.
+    if (!cachedConditionVariables.some((v) => v.name === cond.variable)) {
+        options += `<option value="${escapeText(cond.variable)}">(not available) ${escapeText(cond.variable)}</option>`;
+    }
+    varSelect.innerHTML = options;
+    varSelect.value = cond.variable;
+
+    updateOperatorAndValueUI(cond.variable);
+    const operatorSelect = document.getElementById('se_wi_injected_cond_operator');
+    operatorSelect.value = cond.operator;
+    const varMeta = cachedConditionVariables.find((v) => v.name === cond.variable) || null;
+    updateValueUI(varMeta, cond.operator);
+
+    const { index: itemIndex, value } = splitConditionValue(cond.operator, cond.value);
+    const valueEl = document.getElementById('se_wi_injected_cond_value');
+    if (valueEl && !valueEl.disabled) valueEl.value = value;
+    const indexInput = document.getElementById('se_wi_injected_cond_index');
+    if (indexInput) indexInput.value = itemIndex;
+
+    editingCondition = { entryKey, index };
+    setSaveButtonLabel();
+    editor.style.display = 'block';
+}
+
 function handleWICancelCondition() {
     const editor = document.getElementById('se_wi_injected_condition_editor');
     if (editor) editor.style.display = 'none';
+    editingCondition = null;
+    setSaveButtonLabel();
 }
 
 function handleWISaveCondition() {
@@ -245,7 +375,16 @@ function handleWISaveCondition() {
 
     const varName = document.getElementById('se_wi_injected_cond_variable').value;
     const operator = document.getElementById('se_wi_injected_cond_operator').value;
-    let value = document.getElementById('se_wi_injected_cond_value').value;
+
+    const varMeta = cachedConditionVariables.find((v) => v.name === varName) || null;
+    if (isObjectArray(varMeta)) {
+        alert('Conditions on arrays of objects are not supported yet. Please choose a different variable.');
+        return;
+    }
+
+    // The value element can be absent or disabled; never read through null.
+    const valueEl = document.getElementById('se_wi_injected_cond_value');
+    let value = valueEl && !valueEl.disabled ? valueEl.value : '';
 
     if (!varName || !operator) {
         alert('Please select a variable and operator');
@@ -274,7 +413,12 @@ function handleWISaveCondition() {
         value: operator.startsWith('is_') ? '' : value
     };
 
-    setWICondition(entryKey, condition);
+    if (editingCondition && editingCondition.entryKey === entryKey) {
+        // Editing: replace the existing condition, do not add another.
+        updateWICondition(entryKey, editingCondition.index, condition);
+    } else {
+        setWICondition(entryKey, condition);
+    }
 
     // Refresh condition list and close editor
     renderInjectedWIConditions(entryKey);
@@ -294,23 +438,22 @@ function renderInjectedWIConditions(entryKey) {
 
     const conditions = getWIConditions(entryKey);
 
-    if (conditions.length === 0) {
-        list.innerHTML = '<div style="opacity:0.7; padding:4px; font-size:0.9em;">No conditions — entry will always display.</div>';
+    // A malformed list is shown as empty (and left alone), never rendered.
+    if (!Array.isArray(conditions) || conditions.length === 0) {
+        list.innerHTML = '<div class="se-wi-empty">No conditions — entry will always display.</div>';
         return;
     }
 
-    const html = conditions.map((cond, index) => `
-        <div class="se-condition-item" style="display: flex; align-items: center; justify-content: space-between; padding: 4px 6px; margin: 4px 0; background: rgba(255,255,255,0.2); border-radius: 3px; font-size: 0.9em;">
-            <span class="se-condition-text"><code>${cond.variable}</code> ${cond.operator} <code>${cond.value}</code></span>
-            <button type="button" class="se-delete-injected-condition menu_button" data-entry-key="${entryKey}" data-index="${index}" title="Delete" style="padding: 2px 6px; font-size: 0.85em;">
-                <i class="fa-solid fa-trash"></i>
-            </button>
-        </div>
-    `).join('');
+    // Show variables by name: condition.variable holds the variable's id.
+    const names = new Map(getAvailableVariablesForConditions().map((v) => [v.name, v.variableName]));
+    list.innerHTML = conditions.map((cond, index) =>
+        conditionItemHtml(cond, index, entryKey, (v) => names.get(v) ?? v)).join('');
 
-    list.innerHTML = html;
-
-    // Wire delete buttons
+    // Wire edit / delete buttons
+    list.querySelectorAll('.se-edit-injected-condition').forEach(btn => {
+        btn.removeEventListener('click', handleWIEditCondition);
+        btn.addEventListener('click', handleWIEditCondition);
+    });
     list.querySelectorAll('.se-delete-injected-condition').forEach(btn => {
         btn.removeEventListener('click', handleWIDeleteCondition);
         btn.addEventListener('click', handleWIDeleteCondition);
@@ -323,6 +466,9 @@ function handleWIDeleteCondition(e) {
     const index = parseInt(btn.getAttribute('data-index'), 10);
 
     if (!confirm('Delete this condition?')) return;
+
+    // Deleting shifts later indexes: an open edit of this entry is abandoned.
+    if (editingCondition && editingCondition.entryKey === entryKey) handleWICancelCondition();
 
     deleteWICondition(entryKey, index);
     renderInjectedWIConditions(entryKey);

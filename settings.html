@@ -100,6 +100,25 @@
                 ></textarea>
 
             </div>
+            <div class="se-row" id="se_lorebook_bindings">
+                <div class="se-header-row">
+                    <b>Lorebook Preset Bindings</b>
+                    <button id="se_lorebook_refresh" class="menu_button menu_button_icon" type="button" title="Refresh the lorebook list">
+                        <i class="fa-solid fa-rotate"></i>
+                    </button>
+                </div>
+                <small>Bind presets to a lorebook. When a chat with that lorebook loads, State Engine offers to activate them.</small>
+                <select id="se_lorebook_select" class="text_pole"></select>
+                <div id="se_lorebook_presets" class="se-lorebook-presets"></div>
+                <div class="se-actions-row" style="display:flex; flex-wrap:wrap; gap:8px;">
+                    <button id="se_lorebook_bind" class="menu_button" type="button"><i class="fa-solid fa-link"></i> Bind</button>
+                    <button id="se_lorebook_unbind" class="menu_button" type="button"><i class="fa-solid fa-link-slash"></i> Unbind</button>
+                    <button id="se_lorebook_clear_declines" class="menu_button" type="button" title="Forget every preset you said No to, so the activation prompts come back"><i class="fa-solid fa-eraser"></i> Clear Declines</button>
+                    <button id="se_lorebook_export_bundle" class="menu_button" type="button" title="Export this lorebook with its presets, conditions and bindings"><i class="fa-solid fa-file-export"></i> Export bundle</button>
+                    <button id="se_lorebook_import_bundle" class="menu_button" type="button" title="Import a lorebook bundle"><i class="fa-solid fa-file-import"></i> Import bundle</button>
+                </div>
+            </div>
+
         </div>
     </div>
 </div>

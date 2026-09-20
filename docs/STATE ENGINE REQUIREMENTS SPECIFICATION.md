@@ -1451,6 +1451,74 @@ math, Gregorian behavior is unchanged.
   midnight on that season's first day this year; moveToDay "<phrase> <month>
   <day>" behaves as "move to".
 
+1.23 Conditional World Info, Lorebook Bindings and Bundles (2026-09-19)
+
+Conditional World Info (docs/WORLD_INFO_INTEGRATION.md) hides a lorebook entry
+unless its conditions on State Engine variables hold. This section records
+what runs and the additions built on it.
+
+- Persistence: setWICondition, updateWICondition, deleteWICondition and
+  clearWIConditionsForEntry call persistSettings() when they change something.
+- Entry keys are "<world>.<uid>", the world being normalizeWorldName(entry):
+  entry.world, else entry.book, else entry.folder, else "default". Conditions
+  stored under the old fallback world "unknown" still apply to a world-less
+  entry (looked up, edited and deleted through the old key; nothing is
+  migrated on disk).
+- FILTERING RUNS ON WORLDINFO_ENTRIES_LOADED (wi-filtering.js
+  filterLoadedWorldInfo, registered in event-engine.js). It fires before
+  SillyTavern's scan with { globalLore, characterLore, chatLore, personaLore }
+  arrays that ST reads afterwards, and entries are removed from them in place.
+  The previous hook could not filter and is no longer registered:
+  getWorldInfoPrompt() is async (its result was a Promise, so
+  `.outletEntries` was always undefined), calling it is a full activation scan
+  that re-emits WORLD_INFO_ACTIVATED, and WORLD_INFO_ACTIVATED itself fires
+  after activation with a copy of the entries. (Verified against SillyTavern
+  1.18: world-info.js, events.js, st-context.js.)
+- Fail-open: a condition whose variable is not defined in any active preset of
+  the chat is treated as met. Operator evaluation (evaluateCondition) is
+  unchanged.
+- Lorebook -> preset bindings: settings.lorebookPresetBindings =
+  { [worldName]: { [lorebookId]: [presetId] } }, managed by
+  src/core/lorebook-bindings.js (getPresetsForLorebook, bindPresetToLorebook,
+  unbindPresetFromLorebook, getLorebookBindings). In ST a lorebook is its book
+  name, which is also every entry's `world`, so worldName and lorebookId are the
+  same string for a real lorebook (lorebookId defaults to the world). Bind and
+  unbind persist; reads do not. A deleted preset is skipped on read.
+- Auto-activation: on CHAT_CHANGED, offerLorebookPresets(chatId)
+  (initialization-engine.js) looks at the lorebooks attached to the chat (the
+  chat's, the character's or each group member's, and the globally selected
+  ones) and, per lorebook with bound presets that are not active, asks "This
+  lorebook requires presets X, Y. Activate them?". Yes -> addPresetToChat.
+  No -> nothing is activated and the choice is remembered per chat
+  (settings.lorebookPresetDeclines) so the question is not repeated on every
+  chat load; the lorebook's conditions on the missing variables are then met
+  (fail-open, above).
+- Preset export/import (src/core/preset-export.js): exportPreset(presetId) is a
+  deep copy; importPreset(data) always creates a NEW preset (never overwrites),
+  with a fresh id, a unique display name, fresh variable ids and variable names
+  unique across all presets (the name-keyed stores require it), calculated
+  variables re-pointed at renamed siblings, and a namespace this install does
+  not know moved into "se" (swapping the "<ns>__" name prefix). The manager
+  modal's Presets tab has an Import button and each preset an Export button
+  (JSON files).
+- Lorebook bundles (src/core/lorebook-bundle.js): { lorebook, lorebookName,
+  stateEngine: { presets, wiConditions, lorebookPresetBindings } }.
+  exportLorebookBundle(world, lorebookId) loads the lorebook, collects the
+  conditions whose keys start with "<world>.", the bound presets and the
+  binding. importLorebookBundle(bundle, { name }) saves the lorebook into ST
+  (asking before overwriting one of the same name), imports the presets (an
+  identical preset - same name and variable names - is reused, so importing
+  twice does not pile up copies), re-keys the conditions to the imported name
+  and re-points their variables at the imported ones, merges conditions and
+  bindings, and offers to activate the presets for the open chat.
+- window.StateEngineWI exposes getWIConditions, setWICondition,
+  deleteWICondition, shouldDisplayWIEntry, getPresetsForLorebook,
+  bindPresetToLorebook, unbindPresetFromLorebook, exportPreset, importPreset,
+  exportLorebookBundle and importLorebookBundle.
+- Settings panel (settings.html): a "Lorebook Preset Bindings" section - a
+  lorebook dropdown, a preset list with checkboxes, Bind / Unbind, and bundle
+  Export / Import.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 

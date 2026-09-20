@@ -6,7 +6,8 @@ import { runPromptedStateUpdate } from '../core/prompted-engine.js';
 import { runDeterministicIncrements } from '../core/deterministic-engine.js';
 import { seedVariablesForChat, hydrateMacroStoreForChat, loadChatState } from '../core/chat-state.js';
 import { refreshVariableMacros } from '../core/macro-registration.js';
-import { applyWorldInfoConditionalFiltering } from '../world-info/wi-filtering.js';
+import { filterLoadedWorldInfo } from '../world-info/wi-filtering.js';
+import { offerLorebookPresets } from '../core/initialization-engine.js';
 import { observeWIEditorChanges } from '../world-info/wi-condition-ui.js';
 import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
 import { refreshManagerButtonLater } from '../ui/wand-ui.js';
@@ -73,6 +74,12 @@ export function registerEvents() {
 
         try {
             hydrateMacroStoreForChat(chatId);
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
+
+        try {
+            offerLorebookPresets(chatId);
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
         }
@@ -152,11 +159,17 @@ export function registerEvents() {
         });
     }
 
-    // Hook into world info to apply conditional filtering
-    if (eventTypes.WORLD_INFO_ACTIVATED) {
-        // eventSource.on(eventTypes.WORLD_INFO_ACTIVATED, () => {
-        //     applyWorldInfoConditionalFiltering();
-        // });
+    // Conditional world info: WORLDINFO_ENTRIES_LOADED fires BEFORE the scan with
+    // mutable arrays of entries, so filtering them here really keeps entries out
+    // of the prompt. (WORLD_INFO_ACTIVATED - the hook that used to be commented
+    // out here - fires after activation with a copy, and cannot filter anything.
+    // See wi-filtering.js.)
+    if (eventTypes.WORLDINFO_ENTRIES_LOADED) {
+        eventSource.on(eventTypes.WORLDINFO_ENTRIES_LOADED, (payload) => {
+            filterLoadedWorldInfo(payload);
+        });
+    } else {
+        console.warn(LOG_PREFIX, 'WORLDINFO_ENTRIES_LOADED is not available in this SillyTavern version - conditional world info is inactive');
     }
 
     // Keep the connection-profile dropdown in sync if profiles are

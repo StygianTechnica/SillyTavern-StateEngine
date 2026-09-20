@@ -1,7 +1,8 @@
 // State Engine — initialization / reset
 
-import { LOG_PREFIX, getSettings, migrateAllSettings } from './settings-core.js';
-import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
+import { LOG_PREFIX, getSettings, migrateAllSettings, persistSettings } from './settings-core.js';
+import { getPresetsForChat, getAllVariablesFromPresets, addPresetToChat } from './preset-manager.js';
+import { getActiveLorebookNames, getPresetsForLorebook, declineKey, pruneDeclinesForChat } from './lorebook-bindings.js';
 import { setVar, loadChatState } from './chat-state.js';
 import { getDefaultValue } from './variable-schema.js';
 import { shouldSkipPromptedRefresh, runPromptedStateUpdate } from './prompted-engine.js';
@@ -71,6 +72,51 @@ export function offerCopyFromPreviousChat(chatId) {
     } catch (err) {
         console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
     }
+}
+
+// When a chat loads: for every lorebook attached to it that has presets bound
+// (lorebook-bindings.js) which are not active for this chat, ask once per
+// lorebook whether to activate them.
+//   Yes -> addPresetToChat() for each.
+//   No  -> nothing is activated, and the choice is remembered for this chat
+//          (settings.lorebookPresetDeclines) so the question is not repeated on
+//          every chat load. Without the presets their variables do not exist,
+//          and wi-filtering.js treats a WI condition on a missing variable as
+//          met (fail-open), so the lorebook's entries are not hidden.
+// Returns the preset ids it activated. Never throws.
+export function offerLorebookPresets(chatId) {
+    const activated = [];
+    try {
+        if (!chatId) return activated;
+        const settings = getSettings();
+
+        // A lorebook that is no longer attached to this chat takes its declines
+        // with it, so re-attaching it later asks again.
+        const attached = getActiveLorebookNames();
+        pruneDeclinesForChat(chatId, attached);
+
+        for (const book of attached) {
+            const active = getPresetsForChat(chatId);
+            const declined = settings.lorebookPresetDeclines[chatId] || [];
+            const missing = getPresetsForLorebook(book, book)
+                .filter((id) => !active.includes(id) && !declined.includes(declineKey(book, book, id)));
+            if (missing.length === 0) continue;
+
+            const names = missing.map((id) => settings.presets[id]?.name || id).join(', ');
+            if (window.confirm(`This lorebook ("${book}") requires the presets ${names}. Activate them?`)) {
+                for (const id of missing) {
+                    addPresetToChat(chatId, id);
+                    activated.push(id);
+                }
+            } else {
+                settings.lorebookPresetDeclines[chatId] = [...declined, ...missing.map((id) => declineKey(book, book, id))];
+                persistSettings();
+            }
+        }
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+    }
+    return activated;
 }
 
 let startupRan = false;

@@ -383,6 +383,12 @@ export const DEFAULT_SETTINGS = Object.freeze({
     defaultPresetForNewChats: '',
     trackerPresets: [],
     wiConditions: {}, // Maps "worldbook.uid" -> array of {variable, operator, value}
+    // Lorebook -> preset bindings (src/core/lorebook-bindings.js):
+    // { [worldName]: { [lorebookId]: [presetId, ...] } }
+    lorebookPresetBindings: {},
+    // Bindings the user said No to for a chat, so the activate-presets prompt
+    // is not repeated on every chat load: { [chatId]: ["world|lorebookId|presetId", ...] }
+    lorebookPresetDeclines: {},
     promptedHeader: DEFAULT_PROMPTED_HEADER,
     chatVariables: {},
     // Isolated State Engine data store (src/core/chat-state.js). Never
@@ -455,6 +461,8 @@ export function getSettings() {
 
     if (!settings.defaultPresetForNewChats) settings.defaultPresetForNewChats = '';
     if (!settings.wiConditions || typeof settings.wiConditions !== 'object') settings.wiConditions = {};
+    if (!settings.lorebookPresetBindings || typeof settings.lorebookPresetBindings !== 'object' || Array.isArray(settings.lorebookPresetBindings)) settings.lorebookPresetBindings = {};
+    if (!settings.lorebookPresetDeclines || typeof settings.lorebookPresetDeclines !== 'object' || Array.isArray(settings.lorebookPresetDeclines)) settings.lorebookPresetDeclines = {};
     if (!settings.extensions || typeof settings.extensions !== 'object') settings.extensions = {};
     if (!settings.eventSources || typeof settings.eventSources !== 'object') settings.eventSources = {};
     if (!settings.calendars || typeof settings.calendars !== 'object') settings.calendars = {};

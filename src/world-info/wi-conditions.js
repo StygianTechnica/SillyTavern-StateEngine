@@ -1,8 +1,9 @@
 // State Engine — World Info condition logic (operators, evaluation, storage)
 
-import { LOG_PREFIX, getSettings } from '../core/settings-core.js';
+import { LOG_PREFIX, getSettings, persistSettings } from '../core/settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from '../core/preset-manager.js';
 import { getMacroValue } from '../core/macro-store.js';
+import { normalizeWorldName } from './world-names.js';
 
 // World Info conditional display operators
 const CONDITION_OPERATORS = {
@@ -98,47 +99,74 @@ export function makeWIEntryKey(world, uid) {
     return `${world}.${uid}`;
 }
 
+// Every entry key is built from normalizeWorldName() (world-names.js), so the
+// same entry always gets the same key no matter which of ST's name fields is set
+// (SillyTavern itself sets `world`).
+export { normalizeWorldName };
+
+// The key for a WI entry object ({ world|book|folder, uid }).
+export function makeWIEntryKeyForEntry(entry) {
+    return makeWIEntryKey(normalizeWorldName(entry), entry?.uid);
+}
+
+// Before normalizeWorldName() existed, an entry with no world name was keyed
+// under the literal world "unknown". A key that has no conditions stored under
+// it falls back to that legacy key, so conditions saved by earlier versions
+// keep working (nothing is rewritten or migrated on disk).
+function storedKeyFor(settings, entryKey) {
+    if (Object.prototype.hasOwnProperty.call(settings.wiConditions, entryKey)) return entryKey;
+    if (entryKey.startsWith('default.')) {
+        const legacy = `unknown.${entryKey.slice('default.'.length)}`;
+        if (Object.prototype.hasOwnProperty.call(settings.wiConditions, legacy)) return legacy;
+    }
+    return entryKey;
+}
+
 export function getWIConditions(entryKey) {
     const settings = getSettings();
-    return settings.wiConditions[entryKey] || [];
+    return settings.wiConditions[storedKeyFor(settings, entryKey)] || [];
 }
 
 export function setWICondition(entryKey, condition) {
     const settings = getSettings();
+    entryKey = storedKeyFor(settings, entryKey);
     if (!settings.wiConditions[entryKey]) {
         settings.wiConditions[entryKey] = [];
     }
     settings.wiConditions[entryKey].push(condition);
-    //saveSettings(settings);
+    persistSettings();
     console.log(`${LOG_PREFIX} Added condition to ${entryKey}:`, condition);
 }
 
 export function updateWICondition(entryKey, index, condition) {
     const settings = getSettings();
+    entryKey = storedKeyFor(settings, entryKey);
     if (settings.wiConditions[entryKey] && settings.wiConditions[entryKey][index]) {
         settings.wiConditions[entryKey][index] = condition;
-        //saveSettings(settings);
+        persistSettings();
         console.log(`${LOG_PREFIX} Updated condition ${index} for ${entryKey}:`, condition);
     }
 }
 
 export function deleteWICondition(entryKey, index) {
     const settings = getSettings();
+    entryKey = storedKeyFor(settings, entryKey);
     if (settings.wiConditions[entryKey]) {
         settings.wiConditions[entryKey].splice(index, 1);
         if (settings.wiConditions[entryKey].length === 0) {
             delete settings.wiConditions[entryKey];
         }
-        //saveSettings(settings);
+        persistSettings();
         console.log(`${LOG_PREFIX} Deleted condition ${index} for ${entryKey}`);
     }
 }
 
 export function clearWIConditionsForEntry(entryKey) {
     const settings = getSettings();
+    entryKey = storedKeyFor(settings, entryKey);
     if (settings.wiConditions[entryKey]) {
         delete settings.wiConditions[entryKey];
-        //saveSettings(settings);
+        persistSettings();
         console.log(`${LOG_PREFIX} Cleared all conditions for ${entryKey}`);
     }
 }
@@ -173,18 +201,65 @@ export function evaluateCondition(varName, operator, condValue) {
     }
 }
 
-export function shouldDisplayWIEntry(entryKey) {
-    const conditions = getWIConditions(entryKey);
-    if (conditions.length === 0) return true; // No conditions = always show
+// Ids AND names of every variable defined in the chat's active presets (a
+// condition's `variable` is whichever the editor or the API stored).
+export function knownVariablesForChat(chatId) {
+    const known = new Set();
+    const variables = getAllVariablesFromPresets(getPresetsForChat(chatId));
+    for (const [id, def] of Object.entries(variables)) {
+        known.add(id);
+        if (def?.name) known.add(def.name);
+    }
+    return known;
+}
 
-    // All conditions must evaluate to true (AND logic)
-    return conditions.every(cond => {
-        const result = evaluateCondition(cond.variable, cond.operator, cond.value);
-        if (!result) {
-            console.debug(`${LOG_PREFIX} ${entryKey} filtered out: ${cond.variable} ${cond.operator} ${cond.value}`);
+// THE rule for whether a WI entry is shown - used by the runtime filter
+// (wi-filtering.js) and by shouldDisplayWIEntry(), so the two cannot disagree.
+//   - no conditions                          -> shown
+//   - every condition must hold (AND), except that a condition is skipped
+//     (counts as met) when its variable is not defined in any active preset,
+//     or when it is malformed, or when evaluating it fails; an unknown operator
+//     also counts as met (evaluateCondition fails open)
+//   - a malformed condition LIST (not an array) -> shown, with a warning
+// It never throws: any error is logged and the entry is shown.
+export function entryConditionsMet(entryKey, knownVariables) {
+    try {
+        const conditions = getWIConditions(entryKey);
+        if (!Array.isArray(conditions)) {
+            console.warn(`${LOG_PREFIX} Conditions for ${entryKey} are malformed (not a list) - entry shown`);
+            return true;
         }
-        return result;
-    });
+        if (conditions.length === 0) return true;
+        const known = knownVariables
+            || knownVariablesForChat(SillyTavern.getContext().chatId || 'unknown');
+
+        return conditions.every((cond) => {
+            try {
+                if (!cond || typeof cond !== 'object') {
+                    console.warn(`${LOG_PREFIX} A condition on ${entryKey} is malformed - treated as met`);
+                    return true;
+                }
+                if (!known.has(cond.variable)) return true; // variable not available: fail open
+                const result = evaluateCondition(cond.variable, cond.operator, cond.value);
+                if (!result) {
+                    console.debug(`${LOG_PREFIX} ${entryKey} filtered out: ${cond.variable} ${cond.operator} ${cond.value}`);
+                }
+                return result;
+            } catch (err) {
+                console.warn(`${LOG_PREFIX} Could not evaluate a condition on ${entryKey} - treated as met`, err);
+                return true;
+            }
+        });
+    } catch (err) {
+        console.warn(`${LOG_PREFIX} Could not evaluate the conditions of ${entryKey} - entry shown`, err);
+        return true;
+    }
+}
+
+// Whether a WI entry should be displayed right now. Identical to what the
+// runtime filter decides (see entryConditionsMet).
+export function shouldDisplayWIEntry(entryKey) {
+    return entryConditionsMet(entryKey);
 }
 
 export function getAvailableVariablesForConditions() {
@@ -214,7 +289,9 @@ export function getAvailableVariablesForConditions() {
             seenNames.add(varName);
 
             const entry = {
-                name: varName,
+                name: varName, // the key a condition stores (the variable's id)
+                // What the editor SHOWS: the variable's real name, else its label.
+                variableName: def.name || def.label || varName,
                 type: def.type || 'manual',
                 category: def.category || 'manual',
                 presetId: presetId,

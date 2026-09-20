@@ -1,7 +1,7 @@
 // State Engine — World Info condition manager panel
 
 import { getWorldInfoEntries } from './wi-filtering.js';
-import { makeWIEntryKey, getWIConditions, setWICondition, deleteWICondition, shouldDisplayWIEntry, getAvailableVariablesForConditions } from './wi-conditions.js';
+import { makeWIEntryKey, makeWIEntryKeyForEntry, getWIConditions, setWICondition, deleteWICondition, shouldDisplayWIEntry, getAvailableVariablesForConditions } from './wi-conditions.js';
 
 export function populateWIEntrySelect() {
     // Populate the world info entry dropdown
@@ -21,7 +21,7 @@ export function populateWIEntrySelect() {
 
     const options = ['<option value="">-- Select an entry --</option>'];
     for (const entry of entries) {
-        const entryKey = makeWIEntryKey(entry.world || entry.book || 'unknown', entry.uid);
+        const entryKey = makeWIEntryKeyForEntry(entry);
         const entryName = entry.comment || entry.name || `[${entry.uid}]`;
         options.push(`<option value="${entryKey}">${entryName}</option>`);
     }

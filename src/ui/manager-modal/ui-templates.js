@@ -45,6 +45,9 @@ export function buildPresetRow(presetId, preset, chatPresets, TRIGGER_KEYS, curr
                             <button class="se-manager-action-btn se-manager-clone-preset" data-preset-id="${presetId}" title="Clone">
                                 <i class="fa-solid fa-copy"></i>
                             </button>
+                            <button class="se-manager-action-btn se-manager-export-preset" data-preset-id="${presetId}" title="Export to a JSON file">
+                                <i class="fa-solid fa-file-export"></i>
+                            </button>
                             <button class="se-manager-action-btn se-manager-rename-preset" data-preset-id="${presetId}" title="Rename">
                                 <i class="fa-solid fa-pen"></i>
                             </button>
@@ -521,6 +524,9 @@ export function buildPresetsTabContainer(presetRows) {
             <div class="se-manager-section-header">
                 <h3>Presets</h3>
                 <div class="se-manager-section-buttons">
+                    <button id="se-manager-import-preset" class="menu_button" title="Import a preset from a JSON file">
+                        <i class="fa-solid fa-file-import"></i> Import
+                    </button>
                     <button id="se-manager-restore-presets" class="menu_button" title="Restore default presets">
                         <i class="fa-solid fa-redo"></i> Restore Defaults
                     </button>

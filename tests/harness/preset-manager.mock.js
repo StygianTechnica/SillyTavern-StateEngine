@@ -4,6 +4,7 @@
 
 import { vi } from 'vitest';
 import { getSettings, persistSettings } from '../../src/core/settings-core.js';
+import { clearDeclinesForPreset } from '../../src/core/lorebook-bindings.js';
 import { genId } from '../../src/core/variable-schema.js';
 import { seedVariablesForChat } from './chat-state.mock.js';
 import { recalculateAllForChat } from './calculated-engine.mock.js';
@@ -60,6 +61,7 @@ export const addPresetToChat = vi.fn((chatId, presetId) => {
     const b = binding(chatId);
     if (!b.presetIds.includes(presetId)) b.presetIds.push(presetId);
     if (!b.presetLoadOrder.includes(presetId)) b.presetLoadOrder.push(presetId);
+    clearDeclinesForPreset(chatId, presetId); // mirrors the real function
     persistSettings();
     seedVariablesForChat(chatId);
     recalculateAllForChat(chatId);
