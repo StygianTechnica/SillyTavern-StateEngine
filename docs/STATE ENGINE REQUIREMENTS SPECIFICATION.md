@@ -328,17 +328,39 @@ All three actions target whichever chatId is on the clicked row, never
 "whichever chat happens to be open" - a user managing this tab may be
 looking at many chats at once.
 
-1.14.1 Copy From Previous Chat Rule
+1.14.1 New Chat Start Rule (2026-09-20; replaces the copy-only prompt)
 
-On CHAT_CREATED (only - never CHAT_CHANGED), offerCopyFromPreviousChat()
-(initialization-engine.js) looks for another stored chat belonging to the
+A new chat starts with NO presets and NO data. Nothing is carried over from
+another chat silently. On CHAT_CREATED or GROUP_CHAT_CREATED (never
+CHAT_CHANGED), offerNewChatStart() (initialization-engine.js; still exported
+as offerCopyFromPreviousChat) looks for another stored chat belonging to the
 same character (state.characterAvatar) or group (state.groupId) as the new
-chat, with at least one stored variable. If one or more exist, the most
-recently updated candidate is offered via a single confirm() dialog; on
-acceptance, that source chat's variables are copied into the new chat one
-at a time through setVar() - never by assigning the whole stored state
-object wholesale, since that would also overwrite the new chat's own
-characterAvatar/groupId/seeded stamps with the source chat's.
+chat that had active presets or stored variables. If one exists, the most
+recently updated candidate is offered and the user chooses how the new chat
+starts, BEFORE it proceeds (SillyTavern awaits CHAT_CREATED listeners):
+
+  1. Same presets, no data - the source chat's active presets are activated,
+     in its load order; their variables start at their defaults.
+  2. Same presets AND data - as 1, then the source chat's values are copied
+     (a continuation of that chat).
+  3. Clean slate - no presets, no data. Closing the dialog, Escape or an
+     error is also a clean slate.
+
+The dialog is SillyTavern's Popup with three buttons (no OK/Cancel); without
+Popup it falls back to two confirm() questions. It is asked once per chat per
+session. Activating the presets goes through addPresetToChat(), so their
+variables are seeded as for any manual activation (this is a preset-add
+trigger, not seeding on CHAT_CREATED, which 3.1 still forbids). Values are
+copied one variable at a time through setVar() - never by assigning the whole
+stored state object, since that would overwrite the new chat's own
+characterAvatar/groupId/seeded stamps - and only for variables the newly
+active presets define, so no hidden values are stored for variables nothing
+shows; calculated variables are recalculated once afterwards. The source chat
+is never changed.
+
+Order note: SillyTavern emits CHAT_CHANGED before CHAT_CREATED, so the
+lorebook preset prompt (1.23) can appear first. A preset activated there
+stays active whichever start is chosen.
 
 This is a new-chat convenience only, not automatic hydration, and must not
 be confused with seeding: 3.1 still forbids seeding on CHAT_CREATED, and

@@ -108,7 +108,10 @@ export function wireEvents(managerApi, managerState) {
 
     $overlay.on('click', '.se-manager-toggle-active', function () {
         const presetId = $(this).attr('data-preset-id');
-        const chatId = $(this).attr('data-chat-id');
+        // The chat open NOW - not the one the button was drawn for (data-chat-id
+        // is only a fallback): a button drawn under another chat must never toggle
+        // that chat's presets.
+        const chatId = managerApi.getCurrentChatId() || $(this).attr('data-chat-id');
         const settings = managerApi.getSettings();
         const preset = settings.presets[presetId];
         if (!preset) return;

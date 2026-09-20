@@ -105,7 +105,9 @@ condition is shown exactly as typed, never treated as formatting or code.
 ## 4. Presets and lorebook bindings
 
 - **Presets stay per chat.** Each chat has its own set of active presets and its
-  own variable values. Linking a preset to a lorebook doesn't change that: a
+  own variable values. A brand-new chat starts empty: when you have chatted with
+  the same character before, State Engine asks whether the new chat should use the
+  same presets, the same presets and data, or a clean slate. Linking a preset to a lorebook doesn't change that: a
   preset is only active in the chats where you (or you, by answering a prompt)
   switched it on.
 - **Bindings are stored in State Engine, not in the lorebook.** A binding is a

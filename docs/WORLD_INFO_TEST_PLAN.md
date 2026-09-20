@@ -4,7 +4,7 @@ Document version 1.1 · 2026-09-19 · Extension version 0.14.06 · Target SillyT
 
 **Revision 1.1 — gap-resolution pass.** Gaps G1–G15 from version 1.0 are fixed (see §12 for status
 and the CHANGELOG). Cases that describe the old behaviour are rewritten to the new expected result and
-tagged **FIXED**; new cases for the added behaviour are in §14. Automated suite: **17 files, 1295 tests**.
+tagged **FIXED**; new cases for the added behaviour are in §14. Automated suite: **18 files, 1321 tests**.
 
 This plan covers World Info (WI) conditional display and everything built on
 it: the condition editor, lorebook → preset bindings, preset export/import,
@@ -105,7 +105,7 @@ await ctx().getWorldInfoPrompt(ctx().chat.map(m => m.mes).reverse(), 8192, true)
 ```
 
 Run automated tests: `npm run test:run` (once) or `npm test` (watch), in the
-extension folder. Expected today: **17 files, 1295 tests, 0 failures**.
+extension folder. Expected today: **18 files, 1321 tests, 0 failures**.
 
 ### 0.6 Test data (create once, reuse everywhere)
 
@@ -925,8 +925,12 @@ ST integration, and does not exercise any browser UI.
 In addition, **`tests/world-info-gap-fixes.test.js`** (116 tests) covers every fix in §12: the enable guard,
 corrupt condition lists, editor escaping, object arrays, variable names, condition editing (its
 pure parts), decline clearing, the API identity check, filter / `shouldDisplayWIEntry` parity, world-name
-normalisation, bundle import/export tidiness and the dark-theme styling. The editor's click handlers themselves
-are not exercised by an automated test (no DOM in the test setup): use §14.
+normalisation, bundle import/export tidiness and the dark-theme styling. The editor's click handlers are exercised by
+**`tests/wi-editor-dom.test.js`** (26 tests, jsdom, against SillyTavern's real entry markup): injection
+timing and idempotence, one box per expanded entry, entry keys from the selected book, add / edit /
+delete / cancel, operator and value fields per variable type, object arrays, escaping. That suite is
+what WIE-IN-01…10, WIE-AD, WIE-DL, WIE-ED, WIE-VF, WIE-IX and WIE-EK automate; the manual cases in §2
+remain the check against a real SillyTavern (selectors can change between ST versions).
 
 | Suite (describe block) | Covers |
 |---|---|
@@ -1076,4 +1080,16 @@ coverage is in `tests/world-info-gap-fixes.test.js`.
 | FIX-BI-03 | P1 | M | Import a bundle whose binding names a preset absent from `presets` | No binding, no empty entry in `lorebookPresetBindings` |
 | FIX-BI-04 | P1 | M | Export a lorebook with no State Engine data | `stateEngine` is `{}` |
 | FIX-BI-05 | P2 | M | Export with an empty condition list under one entry key | Key not in the file |
+| NCS-01 | P1 | M | Chat A (character X) has presets Vitals + Mood active and some values. Create a NEW chat with X | A dialog appears **before** the chat carries on, naming chat A, its presets and the number of stored variables, with three buttons: **Same presets, no data**, **Continue (presets + data)**, **Clean slate** |
+| NCS-02 | P1 | M | Choose **Same presets, no data** | Manager → Presets shows Vitals + Mood active; tracker shows their variables at DEFAULT values, not chat A's |
+| NCS-03 | P1 | M | Repeat with **Continue** | Same presets active; values equal chat A's; chat A unchanged |
+| NCS-04 | P1 | M | Repeat with **Clean slate** | No presets active; no variables; chat A unchanged |
+| NCS-05 | P1 | M | Close the dialog (X / Escape) | Same as Clean slate |
+| NCS-06 | P1 | M | Create a new chat with a character you have never chatted with (or whose earlier chats had no presets and no variables) | No dialog; empty chat |
+| NCS-07 | P1 | M | Switch between two EXISTING chats | No dialog (only creating a chat asks) |
+| NCS-08 | P2 | M | Create a new **group** chat with a group that has an earlier chat | The same dialog appears |
+| NCS-09 | P2 | M | Character whose lorebook has bound presets | The lorebook prompt may appear first (SillyTavern emits chat-changed before chat-created); presets activated there stay active whichever start you pick |
+| NCS-10 | P2 | M | Continue when chat A has a variable whose preset is no longer active there | That orphan value is not copied |
+| NCS-11 | P2 | M | Preset names containing `<b>` or `&` | Dialog shows them as text |
+| NCS-12 | P2 | M | Create the new chat, choose one option, open the manager | Manager shows the new chat's presets (see the manager-refresh fix), not the previous chat's |
 | FIX-TH-01 | P2 | M | Dark theme, light theme, custom theme: open the WI editor's State Engine box, add/edit dialogs | Text and backgrounds contrast on all |

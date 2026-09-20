@@ -1,7 +1,7 @@
 // State Engine — event wiring
 
 import { LOG_PREFIX } from '../core/settings-core.js';
-import { applyResetOnNewChat, runStartupOnce, offerCopyFromPreviousChat } from '../core/initialization-engine.js';
+import { applyResetOnNewChat, runStartupOnce, offerNewChatStart } from '../core/initialization-engine.js';
 import { runPromptedStateUpdate } from '../core/prompted-engine.js';
 import { runDeterministicIncrements } from '../core/deterministic-engine.js';
 import { seedVariablesForChat, hydrateMacroStoreForChat, loadChatState } from '../core/chat-state.js';
@@ -27,7 +27,7 @@ export function registerEvents() {
     // handler into SillyTavern's own event dispatch / generation pipeline.
     // Nothing here reads or writes SillyTavern chat metadata — chat state
     // lives exclusively in chat-state.js (via loadChatState).
-    eventSource.on(eventTypes.CHAT_CREATED, () => {
+    const onChatCreated = async () => {
         const context = SillyTavern.getContext();
         const chatId = context.chatId;
 
@@ -38,7 +38,10 @@ export function registerEvents() {
         }
 
         try {
-            offerCopyFromPreviousChat(chatId);
+            // Asks how the new chat should start (same presets / same presets + data
+            // / clean slate). SillyTavern awaits this listener, so the answer is
+            // applied before the chat carries on.
+            await offerNewChatStart(chatId);
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
         }
@@ -60,7 +63,10 @@ export function registerEvents() {
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
         }
-    });
+    };
+    eventSource.on(eventTypes.CHAT_CREATED, onChatCreated);
+    // A brand-new GROUP chat emits GROUP_CHAT_CREATED instead of CHAT_CREATED.
+    if (eventTypes.GROUP_CHAT_CREATED) eventSource.on(eventTypes.GROUP_CHAT_CREATED, onChatCreated);
 
     eventSource.on(eventTypes.CHAT_CHANGED, () => {
         const context = SillyTavern.getContext();

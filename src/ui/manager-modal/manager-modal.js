@@ -88,6 +88,7 @@ export function buildManagerModal() {
     managerCurrentPresetId = uiRender.renderVariablesTab(managerApi, managerCurrentPresetId);
     uiRender.renderCalendarsTab(managerApi);
     uiRender.renderWorldInfoTab(managerApi);
+    renderedForChatId = managerApi.getCurrentChatId();
 
     // Wire events
     const managerState = { currentPresetId: managerCurrentPresetId, hideManagerModal };
@@ -96,14 +97,32 @@ export function buildManagerModal() {
     return showManagerModal();
 }
 
+// The chat the chat-dependent tabs were last drawn for. Which presets are
+// active, and every Activate/Deactivate button, belong to ONE chat; drawn for
+// another chat they would show its presets and act on it.
+let renderedForChatId = null;
+
+// Redraws every tab whose content depends on the open chat (presets and their
+// toggles, the variable list, the stored-variable list). The Variables tab
+// keeps the preset that is selected in its dropdown.
+function renderChatDependentTabs() {
+    const selected = $('#se-manager-preset-selector').val() || managerCurrentPresetId;
+    uiRender.renderPresetsTab(managerApi, selected);
+    managerCurrentPresetId = uiRender.renderVariablesTab(managerApi, selected);
+    uiRender.renderWorldInfoTab(managerApi);
+    uiRender.renderVariableManagementTab(managerApi);
+    renderedForChatId = managerApi.getCurrentChatId();
+}
+
 export function showManagerModal() {
     const $overlay = $('#se-manager-overlay');
     if ($overlay.length) {
         $overlay.fadeIn(200);
-        // Always reflects the latest variableStore contents, even if the
-        // user switched chats or variable data changed while the modal was
-        // closed - never left stale from whenever the modal was last built.
-        uiRender.renderVariableManagementTab(managerApi);
+        // Opening the manager always shows the CURRENT chat: the tabs were last
+        // drawn whenever the modal was built or a tab was clicked, which may have
+        // been under another chat (a new chat would still show the old chat's
+        // active presets, and its toggles would act on the old chat).
+        renderChatDependentTabs();
     }
 }
 
@@ -112,8 +131,16 @@ export function showManagerModal() {
 // when the modal is actually visible - without exposing managerApi itself
 // outside this file.
 export function refreshVariableManagementTabIfOpen() {
-    if ($('#se-manager-overlay').is(':visible')) {
-        uiRender.renderVariableManagementTab(managerApi);
+    const $overlay = $('#se-manager-overlay');
+    if ($overlay.length && $overlay.css('display') !== 'none') {
+        // A different chat is open than the one the tabs were drawn for: redraw
+        // them all. (Only then - this is also called after every prompted update,
+        // and redrawing the Variables tab would discard an editor being used.)
+        if (managerApi.getCurrentChatId() !== renderedForChatId) {
+            renderChatDependentTabs();
+        } else {
+            uiRender.renderVariableManagementTab(managerApi);
+        }
     }
 }
 

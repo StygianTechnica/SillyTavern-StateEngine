@@ -211,7 +211,8 @@ describe('calendar formatting', () => {
 
     describe('documentation', () => {
         const req = readFileSync(join(ROOT, 'docs', 'STATE ENGINE REQUIREMENTS SPECIFICATION.md'), 'utf8');
-        const api = readFileSync(join(ROOT, 'docs', 'STATE ENGINE API SPECIFICATION.md'), 'utf8');
+        // A Windows checkout may have CRLF line endings; the assertions below use \n.
+        const api = readFileSync(join(ROOT, 'docs', 'STATE ENGINE API SPECIFICATION.md'), 'utf8').replace(/\r\n/g, '\n');
 
         it('requirements spec has 1.21.5 Calendar Formatting inside 1.21', () => {
             const at = req.indexOf('1.21.5 Calendar Formatting');

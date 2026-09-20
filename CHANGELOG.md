@@ -1,6 +1,61 @@
 # Changelog
 
-## Unreleased — World Info gap-resolution pass
+## Unreleased — Choose how a new chat starts
+
+**Changed**
+
+- When you create a new chat with a character (or group) you have chatted with before,
+  State Engine now asks how it should start, before the chat proceeds:
+  1. **Same presets, no data** — the earlier chat's presets are activated; variables start at
+     their defaults.
+  2. **Continue (presets + data)** — same presets and the earlier chat's variable values.
+  3. **Clean slate** — no presets, no data (also what closing the dialog does).
+  Previously the only question was whether to copy the values, which left the presets off.
+  A new chat still starts empty unless you choose otherwise; nothing carries over silently.
+- The question is also asked for brand-new **group** chats (they emit a different event).
+- Only variables the activated presets define are copied.
+
+**Tests:** 20 files, 1362 tests (31 new in `tests/new-chat-start.test.js`).
+
+## Unreleased — Manager modal showed the previous chat
+
+**Fixed**
+
+- **Re-opening the manager after creating or switching chats showed the OLD chat's active
+  presets.** Only the Variable Management tab was redrawn on open; the Presets tab (and
+  the Variables and World Info tabs) kept whatever was drawn last, so a brand-new chat
+  appeared to have the previous chat's presets active. Opening the manager now redraws all
+  chat-dependent tabs, and an open manager redraws when the chat changes (not on every
+  update, so an editor in use is not discarded).
+- **Activate / Deactivate acted on the chat the button was drawn for.** It now always acts
+  on the chat that is open at the time of the click.
+- No stored data was wrong: presets are stored per chat and a new chat starts with none.
+
+**Tests:** 19 files, 1331 tests. New `tests/manager-modal-chat.test.js` (10 tests, jsdom +
+jquery dev dependencies); 6 of them fail against the previous code.
+
+## Unreleased — World Info editor box fix
+
+**Fixed**
+
+- **The "State Engine Conditions" box never appeared in the World Info editor.** The
+  injector looked for markup SillyTavern does not have (`.world-info-entry-fields`,
+  `.ui-world-info-edit-form`, `.form-inline`). It now targets SillyTavern's real entry
+  forms: one box per expanded entry (`.world_entry_edit` inside `.world_entry[uid]`),
+  added as ST builds each form, and never in the hidden template ST clones.
+- **Conditions are keyed by the lorebook being edited** (the selected book in
+  `#world_editor_select`), not by the hidden character-linked lorebook input the old
+  code read by mistake. If the book or uid cannot be determined, Save refuses instead
+  of storing a key the filter would never match.
+- Several entries can be expanded at once; each keeps its own list, and only one
+  condition editor exists at a time. Clicks go through one delegated listener.
+
+**Tests:** 18 files, 1321 tests. New `tests/wi-editor-dom.test.js` (26 tests) runs the
+editor in a real DOM (jsdom, now a dev dependency) against markup copied from
+SillyTavern 1.18; it fails against the old injector. One documentation test now
+tolerates Windows (CRLF) checkouts.
+
+## World Info gap-resolution pass
 
 Fixes for the gaps found while testing conditional World Info, lorebook bindings and
 bundles. No new features, no change to the operators, the bundle format or the

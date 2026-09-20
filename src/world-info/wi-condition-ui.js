@@ -1,104 +1,101 @@
 // State Engine — condition UI injected directly into the World Info entry editor
+//
+// SillyTavern's markup (verified against 1.18: public/index.html and
+// scripts/world-info.js): every entry is a `<form class="world_entry" uid="N">`
+// listed in #world_popup_entries_list. Its edit form (`.world_entry_edit`) is
+// built only when the entry is EXPANDED and thrown away when it is collapsed, and
+// many entries can be expanded at once. The book being edited is the selected
+// option of #world_editor_select.
+//
+// So this module injects ONE box into each `.world_entry_edit` as it appears
+// (a MutationObserver), works out that entry's key from its own `uid` attribute
+// and the selected book, and handles every click through a single delegated
+// listener - nothing is looked up by a global id except the one condition editor,
+// of which at most one exists at a time.
 
 import { LOG_PREFIX } from '../core/settings-core.js';
 import { makeWIEntryKey, normalizeWorldName, getWIConditions, setWICondition, updateWICondition, deleteWICondition, getAvailableVariablesForConditions } from './wi-conditions.js';
 
-function injectWIConditionUI() {
-    // Inject condition UI into the WI entry editor dialog
-    // Look for the entry-specific fields (those are only visible when editing an entry)
-    const entryFields = document.querySelector('.world-info-entry-fields, .ui-world-info-edit-form, .form-inline');
-    if (!entryFields) return; // No WI editor visible
+const BOX_HTML = `
+    <div class="se-wi-injected-conditions se-wi-box">
+        <div style="margin-bottom: 8px;">
+            <label style="font-weight: bold; display: block; margin-bottom: 4px;">
+                <i class="fa-solid fa-filter"></i> State Engine Conditions
+            </label>
+            <small style="opacity: 0.8; display: block; margin-bottom: 8px;">Control if this entry displays based on variable state (all must be true)</small>
+        </div>
+        <div class="se-wi-conditions-list se-conditions-list" style="margin-bottom: 8px;"></div>
+        <button type="button" class="se-wi-add-condition-btn menu_button" style="font-size: 0.9em;">
+            <i class="fa-solid fa-plus"></i> Add condition
+        </button>
+        <div class="se-wi-editor-slot"></div>
+    </div>
+`;
 
-    // Check if we already injected
-    if (entryFields.querySelector('.se-wi-injected-conditions')) return;
-
-    // Build the condition UI HTML
-    const conditionsHTML = `
-        <div class="se-wi-injected-conditions se-wi-box">
-            <div style="margin-bottom: 8px;">
-                <label style="font-weight: bold; display: block; margin-bottom: 4px;">
-                    <i class="fa-solid fa-filter"></i> State Engine Conditions
-                </label>
-                <small style="opacity: 0.8; display: block; margin-bottom: 8px;">Control if this entry displays based on variable state (all must be true)</small>
+// The add / edit form. It is put into the box that asked for it, and any other
+// copy is removed first, so its ids are always unique.
+const EDITOR_HTML = `
+    <div id="se_wi_injected_condition_editor" class="se-wi-editor">
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+            <div>
+                <label for="se_wi_injected_cond_variable" style="font-size: 0.9em;">Variable</label>
+                <select id="se_wi_injected_cond_variable" class="text_pole" style="font-size: 0.9em;">
+                    <option value="">-- Select variable --</option>
+                </select>
             </div>
-            <div id="se_wi_injected_conditions_list" class="se-conditions-list" style="margin-bottom: 8px;"></div>
-            <button type="button" class="se-wi-add-condition-btn menu_button" style="font-size: 0.9em;">
-                <i class="fa-solid fa-plus"></i> Add condition
-            </button>
-            <div id="se_wi_injected_condition_editor" class="se-wi-editor" style="display: none;">
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px;">
-                    <div>
-                        <label for="se_wi_injected_cond_variable" style="font-size: 0.9em;">Variable</label>
-                        <select id="se_wi_injected_cond_variable" class="text_pole" style="font-size: 0.9em;">
-                            <option value="">-- Select variable --</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label for="se_wi_injected_cond_operator" style="font-size: 0.9em;">Operator</label>
-                        <select id="se_wi_injected_cond_operator" class="text_pole" style="font-size: 0.9em;">
-                            <option value="equals">equals</option>
-                            <option value="not_equals">not equals</option>
-                            <option value="greater_than">greater than</option>
-                            <option value="less_than">less than</option>
-                            <option value="greater_or_equal">≥ greater or equal</option>
-                            <option value="less_or_equal">≤ less or equal</option>
-                            <option value="contains">contains</option>
-                            <option value="not_contains">not contains</option>
-                            <option value="in_list">in list</option>
-                            <option value="regex">regex pattern</option>
-                            <option value="is_true">is true</option>
-                            <option value="is_false">is false</option>
-                        </select>
-                    </div>
-                    <div id="se_wi_injected_cond_value_container">
-                        <label for="se_wi_injected_cond_value" style="font-size: 0.9em;">Value</label>
-                        <input id="se_wi_injected_cond_value" type="text" class="text_pole" style="font-size: 0.9em;" placeholder="comma-separated for 'in list'" />
-                    </div>
-                </div>
-                <div id="se_wi_injected_cond_index_container" style="display: none; margin-bottom: 8px;">
-                    <label for="se_wi_injected_cond_index" style="font-size: 0.9em;">Index</label>
-                    <input id="se_wi_injected_cond_index" type="number" min="0" step="1" class="text_pole" style="font-size: 0.9em;" placeholder="0" />
-                </div>
-                <div style="display: flex; gap: 6px;">
-                    <button type="button" class="se-wi-save-condition-btn menu_button" style="font-size: 0.9em;">Add condition</button>
-                    <button type="button" class="se-wi-cancel-condition-btn menu_button" style="font-size: 0.9em;">Cancel</button>
-                </div>
+            <div>
+                <label for="se_wi_injected_cond_operator" style="font-size: 0.9em;">Operator</label>
+                <select id="se_wi_injected_cond_operator" class="text_pole" style="font-size: 0.9em;">
+                    <option value="equals">equals</option>
+                </select>
+            </div>
+            <div id="se_wi_injected_cond_value_container">
+                <label for="se_wi_injected_cond_value" style="font-size: 0.9em;">Value</label>
+                <input id="se_wi_injected_cond_value" type="text" class="text_pole" style="font-size: 0.9em;" placeholder="comma-separated for 'in list'" />
             </div>
         </div>
-    `;
+        <div id="se_wi_injected_cond_index_container" style="display: none; margin-bottom: 8px;">
+            <label for="se_wi_injected_cond_index" style="font-size: 0.9em;">Index</label>
+            <input id="se_wi_injected_cond_index" type="number" min="0" step="1" class="text_pole" style="font-size: 0.9em;" placeholder="0" />
+        </div>
+        <div style="display: flex; gap: 6px;">
+            <button type="button" class="se-wi-save-condition-btn menu_button" style="font-size: 0.9em;">Add condition</button>
+            <button type="button" class="se-wi-cancel-condition-btn menu_button" style="font-size: 0.9em;">Cancel</button>
+        </div>
+    </div>
+`;
 
-    // Find the right place to insert (after the entry name/comment field or similar)
-    // Usually at the end of the form or before the action buttons
-    const insertPoint = entryFields.querySelector('.world-info-entry-form-bottom, .form-inline:last-child') || entryFields;
-    const temp = document.createElement('div');
-    temp.innerHTML = conditionsHTML;
-    insertPoint.appendChild(temp.firstElementChild);
+// ---------------------------------------------------------------------------
+// Entry keys
+// ---------------------------------------------------------------------------
 
-    console.log(`${LOG_PREFIX} Injected World Info condition UI`);
+// "<book>.<uid>" for an entry, or null when either part is missing - a wrong key
+// would silently never match the filter's, so it is better to refuse (Save then
+// says it could not identify the entry).
+export function buildEntryKey(bookName, uid) {
+    const book = String(bookName ?? '').trim();
+    const id = String(uid ?? '').trim();
+    if (!book || !id) return null;
+    return makeWIEntryKey(normalizeWorldName({ world: book }), id);
 }
 
-function getWIEditorEntryKey() {
-    // Try to extract the current entry key being edited from the WI editor
-    // Look for uid in data attributes or the form
-    const uidInput = document.querySelector('[name="uid"], [data-uid], .world-info-entry-uid');
-    if (uidInput) {
-        const uid = uidInput.value || uidInput.getAttribute('data-uid') || uidInput.textContent;
-        // Try to get the world/book name
-        const worldInput = document.querySelector('[name="world"], [data-world], .world-info-entry-world');
-        // ST's own editor has no [name="world"] element - the book being edited
-        // is the selected option of #world_editor_select - so fall back to that,
-        // and to normalizeWorldName()'s default, so this key matches the one the
-        // filter builds from the entry's own `world`.
-        const editorBook = document.querySelector('#world_editor_select option:checked');
-        const world = (worldInput && (worldInput.value || worldInput.getAttribute('data-world')))
-            || (editorBook && editorBook.textContent);
-        if (uid) return makeWIEntryKey(normalizeWorldName({ world }), uid);
-    }
-    return null;
+// The lorebook being edited: the selected option of ST's book dropdown. (Not the
+// hidden `name="world"` input on the character panel - that is the CHARACTER's
+// linked lorebook, which is a different thing.)
+function currentBookName() {
+    const option = document.querySelector('#world_editor_select option:checked');
+    return option ? option.textContent : '';
 }
 
-// Cached by handleWIAddCondition each time the editor opens, so the
-// variable-select change handler doesn't need to re-fetch it.
+function entryKeyForBox(box) {
+    const entry = box ? box.closest('.world_entry') : null;
+    return buildEntryKey(currentBookName(), entry ? entry.getAttribute('uid') : null);
+}
+
+const boxOf = (el) => (el && el.closest ? el.closest('.se-wi-injected-conditions') : null);
+
+// Cached by the editor each time it opens, so the variable-select change handler
+// doesn't need to re-fetch it.
 let cachedConditionVariables = [];
 
 // The condition being edited ({ entryKey, index }), or null when the editor is
@@ -204,6 +201,10 @@ export function conditionItemHtml(cond, index, entryKey, labelFor = (v) => v) {
     `;
 }
 
+// ---------------------------------------------------------------------------
+// Editor form
+// ---------------------------------------------------------------------------
+
 // Rebuilds the operator dropdown for the currently-selected variable's type,
 // then re-derives the value input for whichever operator ends up selected.
 function updateOperatorAndValueUI(varName) {
@@ -260,76 +261,42 @@ function updateValueUI(varMeta, operator) {
     }
 }
 
-function handleWIVariableChange() {
-    const varSelect = document.getElementById('se_wi_injected_cond_variable');
-    updateOperatorAndValueUI(varSelect ? varSelect.value : null);
-}
-
-function wireInjectedWIConditionUI() {
-    // Wire up click handlers for the injected condition UI
-    const addBtn = document.querySelector('.se-wi-add-condition-btn');
-    const saveBtn = document.querySelector('.se-wi-save-condition-btn');
-    const cancelBtn = document.querySelector('.se-wi-cancel-condition-btn');
-    const operatorSelect = document.getElementById('se_wi_injected_cond_operator');
-    const varSelect = document.getElementById('se_wi_injected_cond_variable');
-
-    if (!addBtn) return;
-
-    addBtn.removeEventListener('click', handleWIAddCondition);
-    addBtn.addEventListener('click', handleWIAddCondition);
-
-    if (saveBtn) {
-        saveBtn.removeEventListener('click', handleWISaveCondition);
-        saveBtn.addEventListener('click', handleWISaveCondition);
-    }
-
-    if (cancelBtn) {
-        cancelBtn.removeEventListener('click', handleWICancelCondition);
-        cancelBtn.addEventListener('click', handleWICancelCondition);
-    }
-
-    if (operatorSelect) {
-        operatorSelect.removeEventListener('change', handleWIOperatorChange);
-        operatorSelect.addEventListener('change', handleWIOperatorChange);
-    }
-
-    if (varSelect) {
-        varSelect.removeEventListener('change', handleWIVariableChange);
-        varSelect.addEventListener('change', handleWIVariableChange);
-    }
-}
-
 function setSaveButtonLabel() {
     const saveBtn = document.querySelector('.se-wi-save-condition-btn');
     if (saveBtn) saveBtn.textContent = editingCondition ? 'Save changes' : 'Add condition';
 }
 
-// Opens the editor for a NEW condition.
-function handleWIAddCondition() {
-    const editor = document.getElementById('se_wi_injected_condition_editor');
-    if (!editor) return;
+// Puts a fresh editor form into `box`'s slot. Any editor already open elsewhere is
+// removed first, so there is never more than one (its ids stay unique).
+function openEditor(box) {
+    const existing = document.getElementById('se_wi_injected_condition_editor');
+    if (existing) existing.remove();
+    const slot = box.querySelector('.se-wi-editor-slot');
+    if (!slot) return null;
+    slot.innerHTML = EDITOR_HTML;
+    return document.getElementById('se_wi_injected_condition_editor');
+}
 
+// Opens the editor for a NEW condition.
+function handleWIAddCondition(box) {
     editingCondition = null;
+    if (!openEditor(box)) return;
     setSaveButtonLabel();
 
     cachedConditionVariables = getAvailableVariablesForConditions();
-    const varSelect = document.getElementById('se_wi_injected_cond_variable');
-    varSelect.innerHTML = variableOptionsHtml(cachedConditionVariables);
-
+    document.getElementById('se_wi_injected_cond_variable').innerHTML = variableOptionsHtml(cachedConditionVariables);
     updateOperatorAndValueUI(null);
-
-    editor.style.display = 'block';
 }
 
 // Opens the editor filled in with an existing condition; saving replaces it.
-function handleWIEditCondition(e) {
-    const btn = e.target.closest('button');
+function handleWIEditCondition(btn) {
+    const box = boxOf(btn);
     const entryKey = btn.getAttribute('data-entry-key');
     const index = parseInt(btn.getAttribute('data-index'), 10);
     const list = getWIConditions(entryKey);
     const cond = Array.isArray(list) ? list[index] : undefined;
-    const editor = document.getElementById('se_wi_injected_condition_editor');
-    if (!cond || !editor) return;
+    if (!box || !cond) return;
+    if (!openEditor(box)) return;
 
     cachedConditionVariables = getAvailableVariablesForConditions();
     const varSelect = document.getElementById('se_wi_injected_cond_variable');
@@ -356,20 +323,20 @@ function handleWIEditCondition(e) {
 
     editingCondition = { entryKey, index };
     setSaveButtonLabel();
-    editor.style.display = 'block';
 }
 
 function handleWICancelCondition() {
     const editor = document.getElementById('se_wi_injected_condition_editor');
-    if (editor) editor.style.display = 'none';
+    if (editor) editor.remove();
     editingCondition = null;
-    setSaveButtonLabel();
 }
 
 function handleWISaveCondition() {
-    const entryKey = getWIEditorEntryKey();
+    const editorEl = document.getElementById('se_wi_injected_condition_editor');
+    const box = boxOf(editorEl);
+    const entryKey = box ? entryKeyForBox(box) : null;
     if (!entryKey) {
-        alert('Could not identify the entry being edited. Make sure you have an entry open.');
+        alert('Could not identify the entry being edited (or its lorebook). Make sure the entry is open in the World Info editor.');
         return;
     }
 
@@ -421,8 +388,13 @@ function handleWISaveCondition() {
     }
 
     // Refresh condition list and close editor
-    renderInjectedWIConditions(entryKey);
+    renderInjectedWIConditions(entryKey, box);
     handleWICancelCondition();
+}
+
+function handleWIVariableChange() {
+    const varSelect = document.getElementById('se_wi_injected_cond_variable');
+    updateOperatorAndValueUI(varSelect ? varSelect.value : null);
 }
 
 function handleWIOperatorChange() {
@@ -432,11 +404,15 @@ function handleWIOperatorChange() {
     updateValueUI(varMeta, operator);
 }
 
-function renderInjectedWIConditions(entryKey) {
-    const list = document.getElementById('se_wi_injected_conditions_list');
+// ---------------------------------------------------------------------------
+// The condition list
+// ---------------------------------------------------------------------------
+
+function renderInjectedWIConditions(entryKey, box) {
+    const list = box ? box.querySelector('.se-wi-conditions-list') : null;
     if (!list) return;
 
-    const conditions = getWIConditions(entryKey);
+    const conditions = entryKey ? getWIConditions(entryKey) : [];
 
     // A malformed list is shown as empty (and left alone), never rendered.
     if (!Array.isArray(conditions) || conditions.length === 0) {
@@ -448,20 +424,10 @@ function renderInjectedWIConditions(entryKey) {
     const names = new Map(getAvailableVariablesForConditions().map((v) => [v.name, v.variableName]));
     list.innerHTML = conditions.map((cond, index) =>
         conditionItemHtml(cond, index, entryKey, (v) => names.get(v) ?? v)).join('');
-
-    // Wire edit / delete buttons
-    list.querySelectorAll('.se-edit-injected-condition').forEach(btn => {
-        btn.removeEventListener('click', handleWIEditCondition);
-        btn.addEventListener('click', handleWIEditCondition);
-    });
-    list.querySelectorAll('.se-delete-injected-condition').forEach(btn => {
-        btn.removeEventListener('click', handleWIDeleteCondition);
-        btn.addEventListener('click', handleWIDeleteCondition);
-    });
 }
 
-function handleWIDeleteCondition(e) {
-    const btn = e.target.closest('button');
+function handleWIDeleteCondition(btn) {
+    const box = boxOf(btn);
     const entryKey = btn.getAttribute('data-entry-key');
     const index = parseInt(btn.getAttribute('data-index'), 10);
 
@@ -471,21 +437,77 @@ function handleWIDeleteCondition(e) {
     if (editingCondition && editingCondition.entryKey === entryKey) handleWICancelCondition();
 
     deleteWICondition(entryKey, index);
-    renderInjectedWIConditions(entryKey);
+    renderInjectedWIConditions(entryKey, box);
+}
+
+// ---------------------------------------------------------------------------
+// Injection and wiring
+// ---------------------------------------------------------------------------
+
+// Adds a box to every expanded entry's edit form that does not have one yet, and
+// fills it. Idempotent: it changes the page only when something is missing, so
+// the observer that calls it does not feed itself. Returns how many were added.
+//
+// Only forms inside the entries list are used: ST also keeps a hidden
+// `.world_entry_edit` in #entry_edit_template that it clones for every entry, and
+// a box put there would be copied into each one.
+export function injectConditionBoxes() {
+    let added = 0;
+    document.querySelectorAll('#world_popup_entries_list .world_entry_edit').forEach((form) => {
+        if (Array.from(form.children).some((child) => child.classList.contains('se-wi-injected-conditions'))) return;
+
+        const holder = document.createElement('div');
+        holder.innerHTML = BOX_HTML.trim();
+        const box = holder.firstElementChild;
+        form.appendChild(box);
+        renderInjectedWIConditions(entryKeyForBox(box), box);
+        added++;
+    });
+    return added;
+}
+
+let listenersInstalled = false;
+
+// One listener for every button and select in every box, so nothing has to be
+// re-wired when ST rebuilds an entry.
+function installDelegatedListeners() {
+    if (listenersInstalled) return;
+    listenersInstalled = true;
+
+    document.addEventListener('click', (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target) return;
+
+        const add = target.closest('.se-wi-add-condition-btn');
+        if (add) { handleWIAddCondition(boxOf(add)); return; }
+        if (target.closest('.se-wi-save-condition-btn')) { handleWISaveCondition(); return; }
+        if (target.closest('.se-wi-cancel-condition-btn')) { handleWICancelCondition(); return; }
+        const edit = target.closest('.se-edit-injected-condition');
+        if (edit) { handleWIEditCondition(edit); return; }
+        const del = target.closest('.se-delete-injected-condition');
+        if (del) { handleWIDeleteCondition(del); }
+    });
+
+    document.addEventListener('change', (event) => {
+        const id = event.target && event.target.id;
+        if (id === 'se_wi_injected_cond_variable') handleWIVariableChange();
+        else if (id === 'se_wi_injected_cond_operator') handleWIOperatorChange();
+    });
 }
 
 export function observeWIEditorChanges() {
-    // Monitor the DOM for when a WI entry editor opens/closes
-    // and inject/update the condition UI accordingly
-    const observer = new MutationObserver(() => {
-        injectWIConditionUI();
+    installDelegatedListeners();
 
-        // If we have an entry open, render its conditions
-        const entryKey = getWIEditorEntryKey();
-        if (entryKey) {
-            renderInjectedWIConditions(entryKey);
-            wireInjectedWIConditionUI();
-        }
+    // ST builds an entry's edit form when it is expanded, so watch for them.
+    // Coalesced to one pass per frame.
+    let scheduled = false;
+    const observer = new MutationObserver(() => {
+        if (scheduled) return;
+        scheduled = true;
+        requestAnimationFrame(() => {
+            scheduled = false;
+            injectConditionBoxes();
+        });
     });
 
     observer.observe(document.body, {
@@ -494,5 +516,6 @@ export function observeWIEditorChanges() {
         attributes: false,
     });
 
+    injectConditionBoxes(); // entries that are already expanded
     console.log(`${LOG_PREFIX} Monitoring WI editor for changes`);
 }
