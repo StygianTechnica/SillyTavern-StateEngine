@@ -236,7 +236,7 @@ Operators compare **case-insensitively** and trim spaces for text.
 | WIF-TY-04 | P1 | M | **Enum** `stance` equals `fight`; change to `flee` | Shown → hidden |
 | WIF-TY-05 | P1 | M | **Array of string** `inventory` contains `sword`; remove `sword` | Shown → hidden |
 | WIF-TY-06 | P1 | M | **Array of enum** `tags` contains `red`; change to `blue` | Shown → hidden; the condition's value is a dropdown of `red/green/blue` |
-| WIF-TY-07 | P2 | M | **FIXED.** **Array of object** `party`: open the condition editor and pick it | Operator dropdown shows "Not available for object arrays" (disabled); the value box is **disabled** with the note "Conditions on arrays of objects are not supported yet…"; **Add condition** shows the alert "…not supported yet. Please choose a different variable." and nothing is stored; no console error |
+| WIF-TY-07 | P2 | M | **CHANGED.** **Array of object** `party`: open the condition editor and look at the Variable dropdown | `party` is **not listed** (World Info conditions are primitive-only: string, number, boolean, enum, datetime, calculated, arrays of primitives). Arrays of objects still work everywhere else in State Engine. A condition already stored on one is treated as met (entry shown) with a console warning "cannot be used in WI conditions" |
 | WIF-TY-08 | P2 | M | **Calculated** variable `hp_pct` (expression `hp / hp_max * 100`). In the condition editor pick `hp_pct`, operator *greater than*, Value `40`. Set `hp`=20, `hp_max`=40, then `hp`=10 | Shown while `hp_pct` is 50, hidden once it is 25 |
 | WIF-TY-09 | P2 | M | **Datetime** variable `when` (default `2022-05-11 00:00:00`). Condition: *greater than*, Date `2022-05-11 00:00:00`. The box is labelled **Date** and takes the same form as the variable's default; nothing is typed in seconds | Shown once `when` is later than that date, hidden when it is earlier or equal. A value that is not a date is refused with a message. (Plain seconds are still accepted.) **FIXED (was: the condition had to be typed as a seconds number.)** |
 | WIF-TY-10 | P2 | M | Change a variable's type after a condition was set (number → string) | No crash; entry still evaluates (record result) |
@@ -387,7 +387,7 @@ Select a variable, then check the operator list and the value control.
 | WIE-OD-03 | P1 | M | **Array of string** variable | 5 operators: contains, not contains, length >, length ==, item at index == |
 | WIE-OD-04 | P1 | M | **Array of enum** variable | Same 5 |
 | WIE-OD-05 | P1 | M | **Array of any** variable | 4 operators — **no** index operator |
-| WIE-OD-06 | P2 | M | **FIXED.** **Array of object** variable | No operators are offered (dropdown shows "Not available for object arrays", disabled), so `contains`, `index_eq` and the length operators cannot be chosen |
+| WIE-OD-06 | P2 | M | **CHANGED.** **Array of object** variable | Not in the Variable dropdown; nothing to disable or explain. In the manager's variable editor the Object item type shows the note "Object arrays cannot be used in World Info conditions." |
 | WIE-OD-07 | P1 | M | Switch variable from array back to number | Operator list returns to the 12 |
 | WIE-VF-01 | P1 | M | `equals`, `contains`, etc. | Single text box; placeholder "comma-separated for 'in list'" |
 | WIE-VF-02 | P1 | M | `is true` / `is false` | Value box **hidden** |

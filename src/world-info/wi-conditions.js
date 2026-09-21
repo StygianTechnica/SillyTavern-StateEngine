@@ -204,6 +204,14 @@ export function evaluateCondition(varName, operator, condValue) {
             || Object.values(variables).find((d) => d?.name === varName)
             || { name: varName, type: 'string' };
 
+        // World Info conditions are primitive-only: an array of objects has no
+        // field to compare, and the editor does not offer one. A stored condition
+        // on one (old or hand-edited data) is treated as met, never as a failure.
+        if (def.type === 'array' && def.itemType === 'object') {
+            console.warn(`${LOG_PREFIX} Object-array variable "${varName}" cannot be used in WI conditions — treating condition as met.`);
+            return true;
+        }
+
         const varValue = getMacroValue(context, def);
         condValue = datetimeConditionValue(def, operator, condValue);
         const operatorFunc = CONDITION_OPERATORS[operator];
@@ -306,6 +314,9 @@ export function getAvailableVariablesForConditions() {
         for (const [varName, def] of Object.entries(preset.variables)) {
             if (seenNames.has(varName)) continue;
             seenNames.add(varName);
+
+            // Arrays of objects cannot be used in World Info conditions.
+            if (def.type === 'array' && def.itemType === 'object') continue;
 
             const entry = {
                 name: varName, // the key a condition stores (the variable's id)

@@ -321,6 +321,7 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
 
                 ${itemType === 'object' ? `
                     <div class="se-empty">Object item editor coming soon. Object items are validated against itemSchema (per-field type checks), configured outside this editor.</div>
+                    <div class="se-empty">Object arrays cannot be used in World Info conditions.</div>
                 ` : ''}
 
                 <div class="se-manager-array-constraints">

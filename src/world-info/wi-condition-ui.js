@@ -151,12 +151,6 @@ export function escapeText(text) {
         .replace(/'/g, '&#39;');
 }
 
-// An array whose items are objects. Conditions on these are not supported yet:
-// there is no field selector, so nothing a condition could compare against.
-export function isObjectArray(varMeta) {
-    return varMeta?.type === 'array' && varMeta.itemType === 'object';
-}
-
 // A datetime variable compared with equals / greater than / ...: the condition's
 // value is a DATE (same form as the variable's default), not the stored seconds.
 const DATE_OPERATORS = ['equals', 'not_equals', 'greater_than', 'less_than', 'greater_or_equal', 'less_or_equal'];
@@ -165,9 +159,9 @@ export function isDatetimeDateOperator(varMeta, operator) {
 }
 
 // The operators the editor offers for a variable (null meta = none chosen yet).
-// Object arrays get none.
+// Arrays of objects never reach the editor (getAvailableVariablesForConditions
+// leaves them out), so there is no case for them here.
 export function operatorsFor(varMeta) {
-    if (isObjectArray(varMeta)) return [];
     return varMeta?.type === 'array' ? arrayOperators(varMeta.itemType) : BASE_OPERATORS;
 }
 
@@ -222,16 +216,12 @@ function updateOperatorAndValueUI(varName) {
     const varMeta = cachedConditionVariables.find(v => v.name === varName) || null;
     const options = operatorsFor(varMeta);
 
-    operatorSelect.innerHTML = isObjectArray(varMeta)
-        ? '<option value="">Not available for object arrays</option>'
-        : options.map(o => `<option value="${escapeText(o.value)}">${escapeText(o.label)}</option>`).join('');
-    operatorSelect.disabled = isObjectArray(varMeta);
+    operatorSelect.innerHTML = options.map(o => `<option value="${escapeText(o.value)}">${escapeText(o.label)}</option>`).join('');
     updateValueUI(varMeta, operatorSelect.value);
 }
 
 // Swaps the value input between a plain text field, a dropdown of
-// itemEnumValues (array of enum), or a disabled field with an explanation
-// (array of object), and shows/hides the separate index field for index_eq.
+// itemEnumValues (array of enum), and shows/hides the separate index field for index_eq.
 // The value element keeps the id se_wi_injected_cond_value regardless of shape
 // (input or select both expose .value), so save/read code doesn't need to care
 // which - it exists in EVERY branch except the hidden boolean one, where it is
@@ -246,16 +236,7 @@ function updateValueUI(varMeta, operator) {
     if (indexContainer) indexContainer.style.display = operator === 'index_eq' ? 'block' : 'none';
     if (isBoolean) return;
 
-    if (isObjectArray(varMeta)) {
-        valueContainer.innerHTML = `
-            <label for="se_wi_injected_cond_value" style="font-size: 0.9em;">Value</label>
-            <input id="se_wi_injected_cond_value" type="text" class="text_pole" style="font-size: 0.9em;" disabled placeholder="Not available" />
-            <div class="se-wi-object-array-note" style="font-size: 0.85em; opacity: 0.8;">
-                Conditions on arrays of objects are not supported yet (there is no way to pick a field to compare).
-                Choose a different variable.
-            </div>
-        `;
-    } else if (varMeta?.type === 'array' && varMeta.itemType === 'enum') {
+    if (varMeta?.type === 'array' && varMeta.itemType === 'enum') {
         const opts = (varMeta.itemEnumValues || []).map(v => `<option value="${escapeText(v)}">${escapeText(v)}</option>`).join('');
         valueContainer.innerHTML = `
             <label for="se_wi_injected_cond_value" style="font-size: 0.9em;">Value</label>
@@ -357,11 +338,6 @@ function handleWISaveCondition() {
     const operator = document.getElementById('se_wi_injected_cond_operator').value;
 
     const varMeta = cachedConditionVariables.find((v) => v.name === varName) || null;
-    if (isObjectArray(varMeta)) {
-        alert('Conditions on arrays of objects are not supported yet. Please choose a different variable.');
-        return;
-    }
-
     // The value element can be absent or disabled; never read through null.
     const valueEl = document.getElementById('se_wi_injected_cond_value');
     let value = valueEl && !valueEl.disabled ? valueEl.value : '';

@@ -179,39 +179,41 @@ describe('3. the WI editor escapes everything it renders', () => {
     });
 });
 
-describe('4. arrays of objects cannot be turned into conditions', () => {
-    const obj = { name: 'v', type: 'array', itemType: 'object' };
-
-    it('no operator is offered (so no contains / index_eq / length)', () => {
-        expect(editor.isObjectArray(obj)).toBe(true);
-        expect(editor.operatorsFor(obj)).toEqual([]);
+describe('4. arrays of objects are kept out of World Info conditions', () => {
+    it('the editor never offers them: they are left out of the variable list', () => {
+        const presetId = makePreset('Party', {
+            'v-party': { name: 'se__party', type: 'array', itemType: 'object', defaultValue: [] },
+            'v-tags': { name: 'se__tags', type: 'array', itemType: 'string', defaultValue: [] },
+            'v-hp': { name: 'se__hp' },
+        });
+        addPresetToChat('chat-1', presetId);
+        expect(wi.getAvailableVariablesForConditions().map((v) => v.name).sort()).toEqual(['v-hp', 'v-tags']);
     });
 
-    it('every other variable type keeps the operators it had', () => {
+    it('a stored condition on one is treated as met (no failure)', () => {
+        const presetId = makePreset('Party', { 'v-party': { name: 'se__party', type: 'array', itemType: 'object', defaultValue: [] } });
+        addPresetToChat('chat-1', presetId);
+        context.variables.local.set('se__party', [{ n: 1 }]);
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        for (const op of ['contains', 'length_gt', 'equals', 'index_eq']) {
+            expect(wi.evaluateCondition('v-party', op, '0:x')).toBe(true);
+        }
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('cannot be used in WI conditions'));
+        warn.mockRestore();
+        getSettings().wiConditions['B.1'] = [{ variable: 'v-party', operator: 'contains', value: 'x' }];
+        expect(wi.shouldDisplayWIEntry('B.1')).toBe(true);
+    });
+
+    it('every other variable type keeps the operators it had, and the object-array UI branches are gone', () => {
         expect(editor.operatorsFor(null)).toHaveLength(12);
         expect(editor.operatorsFor({ type: 'number' })).toHaveLength(12);
         expect(editor.operatorsFor({ type: 'array', itemType: 'string' }).map((o) => o.value)).toEqual(['contains', 'not_contains', 'length_gt', 'length_eq', 'index_eq']);
         expect(editor.operatorsFor({ type: 'array', itemType: 'enum' })).toHaveLength(5);
         expect(editor.operatorsFor({ type: 'array', itemType: 'any' }).map((o) => o.value)).toEqual(['contains', 'not_contains', 'length_gt', 'length_eq']);
-        expect(editor.isObjectArray({ type: 'array', itemType: 'string' })).toBe(false);
-        expect(editor.isObjectArray({ type: 'string', itemType: 'object' })).toBe(false);
-    });
-
-    it('the value field is DISABLED with an explanation, and still exists (so nothing reads through null)', () => {
         const src = read('src', 'world-info', 'wi-condition-ui.js');
-        const branch = src.slice(src.indexOf('if (isObjectArray(varMeta)) {\n            valueContainer') >= 0 ? src.indexOf('if (isObjectArray(varMeta)) {\r\n            valueContainer') : 0);
-        expect(src).toContain('id="se_wi_injected_cond_value" type="text" class="text_pole" style="font-size: 0.9em;" disabled');
-        expect(src).toContain('Conditions on arrays of objects are not supported yet');
-        expect(branch.length).toBeGreaterThan(0);
-    });
-
-    it('Save refuses an object array before reading the value, and the value read is null-safe', () => {
-        const src = read('src', 'world-info', 'wi-condition-ui.js');
-        const save = src.slice(src.indexOf('function handleWISaveCondition'));
-        expect(save.indexOf('isObjectArray(varMeta)')).toBeGreaterThan(-1);
-        expect(save.indexOf('isObjectArray(varMeta)')).toBeLessThan(save.indexOf("getElementById('se_wi_injected_cond_value')"));
-        expect(save).toContain('valueEl && !valueEl.disabled ? valueEl.value');
-        expect(save).not.toMatch(/getElementById\('se_wi_injected_cond_value'\)\.value/);
+        expect(src).not.toContain('isObjectArray');
+        expect(src).not.toContain('se-wi-object-array-note');
+        expect(src).toContain('valueEl && !valueEl.disabled ? valueEl.value');
     });
 });
 

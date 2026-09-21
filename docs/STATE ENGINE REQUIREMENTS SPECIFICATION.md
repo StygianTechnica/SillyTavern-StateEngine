@@ -1529,6 +1529,15 @@ what runs and the additions built on it.
   again after a new chat's start-choice (CHAT_CREATED), where it only asks about
   presets still missing and not declined. (4) There is no global scope in the UI:
   WIF-TY-11 removed from the test plan.
+- Object arrays and World Info (2026-09-21, replaces the earlier "disabled with a note"
+  behaviour): an array whose items are objects is left OUT of the condition editor's
+  variable list (getAvailableVariablesForConditions, wi-conditions.js), because there
+  is no field to compare. This is a World Info restriction only: object arrays stay
+  fully supported in State Engine, storage and the API. evaluateCondition() treats a
+  stored condition on one as met with a console warning, so old or hand-edited data
+  never breaks filtering (entryConditionsMet therefore fails open for it). The
+  manager's variable editor notes it on the Object item type. WI conditions are
+  primitive-only.
 - Preset export/import (src/core/preset-export.js): exportPreset(presetId) is a
   deep copy; importPreset(data) always creates a NEW preset (never overwrites),
   with a fresh id, a unique display name, fresh variable ids and variable names

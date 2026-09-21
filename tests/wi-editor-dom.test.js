@@ -263,16 +263,11 @@ describe('the add / edit / delete flows in the real DOM', () => {
         expect([...$('#se_wi_injected_cond_value').options].map((o) => o.value)).toEqual(['red', 'green']);
     });
 
-    it('an array of objects cannot be saved: no operators, value disabled with a note, no exception', () => {
+    it('an array of objects is not in the variable list at all', () => {
         click(box(3).querySelector('.se-wi-add-condition-btn'));
-        $('#se_wi_injected_cond_variable').value = 'v-party';
-        change($('#se_wi_injected_cond_variable'));
-        expect($('#se_wi_injected_cond_operator').disabled).toBe(true);
-        expect($('#se_wi_injected_cond_value').disabled).toBe(true);
-        expect($('.se-wi-object-array-note').textContent).toContain('not supported yet');
-        expect(() => click($('.se-wi-save-condition-btn'))).not.toThrow();
-        expect(alert).toHaveBeenLastCalledWith(expect.stringContaining('not supported yet'));
-        expect(getSettings().wiConditions).toEqual({});
+        const values = [...$('#se_wi_injected_cond_variable').options].map((o) => o.value);
+        expect(values).not.toContain('v-party');
+        expect(values).toContain('v-tags');
     });
 
     it('Edit fills the form in; Save changes REPLACES the condition (same count, same place)', () => {
