@@ -50,7 +50,7 @@ jQuery(async () => {
         // Load manager modal styles
         loadManagerModalStyles();
 
-        console.log(LOG_PREFIX, 'loaded');
+        console.log(LOG_PREFIX, 'loaded (build: new-chat check on CHAT_CHANGED)');
     } catch (err) {
         console.error(LOG_PREFIX, 'failed to initialize', err);
     }

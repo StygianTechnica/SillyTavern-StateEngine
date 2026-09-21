@@ -27,6 +27,11 @@ export function registerEvents() {
     // handler into SillyTavern's own event dispatch / generation pipeline.
     // Nothing here reads or writes SillyTavern chat metadata — chat state
     // lives exclusively in chat-state.js (via loadChatState).
+    // The chat that was open just before the current one: the chat a new chat is
+    // started FROM, and so what it should continue from.
+    let previousChatId = null;
+    let currentChatId = null;
+
     const onChatCreated = async () => {
         const context = SillyTavern.getContext();
         const chatId = context.chatId;
@@ -41,7 +46,7 @@ export function registerEvents() {
             // Asks how the new chat should start (same presets / same presets + data
             // / clean slate). SillyTavern awaits this listener, so the answer is
             // applied before the chat carries on.
-            await offerNewChatStart(chatId);
+            await offerNewChatStart(chatId, undefined, previousChatId);
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
         }
@@ -81,6 +86,10 @@ export function registerEvents() {
     eventSource.on(eventTypes.CHAT_CHANGED, async () => {
         const context = SillyTavern.getContext();
         const chatId = context.chatId;
+        if (chatId !== currentChatId) {
+            previousChatId = currentChatId;
+            currentChatId = chatId;
+        }
 
         try {
             loadChatState(chatId);
@@ -99,7 +108,7 @@ export function registerEvents() {
             // so the "start from your last chat?" question is also asked here.
             // Asked BEFORE the lorebook offer so the earlier chat's presets are
             // settled first (a preset already active is not offered again).
-            if (looksLikeNewChat(chatId, context)) await offerNewChatStart(chatId);
+            if (looksLikeNewChat(chatId, context)) await offerNewChatStart(chatId, undefined, previousChatId);
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
         }

@@ -287,7 +287,7 @@ describe('wiring', () => {
     const src = read('src', 'events', 'event-engine.js');
     it('the handler is async, awaits the question, and serves normal and group chats', () => {
         expect(src).toMatch(/const onChatCreated = async \(\) => \{/);
-        expect(src).toContain('await offerNewChatStart(chatId)');
+        expect(src).toContain('await offerNewChatStart(chatId, undefined, previousChatId)');
         expect(src).toContain('eventSource.on(eventTypes.CHAT_CREATED, onChatCreated)');
         expect(src).toContain('eventSource.on(eventTypes.GROUP_CHAT_CREATED, onChatCreated)');
     });
@@ -332,7 +332,34 @@ describe('a character with no greeting never gets CHAT_CREATED: CHAT_CHANGED ask
     it('CHAT_CHANGED is wired to ask before the lorebook offer', () => {
         const src = read('src', 'events', 'event-engine.js');
         expect(src).toContain('eventSource.on(eventTypes.CHAT_CHANGED, async () => {');
-        expect(src).toContain('if (looksLikeNewChat(chatId, context)) await offerNewChatStart(chatId);');
+        expect(src).toContain('if (looksLikeNewChat(chatId, context)) await offerNewChatStart(chatId, undefined, previousChatId);');
         expect(src.indexOf('looksLikeNewChat(chatId, context)')).toBeLessThan(src.lastIndexOf('offerLorebookPresets(chatId);'));
+    });
+});
+
+describe('the chat the user started from wins over the most recently updated one', () => {
+    it('findPreviousChat prefers the chat you were just in', () => {
+        makeSourceChat('chat-real', { presetIds: [hp], values: { se__hp: 7 }, lastUpdated: 1000 });
+        makeSourceChat('chat-defaults-only', { presetIds: [hp], values: { se__hp: 0 }, lastUpdated: 5000 });
+        makeNewChat();
+        expect(findPreviousChat(NEW).sourceChatId).toBe('chat-defaults-only');
+        expect(findPreviousChat(NEW, 'chat-real').sourceChatId).toBe('chat-real');
+    });
+
+    it('a preferred chat of another character (or with nothing to continue from) is ignored', () => {
+        makeSourceChat('chat-mine', { presetIds: [hp], lastUpdated: 1000 });
+        makeSourceChat('chat-other-char', { avatar: 'b.png', presetIds: [hp], lastUpdated: 9000 });
+        makeSourceChat('chat-empty', { lastUpdated: 8000 });
+        makeNewChat();
+        expect(findPreviousChat(NEW, 'chat-other-char').sourceChatId).toBe('chat-mine');
+        expect(findPreviousChat(NEW, 'chat-empty').sourceChatId).toBe('chat-mine');
+    });
+
+    it('CONTINUE copies the preferred chat values, not the newest chat defaults', async () => {
+        makeSourceChat('chat-real', { presetIds: [hp], values: { se__hp: 7 }, lastUpdated: 1000 });
+        makeSourceChat('chat-defaults-only', { presetIds: [hp], values: { se__hp: 0 }, lastUpdated: 5000 });
+        makeNewChat();
+        await offerNewChatStart(NEW, ask(NEW_CHAT_CHOICES.CONTINUE), 'chat-real');
+        expect(loadChatState(NEW).variables.se__hp.value).toBe(7);
     });
 });

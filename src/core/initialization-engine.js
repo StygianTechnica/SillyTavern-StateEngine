@@ -48,7 +48,13 @@ const escapeText = (text) => String(text ?? '').replace(/[&<>"']/g, (c) => ({ '&
 // of the same character / group that had active presets or stored variables.
 // -> { sourceChatId, sourceState, presetIds, variableCount, isGroup } or null.
 // Read-only: nothing is created or changed.
-export function findPreviousChat(chatId) {
+//
+// `preferredChatId` is the chat the user was in just before this one (the chat
+// they clicked "Start new chat" from). When it belongs to the same character /
+// group and has presets or data it wins over a more recently UPDATED chat -
+// otherwise a chat that only ever held defaults (an earlier new chat started
+// without data) would become "the last chat" and pass its defaults on.
+export function findPreviousChat(chatId, preferredChatId = null) {
     const settings = getSettings();
     const store = settings.variableStore?.chats || {};
     const newChatState = loadChatState(chatId);
@@ -75,7 +81,7 @@ export function findPreviousChat(chatId) {
         .filter((c) => c.presetIds.length > 0 || c.variableCount > 0)
         .sort((a, b) => (b.sourceState?.lastUpdated || 0) - (a.sourceState?.lastUpdated || 0));
 
-    return candidates[0] || null;
+    return candidates.find((c) => preferredChatId && c.sourceChatId === preferredChatId) || candidates[0] || null;
 }
 
 // Asks the user. Returns one of NEW_CHAT_CHOICES; anything other than a clear
@@ -178,13 +184,13 @@ const askedThisSession = new Set();
 // CHAT_CREATED / GROUP_CHAT_CREATED handler body. Asks once per chat, applies the
 // answer, returns { choice, activated, copied } (choice null when there was
 // nothing to ask). Never throws. `ask` is replaceable for tests.
-export async function offerNewChatStart(chatId, ask = askNewChatStart) {
+export async function offerNewChatStart(chatId, ask = askNewChatStart, preferredChatId = null) {
     try {
         if (!chatId || askedThisSession.has(chatId)) return { choice: null, activated: [], copied: 0 };
         // Remembered with the chat (not just for the session): this question is
         // asked from two events (see looksLikeNewChat) and must never repeat.
         if (loadChatState(chatId).newChatStartAsked) return { choice: null, activated: [], copied: 0 };
-        const source = findPreviousChat(chatId);
+        const source = findPreviousChat(chatId, preferredChatId);
         if (!source) return { choice: null, activated: [], copied: 0 };
         askedThisSession.add(chatId);
         const asked = loadChatState(chatId);
