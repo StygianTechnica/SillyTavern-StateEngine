@@ -1710,7 +1710,13 @@ src/ui/image-preview.js (safe thumbnails).
 - Tracker: a thumbnail of the one active image (hover or focus to enlarge), or the
   placeholder; never the whole list or map; no editing from the tracker. Values are
   read from the isolated store, because SillyTavern's variable store would turn a
-  numeric-looking reference ("12345") into a number.
+  numeric-looking reference ("12345") into a number. The tracker redraws as soon as a
+  deterministic increment changes something (2026-09-21 fix: it used to stay stale until
+  something else redrew it, because only the prompted update redrew it and only when it
+  had prompted variables): runDeterministicIncrements() returns how many variables it
+  incremented and the user/AI message handlers call refreshPanelIfOpen() when that is
+  more than 0 - not on every message, so a tracker edit in progress is not wiped. This
+  covers an image list rotating, a counter, and a key variable that feeds an image map.
 - Previews are safe: a reference becomes an <img src> only if it is an http(s) URL, a
   data:image/... URL or a path (contains "/" or ends in an image extension) with no
   other URL scheme; javascript:, data:text/html, bare resource ids and anything else

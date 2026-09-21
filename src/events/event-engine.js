@@ -155,7 +155,10 @@ export function registerEvents() {
         const chatId = SillyTavern.getContext().chatId;
 
         try {
-            runDeterministicIncrements(chatId, 'user');
+            // A deterministic increment (a counter, an image list rotating...) changes
+            // what the tracker shows, and nothing else redraws it: the prompted update
+            // only does when it has prompted variables to ask about.
+            if (runDeterministicIncrements(chatId, 'user') > 0) refreshPanelIfOpen();
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
         }
@@ -171,7 +174,7 @@ export function registerEvents() {
         const chatId = SillyTavern.getContext().chatId;
 
         try {
-            runDeterministicIncrements(chatId, 'ai');
+            if (runDeterministicIncrements(chatId, 'ai') > 0) refreshPanelIfOpen();
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
         }

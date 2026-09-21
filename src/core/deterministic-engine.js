@@ -12,10 +12,13 @@ import { setVar, applyIncrement } from './chat-state.js';
 import { recalculateDependents } from './calculated-engine.js';
 import { isValidDelta } from './calendar-engine.js';
 
+// Returns how many variables were incremented (0 when nothing was), so the caller
+// can redraw the tracker only when something actually changed.
 export function runDeterministicIncrements(chatId, triggerType) {
+    let applied = 0;
     try {
         const settings = getSettings();
-        if (!settings.enabled) return;
+        if (!settings.enabled) return 0;
 
         const activePresetIds = getPresetsForChat(chatId);
         const variables = getAllVariablesFromPresets(activePresetIds);
@@ -52,6 +55,7 @@ export function runDeterministicIncrements(chatId, triggerType) {
 
                 applyIncrement(chatId, def.name, def.increment.delta, def);
                 recalculateDependents(chatId, def.name);
+                applied += 1;
             } catch (err) {
                 console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
             }
@@ -59,4 +63,5 @@ export function runDeterministicIncrements(chatId, triggerType) {
     } catch (err) {
         console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
     }
+    return applied;
 }
