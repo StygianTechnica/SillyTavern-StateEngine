@@ -204,13 +204,13 @@ Operators compare **case-insensitively** and trim spaces for text.
 | WIF-OP-24 | P1 | A-new | `inventory` has 2 items · length_gt `1` | Shown |
 | WIF-OP-25 | P1 | A-new | `inventory` has 2 items · length_gt `2` | Hidden |
 | WIF-OP-26 | P1 | A-new | `inventory` has 2 items · length_eq `2` | Shown |
-| WIF-OP-27 | P2 | A-new | `hp`=5 (not an array) · length_gt `1` | Hidden (array-only operator on a non-array) |
+| WIF-OP-27 | P2 | A-new | `hp`=5 (not an array) · length_gt `1` | Hidden. **Automated only** — the editor cannot produce this input, so there is nothing to do by hand: the editor only offers *length* for array variables |
 | WIF-OP-28 | P1 | A-new | `inventory`=[sword, shield] · index_eq `0:sword` | Shown |
 | WIF-OP-29 | P1 | A-new | same · index_eq `1:sword` | Hidden |
 | WIF-OP-30 | P2 | A-new | same · index_eq `5:sword` (out of range) | Hidden |
 | WIF-OP-31 | P3 | A-new | same · index_eq `5:undefined` | Shown — out-of-range compares the text "undefined". Record as quirk |
-| WIF-OP-32 | P2 | A-new | same · index_eq `-1:sword`, `1.5:sword`, `x:sword`, `0` (no colon) | Hidden in every case |
-| WIF-OP-33 | P2 | A-new | `inventory` item containing a colon, condition `0:a:b` | Compares the value `a:b` (only the first colon separates) |
+| WIF-OP-32 | P2 | A-new | index_eq with a bad index (`-1`, `1.5`, `x`, none) | Hidden in every case. **Automated only** — the editor cannot produce this input, so there is nothing to do by hand: the Index box is a whole-number-only field and is required, so these cannot be entered. Manual check: leave Index empty and click Add condition → "Please enter both an index and a value" |
+| WIF-OP-33 | P2 | M+A | Array of **string** `inventory` whose first item is `a:b` (set it in the **variable's current value**, in the tracker/variable panel of the open chat — changing only the preset's default does not change a chat that already started). Condition: **item at index ==**, Index `0`, Value `a:b` (stored as `0:a:b`) | Entry shown. Change item 0 to `c` → hidden. (The operator itself is covered by an automated test.) If it fails, note what the array shows in the tracker and any `[State Engine]` console line |
 | WIF-OP-34 | P1 | A-new | `mood`=`happy` · in_list `happy, sad` | Shown |
 | WIF-OP-35 | P1 | A-new | `mood`=`angry` · in_list `happy,sad` | Hidden |
 | WIF-OP-36 | P2 | A-new | `mood`=`HAPPY` · in_list `happy,sad` | Shown |
@@ -222,9 +222,9 @@ Operators compare **case-insensitively** and trim spaces for text.
 | WIF-OP-42 | P1 | A-new | `alive`=false · is_false | Shown |
 | WIF-OP-43 | P2 | A-new | `hp`=1 · is_true; `hp`=0 · is_false | Shown; Shown (1 is true, 0 is false) |
 | WIF-OP-44 | P3 | A-new | `mood`=`yes` · is_true | Hidden (only true/`"true"`/1) |
-| WIF-OP-45 | P3 | A-new | Empty array `inventory` · is_false; `mood`=`` · is_false | Shown; Shown — JavaScript loose equality treats an empty array/string as false. Record as quirk |
-| WIF-OP-46 | P2 | A-new | Condition with an operator name that does not exist (edit `S().wiConditions` in console: `{variable:…, operator:'bogus', value:'1'}`) | Shown (fail-open); console warning `Unknown operator: bogus` |
-| WIF-OP-47 | P2 | A-new | Every operator returns a boolean and never throws for the inputs `undefined`, `null`, `NaN`, `''`, `[]`, `{}`, a 10 000-char string | No exception; entry shown or hidden per rules above |
+| WIF-OP-45 | P3 | A-new | Empty array · is_false; `mood`=`` · is_false | Shown; Shown — JavaScript loose equality treats an empty array/string as false. **Automated only** — the editor cannot produce this input, so there is nothing to do by hand: *is true / is false* are offered for scalar variables only (record as quirk) |
+| WIF-OP-46 | P2 | A-new | A stored condition whose operator does not exist (`bogus`) | Shown (fail-open); console warning `Unknown operator: bogus`. **Automated only** — the editor cannot produce this input, so there is nothing to do by hand: the operator is a dropdown, so this can only come from edited data or the API |
+| WIF-OP-47 | P2 | A-new | Every operator against the inputs `undefined`, `null`, `NaN`, `''`, `[]`, `{}`, a 10 000-char string | No exception; entry shown or hidden per the rules above. **Automated only** — the editor cannot produce this input, so there is nothing to do by hand: it is a robustness sweep, not a scenario |
 
 ### 1.2 Variable types
 
@@ -237,13 +237,23 @@ Operators compare **case-insensitively** and trim spaces for text.
 | WIF-TY-05 | P1 | M | **Array of string** `inventory` contains `sword`; remove `sword` | Shown → hidden |
 | WIF-TY-06 | P1 | M | **Array of enum** `tags` contains `red`; change to `blue` | Shown → hidden; the condition's value is a dropdown of `red/green/blue` |
 | WIF-TY-07 | P2 | M | **FIXED.** **Array of object** `party`: open the condition editor and pick it | Operator dropdown shows "Not available for object arrays" (disabled); the value box is **disabled** with the note "Conditions on arrays of objects are not supported yet…"; **Add condition** shows the alert "…not supported yet. Please choose a different variable." and nothing is stored; no console error |
-| WIF-TY-08 | P2 | M | **Calculated** `hp_pct` greater_than 40; set `hp`=20,`hp_max`=40 (=50%) then `hp`=10 | Shown at 50, hidden at 25 |
-| WIF-TY-09 | P2 | M | **Datetime** variable equals / greater_than on its stored seconds | Compares the stored *seconds* number, not the formatted date — record the behaviour |
+| WIF-TY-08 | P2 | M | **Calculated** variable `hp_pct` (expression `hp / hp_max * 100`). In the condition editor pick `hp_pct`, operator *greater than*, Value `40`. Set `hp`=20, `hp_max`=40, then `hp`=10 | Shown while `hp_pct` is 50, hidden once it is 25 |
+| WIF-TY-09 | P2 | M | **Datetime** variable `when` (default `2022-05-11 00:00:00`). Condition: *greater than*, Date `2022-05-11 00:00:00`. The box is labelled **Date** and takes the same form as the variable's default; nothing is typed in seconds | Shown once `when` is later than that date, hidden when it is earlier or equal. A value that is not a date is refused with a message. (Plain seconds are still accepted.) **FIXED (was: the condition had to be typed as a seconds number.)** |
 | WIF-TY-10 | P2 | M | Change a variable's type after a condition was set (number → string) | No crash; entry still evaluates (record result) |
-| WIF-TY-11 | P2 | M | Global-scope variable | Condition sees the value (value read from the global store) |
-| WIF-TY-12 | P2 | A-new | A condition whose `variable` is the variable's **name** (`se__hp`) instead of its id | Condition still evaluates, and counts as "defined" for fail-open (id or name both accepted) — covered in part by [A] "a variable may be named by its id or its name" |
+| WIF-TY-11 | — | — | *Removed.* The manager has no global scope: variables live in presets and presets are switched on per chat. (Code still reads a variable's scope, but nothing in the UI can make one global.) | Not applicable |
+| WIF-TY-12 | P2 | A-new | A stored condition whose `variable` is the variable's **name** (`se__hp`) instead of its id | Still evaluates, and counts as "defined" for fail-open. **Automated only** — the editor cannot produce this input, so there is nothing to do by hand: the editor always stores the id. Now also reads the right variable (before, a name-keyed condition was read as a plain string variable) |
 
 ### 1.3 Filtering on `WORLDINFO_ENTRIES_LOADED`
+
+**How to run the manual cases in this section, using only the screen (no console):**
+1. Open a chat with QA-Book attached, and switch the `QA-Vars` preset on for that chat.
+2. In the World Info editor, open QA-Book entry 1 and, in its *State Engine Conditions* box, click
+   **Add condition** → variable `QA-Vars / se__hp`, operator *greater than*, Value `10` → **Add condition**.
+3. Set `hp` in the State Engine tracker/variables panel of the open chat.
+4. To see what the AI would receive, send a message, then open the message's **⋯ menu → Prompt** (Prompt
+   Itemization) and look at the *World Info* section for the text `ENTRY-1 hp>10`.
+   (The console command in §0.5 shows the same thing, if you prefer.)
+
 
 | ID | Pri | Type | Scenario | Expected |
 |---|---|---|---|---|
@@ -261,6 +271,8 @@ Operators compare **case-insensitively** and trim spaces for text.
 | WIF-FL-12 | P2 | M | ST older than 1.18 (no `WORLDINFO_ENTRIES_LOADED`) | Console warning "conditional world info is inactive"; nothing hidden; no crash |
 | WIF-FL-13 | P3 | M | Entry that ST itself would not activate (no keyword match, not constant) | Still not activated; filter neither activates nor errors |
 | WIF-FL-14 | P2 | M+A | **FIXED.** Handler meets a malformed condition list (set `S().wiConditions['QA-Book.1'] = 'corrupt'`; also try a number, an object, `true`) | **Only that entry** is skipped: it stays visible, a warning naming it is logged, and every other entry is still filtered as normal. **[A]** gap-fixes §2 |
+| WIF-FL-15 | P1 | M | Bind preset `QA-Vars` to `QA-Book` (settings → lorebook presets). Attach `QA-Book` to a character as its **additional** lorebook (Character panel → World Info → Additional Lorebooks), then, with another chat of that character open, use **Start new chat** | You are asked "This lorebook (\"QA-Book\") requires the presets QA-Vars. Activate them?". OK → the preset is active in the new chat. **NEW:** additional character lorebooks were previously not noticed at all (only the primary one) |
+| WIF-FL-16 | P1 | M | Same as WIF-FL-15 with QA-Book as the character's **primary** lorebook, and again with QA-Book selected as a **global** lorebook | Same prompt each time. If no prompt appears, copy the `[State Engine]` console lines and report which kind of lorebook it was |
 
 ### 1.4 Missing variables (fail-open)
 

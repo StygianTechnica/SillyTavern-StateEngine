@@ -47,6 +47,16 @@ export function registerEvents() {
         }
 
         try {
+            // CHAT_CHANGED already asked about lorebook presets, but a new chat's
+            // attached lorebooks may not have been readable yet then; asking again
+            // is harmless - it only asks about presets that are still missing and
+            // not declined.
+            offerLorebookPresets(chatId);
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
+
+        try {
             refreshVariableMacros();
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);

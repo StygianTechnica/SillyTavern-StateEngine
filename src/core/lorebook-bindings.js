@@ -158,8 +158,35 @@ export function listLorebookNames() {
     return [...names].sort((a, b) => a.localeCompare(b));
 }
 
+// A character's ADDITIONAL lorebooks (Character Lore -> "additional books") are
+// not on the character card: SillyTavern keeps them in world-info.js's
+// `world_info.charLore` ([{ name: <avatar file name without extension>,
+// extraBooks: [...] }]), which the extension context does not expose. The module
+// is imported once, in the background (the path is relative to this file, which
+// sits at <ST>/scripts/extensions/third-party/<extension>/src/core/); `world_info`
+// is a live export, so reading it later always sees the current value. Until it
+// has loaded (or where it cannot be - tests), additional books are simply not
+// seen.
+let stWorldInfoModule = null;
+try {
+    const stWorldInfoPath = '../../../../../world-info.js';
+    import(/* @vite-ignore */ stWorldInfoPath).then((m) => { stWorldInfoModule = m; }).catch(() => {});
+} catch { /* no dynamic import here */ }
+
+// For tests: stand in for SillyTavern's world-info.js module.
+export function setStWorldInfoModuleForTests(module) { stWorldInfoModule = module; }
+
+function additionalBooksOf(character) {
+    const avatar = character?.avatar;
+    if (typeof avatar !== 'string') return [];
+    const fileName = avatar.replace(/\.[^/.]+$/, '');
+    const entry = stWorldInfoModule?.world_info?.charLore?.find?.((e) => e?.name === fileName);
+    return Array.isArray(entry?.extraBooks) ? entry.extraBooks.filter((b) => typeof b === 'string' && b) : [];
+}
+
 // Names of the lorebooks attached to the current chat: the chat's own lorebook,
-// the character's (or every group member's), and the globally selected ones.
+// the character's - primary and additional (or every group member's) - the
+// active persona's, and the globally selected ones.
 export function getActiveLorebookNames() {
     const names = new Set();
     try {
@@ -168,10 +195,15 @@ export function getActiveLorebookNames() {
         const chatBook = context.chatMetadata?.world_info;
         if (typeof chatBook === 'string' && chatBook) names.add(chatBook);
 
+        // The active persona's lorebook (Persona Management -> lorebook).
+        const personaBook = context.powerUserSettings?.persona_description_lorebook;
+        if (typeof personaBook === 'string' && personaBook) names.add(personaBook);
+
         const characters = context.characters || [];
         const addCharacterBook = (character) => {
             const book = character?.data?.extensions?.world;
             if (typeof book === 'string' && book) names.add(book);
+            for (const extra of additionalBooksOf(character)) names.add(extra);
         };
         if (context.groupId) {
             const group = (context.groups || []).find((g) => String(g.id) === String(context.groupId));

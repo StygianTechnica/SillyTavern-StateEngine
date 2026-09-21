@@ -1515,6 +1515,20 @@ what runs and the additions built on it.
   (settings.lorebookPresetDeclines) so the question is not repeated on every
   chat load; the lorebook's conditions on the missing variables are then met
   (fail-open, above).
+- Tester round 1 (2026-09-21): (1) a condition on a DATETIME variable is written
+  as a date ("2022-05-11 00:00:00", the same form as the variable's default; the
+  editor labels the box "Date" and refuses text the variable's calendar cannot
+  read) and converted to seconds through that variable's calendar when it is
+  evaluated (equals / not equals / greater / less / >= / <=); plain seconds still
+  work. Reason: nothing in the visible UI shows a variable's stored seconds, so
+  asking for them was unusable. (2) evaluateCondition finds the variable by id OR
+  name (before, a name-keyed condition read a stand-in string variable).
+  (3) getActiveLorebookNames() now includes a character's ADDITIONAL lorebooks
+  (SillyTavern's world_info.charLore, read through a background import of
+  world-info.js; unavailable = not seen), and the lorebook-preset offer is asked
+  again after a new chat's start-choice (CHAT_CREATED), where it only asks about
+  presets still missing and not declined. (4) There is no global scope in the UI:
+  WIF-TY-11 removed from the test plan.
 - Preset export/import (src/core/preset-export.js): exportPreset(presetId) is a
   deep copy; importPreset(data) always creates a NEW preset (never overwrites),
   with a fresh id, a unique display name, fresh variable ids and variable names

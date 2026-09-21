@@ -1,6 +1,7 @@
 // State Engine — World Info condition logic (operators, evaluation, storage)
 
-import { LOG_PREFIX, getSettings, persistSettings } from '../core/settings-core.js';
+import { LOG_PREFIX, DEFAULT_CALENDAR_ID, getSettings, persistSettings } from '../core/settings-core.js';
+import { toScalar } from '../core/calendar-engine.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from '../core/preset-manager.js';
 import { getMacroValue } from '../core/macro-store.js';
 import { normalizeWorldName } from './world-names.js';
@@ -171,6 +172,19 @@ export function clearWIConditionsForEntry(entryKey) {
     }
 }
 
+// A datetime variable is stored as scalar seconds, but nobody can be expected to
+// know what that number is: a condition on one is written as a date ("2022-05-11
+// 00:00:00", the same form as the variable's default) or a calendar's own written
+// date, and turned into seconds through the variable's calendar here. Plain
+// numbers still work. Text that is not a date is left as it is (so the operator
+// simply does not match). Not applied to regex / in_list / array operators.
+const DATETIME_VALUE_OPERATORS = new Set(['equals', 'not_equals', 'greater_than', 'less_than', 'greater_or_equal', 'less_or_equal']);
+function datetimeConditionValue(def, operator, condValue) {
+    if (def?.type !== 'datetime' || !DATETIME_VALUE_OPERATORS.has(operator)) return condValue;
+    const scalar = toScalar(def.calendar || DEFAULT_CALENDAR_ID, condValue);
+    return scalar === null ? condValue : scalar;
+}
+
 export function evaluateCondition(varName, operator, condValue) {
     try {
         // getMacroValue(context, def) needs both a live context and the
@@ -184,9 +198,14 @@ export function evaluateCondition(varName, operator, condValue) {
         const currentChatId = context.chatId || 'unknown';
         const activePresetIds = getPresetsForChat(currentChatId);
         const variables = getAllVariablesFromPresets(activePresetIds);
-        const def = variables[varName] || { name: varName, type: 'string' };
+        // A condition stores the variable's id, but the API (and older data) may
+        // store its name - accept both, like knownVariablesForChat().
+        const def = variables[varName]
+            || Object.values(variables).find((d) => d?.name === varName)
+            || { name: varName, type: 'string' };
 
         const varValue = getMacroValue(context, def);
+        condValue = datetimeConditionValue(def, operator, condValue);
         const operatorFunc = CONDITION_OPERATORS[operator];
 
         if (!operatorFunc) {
@@ -297,6 +316,8 @@ export function getAvailableVariablesForConditions() {
                 presetId: presetId,
                 presetName: preset.name || presetId,
             };
+
+            if (def.type === 'datetime') entry.calendar = def.calendar;
 
             if (def.type === 'array') {
                 entry.itemType = def.itemType || 'any';

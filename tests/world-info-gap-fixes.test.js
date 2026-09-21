@@ -706,3 +706,63 @@ describe('10.6 dark-theme contrast for the injected editor', () => {
         }
     });
 });
+
+describe('tester round 1: datetime conditions take a date, array items with colons', () => {
+    it('a datetime condition is written as a date and compared as seconds', () => {
+        const presetId = makePreset('Clock', { 'v-when': { name: 'se__when', type: 'datetime', calendar: 'gregorian', defaultValue: 0 } });
+        addPresetToChat('chat-1', presetId);
+        const seconds = (text) => Date.UTC(...text.split(/[- :]/).map((n, i) => (i === 1 ? Number(n) - 1 : Number(n)))) / 1000;
+        context.variables.local.set('se__when', seconds('2022-05-11 12:00:00'));
+
+        expect(wi.evaluateCondition('v-when', 'greater_than', '2022-05-11 00:00:00')).toBe(true);
+        expect(wi.evaluateCondition('v-when', 'less_than', '2022-05-11 00:00:00')).toBe(false);
+        expect(wi.evaluateCondition('v-when', 'equals', '2022-05-11 12:00:00')).toBe(true);
+        expect(wi.evaluateCondition('v-when', 'greater_or_equal', '2022-05-11')).toBe(true);
+        // plain seconds still work
+        expect(wi.evaluateCondition('v-when', 'greater_than', String(seconds('2022-05-11 00:00:00')))).toBe(true);
+    });
+
+    it('the editor offers a date box for datetime variables and rejects a non-date', () => {
+        expect(editor.isDatetimeDateOperator({ type: 'datetime' }, 'greater_than')).toBe(true);
+        expect(editor.isDatetimeDateOperator({ type: 'datetime' }, 'regex')).toBe(false);
+        expect(editor.isDatetimeDateOperator({ type: 'number' }, 'greater_than')).toBe(false);
+    });
+
+    it('index_eq compares an item that itself contains a colon (0:a:b)', () => {
+        const presetId = makePreset('Bag', { 'v-inv': { name: 'se__inv', type: 'array', itemType: 'string', defaultValue: [] } });
+        addPresetToChat('chat-1', presetId);
+        context.variables.local.set('se__inv', ['a:b', 'c']);
+        expect(wi.evaluateCondition('v-inv', 'index_eq', '0:a:b')).toBe(true);
+        expect(wi.evaluateCondition('v-inv', 'index_eq', '1:a:b')).toBe(false);
+    });
+
+    it('a condition that names the variable (not its id) reads the right variable', () => {
+        chatWithHp(20);
+        expect(wi.evaluateCondition('se__hp', 'greater_than', '10')).toBe(true);
+        expect(wi.evaluateCondition('se__hp', 'greater_than', '30')).toBe(false);
+    });
+});
+
+describe('tester round 1: a character\'s additional lorebooks are seen', () => {
+    it('getActiveLorebookNames includes world_info.charLore extraBooks for the current character', () => {
+        context.characters = [{ avatar: 'Ann.png', data: { extensions: { world: 'Primary' } } }];
+        context.characterId = 0;
+        bindings.setStWorldInfoModuleForTests({ world_info: { charLore: [{ name: 'Ann', extraBooks: ['Extra1', 'Extra2'] }, { name: 'Bob', extraBooks: ['Nope'] }] } });
+        expect(bindings.getActiveLorebookNames().sort()).toEqual(['Extra1', 'Extra2', 'Primary']);
+        bindings.setStWorldInfoModuleForTests(null);
+        expect(bindings.getActiveLorebookNames()).toEqual(['Primary']);
+    });
+});
+
+describe('every kind of attached lorebook is seen', () => {
+    it('chat lore, character lore (primary + additional), persona lore and global lore', () => {
+        context.chatMetadata = { world_info: 'ChatBook' };
+        context.characters = [{ avatar: 'Ann.png', data: { extensions: { world: 'Primary' } } }];
+        context.characterId = 0;
+        context.powerUserSettings = { persona_description_lorebook: 'PersonaBook' };
+        bindings.setStWorldInfoModuleForTests({ world_info: { charLore: [{ name: 'Ann', extraBooks: ['Extra'] }] } });
+        expect(bindings.getActiveLorebookNames().sort()).toEqual(['ChatBook', 'Extra', 'PersonaBook', 'Primary']);
+        bindings.setStWorldInfoModuleForTests(null);
+        delete context.powerUserSettings;
+    });
+});

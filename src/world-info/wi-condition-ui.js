@@ -13,7 +13,8 @@
 // listener - nothing is looked up by a global id except the one condition editor,
 // of which at most one exists at a time.
 
-import { LOG_PREFIX } from '../core/settings-core.js';
+import { LOG_PREFIX, DEFAULT_CALENDAR_ID } from '../core/settings-core.js';
+import { toScalar } from '../core/calendar-engine.js';
 import { makeWIEntryKey, normalizeWorldName, getWIConditions, setWICondition, updateWICondition, deleteWICondition, getAvailableVariablesForConditions } from './wi-conditions.js';
 
 const BOX_HTML = `
@@ -156,6 +157,13 @@ export function isObjectArray(varMeta) {
     return varMeta?.type === 'array' && varMeta.itemType === 'object';
 }
 
+// A datetime variable compared with equals / greater than / ...: the condition's
+// value is a DATE (same form as the variable's default), not the stored seconds.
+const DATE_OPERATORS = ['equals', 'not_equals', 'greater_than', 'less_than', 'greater_or_equal', 'less_or_equal'];
+export function isDatetimeDateOperator(varMeta, operator) {
+    return varMeta?.type === 'datetime' && DATE_OPERATORS.includes(operator);
+}
+
 // The operators the editor offers for a variable (null meta = none chosen yet).
 // Object arrays get none.
 export function operatorsFor(varMeta) {
@@ -252,6 +260,11 @@ function updateValueUI(varMeta, operator) {
         valueContainer.innerHTML = `
             <label for="se_wi_injected_cond_value" style="font-size: 0.9em;">Value</label>
             <select id="se_wi_injected_cond_value" class="text_pole" style="font-size: 0.9em;">${opts}</select>
+        `;
+    } else if (isDatetimeDateOperator(varMeta, operator)) {
+        valueContainer.innerHTML = `
+            <label for="se_wi_injected_cond_value" style="font-size: 0.9em;">Date</label>
+            <input id="se_wi_injected_cond_value" type="text" class="text_pole" style="font-size: 0.9em;" placeholder="2022-05-11 00:00:00" />
         `;
     } else {
         valueContainer.innerHTML = `
@@ -371,6 +384,10 @@ function handleWISaveCondition() {
         value = `${index}:${value}`;
     } else if ((operator !== 'is_true' && operator !== 'is_false') && !value) {
         alert('Please enter a value');
+        return;
+    } else if (isDatetimeDateOperator(varMeta, operator)
+        && toScalar(varMeta.calendar || DEFAULT_CALENDAR_ID, value) === null) {
+        alert("Please enter a date this variable's calendar understands, e.g. 2022-05-11 00:00:00");
         return;
     }
 
