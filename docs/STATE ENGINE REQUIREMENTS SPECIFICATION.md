@@ -1758,8 +1758,9 @@ variable rules (1.26), the expression language or the tracker.
   them as an extension); (3) a name already in the folder gets a numeric suffix
   (name-1.png, name-2.png...) - the server overwrites silently, so the folder is listed
   first, and a timestamp is used if it cannot be listed; (4) the file is uploaded and
-  the server's answer must be a path inside the folder, otherwise nothing is stored;
-  (5) the preview updates at once from the new relative path.
+  the server's answer must be a path inside the folder, otherwise nothing is stored (the
+  real server answers WITH a leading slash - "/user/images/state-engine-images/a.png",
+  checked against a live SillyTavern - and the stored form drops it); (5) the preview updates at once from the new relative path.
 - Editor behavior: image - the reference is replaced (extra files are ignored with a
   warning); imageList - each file appends a row; imageMap - dropped on a row it
   updates that row's reference (its key is kept; further files become new rows), dropped
@@ -1767,7 +1768,11 @@ variable rules (1.26), the expression language or the tracker.
   The editor is highlighted while a file is dragged over it (the row under the pointer
   too, in a map); "Image imported" (or "N images imported") is shown as a toast,
   errors per file; previews have hover-to-enlarge like every image variable. The
-  browser is always stopped from opening a dropped file, in any editor.
+  browser is always stopped from opening a dropped file, in any editor. SillyTavern has
+  its own page-wide drop handler that imports ANY dropped file as a character card, so a file
+  dragged over the modal is stopped from reaching it: editors handle their own, and a file
+  dropped anywhere else in the modal is swallowed with a hint ("To import an image, open an
+  Image, Image list or Image map variable and drop the file on its editor").
 - Saving refuses a typed or pasted reference that is not portable: a blob: URL, or a
   path on this computer (file:, C:\..., \\server\..., /Users/..., /home/...), with a
   message pointing at drag-and-drop. http(s) URLs, relative paths and data: URLs typed by

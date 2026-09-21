@@ -36,7 +36,9 @@ const png = (name = 'portrait.png', tail = 1) => fileOf(name, imageBytes('png', 
 
 // A fake SillyTavern user image folder. Like the real endpoint it silently
 // overwrites a file that has the same name.
-function fakeServer(initial = {}, { listOk = true, uploadOk = true, badPath = false } = {}) {
+// The real endpoint answers with a LEADING slash ("/user/images/<folder>/<file>") - checked
+// against a live SillyTavern - so that is what the fake returns (`slashless` for the other form).
+function fakeServer(initial = {}, { listOk = true, uploadOk = true, badPath = false, slashless = false } = {}) {
     const files = new Map(Object.entries(initial)); // name -> base64
     const log = { uploads: [], lists: 0 };
     const fetchImpl = vi.fn(async (url, init) => {
@@ -50,7 +52,7 @@ function fakeServer(initial = {}, { listOk = true, uploadOk = true, badPath = fa
             if (!uploadOk) return json({}, false, 500);
             const name = body.filename;
             files.set(name, body.image);
-            return json({ path: badPath ? '../../etc/passwd' : `user/images/${body.ch_name}/${name}` });
+            return json({ path: badPath ? '../../etc/passwd' : `${slashless ? '' : '/'}user/images/${body.ch_name}/${name}` });
         }
         if (url.startsWith(`/${IMPORT_PATH_PREFIX}`)) {
             const name = decodeURIComponent(url.slice(IMPORT_PATH_PREFIX.length + 1));
@@ -222,9 +224,22 @@ describe('importing a dropped file', () => {
         expect(name).toMatch(/^portrait-\d{10,}\.png$/);
     });
 
+    it('the server\'s leading slash is dropped: the stored path is always the relative form', async () => {
+        const real = await importImageFile(png('a.png'), fakeServer().deps);
+        expect(real.path).toBe('user/images/state-engine-images/a.png');
+        const slashless = await importImageFile(png('b.png'), fakeServer({}, { slashless: true }).deps);
+        expect(slashless.path).toBe('user/images/state-engine-images/b.png');
+        for (const path of [real.path, slashless.path]) expect(path.startsWith('/')).toBe(false);
+    });
+
     it('a failed upload, or a server answer outside our folder, is an error and nothing is stored', async () => {
         await expect(importImageFile(png(), fakeServer({}, { uploadOk: false }).deps)).rejects.toThrow(/refused the upload/);
         await expect(importImageFile(png(), fakeServer({}, { badPath: true }).deps)).rejects.toThrow(/unexpected path/);
+        // a leading slash is only forgiven for OUR folder
+        const elsewhere = { fetchImpl: async (url) => (url === '/api/images/list' ? json([]) : json({ path: '/user/images/other-folder/a.png' })), headers: () => ({}) };
+        await expect(importImageFile(png(), elsewhere)).rejects.toThrow(/unexpected path/);
+        const escape = { fetchImpl: async (url) => (url === '/api/images/list' ? json([]) : json({ path: '//user/images/state-engine-images/../../secret.png' })), headers: () => ({}) };
+        await expect(importImageFile(png(), escape)).rejects.toThrow(/unexpected path/);
     });
 
     it('listImportedNames reads the folder (lower-cased) and reports failure as null', async () => {

@@ -406,7 +406,8 @@ describe('the manager modal, end to end', () => {
                     const body = JSON.parse(init.body);
                     uploads.push(body);
                     serverFiles.set(body.filename, body.image);
-                    return { ok: true, json: async () => ({ path: `user/images/${body.ch_name}/${body.filename}` }) };
+                    // (the real endpoint answers with a leading slash)
+                    return { ok: true, json: async () => ({ path: `/user/images/${body.ch_name}/${body.filename}` }) };
                 }
                 throw new Error(`unexpected request ${url}`);
             }));
@@ -429,7 +430,9 @@ describe('the manager modal, end to end', () => {
         it('image: dragging over highlights the editor, dropping replaces the reference, previews it and says so', async () => {
             startNew('icon', 'image');
             const editorEl = editor()[0];
-            expect(fire('dragover', editorEl).defaultPrevented).toBe(true);
+            const over = fire('dragover', editorEl);
+            expect(over.defaultPrevented).toBe(true);
+            expect(over.dataTransfer.dropEffect).toBe('copy');        // the browser only allows the drop if this stays "copy"
             expect(editor().hasClass('se-drop-active')).toBe(true);
 
             const event = await drop(editorEl, [pngFile('Elf Queen.png')]);
@@ -439,6 +442,7 @@ describe('the manager modal, end to end', () => {
             expect(editor().find('.se-image-editor-preview img').attr('src')).toBe(`${PREFIX}Elf Queen.png`);
             expect(editor().find('.se-image-editor-preview .se-image-thumb').attr('data-enlarge')).toBe('1');   // hover-to-enlarge
             expect(globalThis.toastr.success).toHaveBeenCalledWith('Image imported');
+            expect(globalThis.toastr.info).not.toHaveBeenCalled();     // the "drop it on an editor" hint is for strays only
 
             save();
             expect(stored('se__icon').defaultValue).toBe(`${PREFIX}Elf Queen.png`);
@@ -572,6 +576,54 @@ describe('the manager modal, end to end', () => {
             expect(event.defaultPrevented).toBe(true);
             expect(uploads).toEqual([]);
             expect(globalThis.toastr.success).not.toHaveBeenCalled();
+        });
+
+        describe("SillyTavern's own page-wide drop handler (it imports any dropped file as a character card)", () => {
+            let seenByPage; let stopListening;
+            const listen = () => {
+                stopListening?.abort();
+                stopListening = new AbortController();
+                seenByPage = [];
+                for (const type of ['dragenter', 'dragover', 'dragleave', 'drop']) document.body.addEventListener(type, () => seenByPage.push(type), { signal: stopListening.signal });
+            };
+            afterEach(() => stopListening?.abort());
+
+            it('never sees a file dragged or dropped on an editor - of an image type or any other', async () => {
+                startNew('faces', 'imageList');
+                listen();
+                fire('dragenter', editor()[0]);
+                fire('dragover', editor()[0]);
+                fire('dragleave', editor()[0]);
+                await drop(editor()[0], [pngFile('a.png')]);
+                expect(seenByPage).toEqual([]);
+
+                startNew('name', 'string');
+                fire('dragover', editor()[0]);
+                await drop(editor()[0], [pngFile('a.png')]);
+                expect(seenByPage).toEqual([]);
+            });
+
+            it('still sees ordinary (non-file) drags, which are none of our business', () => {
+                startNew('faces', 'imageList');
+                listen();
+                fire('dragover', editor()[0], [], ['text/plain']);
+                expect(seenByPage).toEqual(['dragover']);
+            });
+
+            it('a file dropped elsewhere in the modal is swallowed (not imported as a character) with a hint; nothing uploads', async () => {
+                startNew('faces', 'imageList');
+                listen();
+                const outside = document.querySelector('#se-manager-overlay .se-manager-tabs') ?? document.querySelector('#se-manager-overlay');
+                const over = fire('dragover', outside);
+                expect(over.defaultPrevented).toBe(true);
+                expect(over.dataTransfer.dropEffect).toBe('none');
+                const event = await drop(outside, [pngFile('a.png')]);
+                expect(event.defaultPrevented).toBe(true);
+                expect(seenByPage).toEqual([]);
+                expect(uploads).toEqual([]);
+                expect(globalThis.toastr.info).toHaveBeenCalledWith(expect.stringContaining('open an Image, Image list or Image map variable'));
+                expect(globalThis.toastr.success).not.toHaveBeenCalled();
+            });
         });
 
         it('a drop stores only a managed relative path - never a blob, data, absolute or original location', async () => {

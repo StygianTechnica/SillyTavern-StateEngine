@@ -171,9 +171,12 @@ async function uploadBase64(base64, ext, base, deps) {
     if (!response.ok) throw new Error(`the server refused the upload (${response.status})`);
     const body = await response.json();
     // The server's answer is authoritative (it may have sanitized the name), but it
-    // must be a path inside OUR folder - anything else is not stored.
-    if (!isManagedImagePath(body?.path)) throw new Error('the server returned an unexpected path');
-    return body.path;
+    // must be a path inside OUR folder - anything else is not stored. SillyTavern
+    // answers with a LEADING slash ("/user/images/state-engine-images/a.png", checked
+    // against a real server); the stored form is the relative one, without it.
+    const path = typeof body?.path === 'string' ? body.path.replace(/^\/+/, '') : '';
+    if (!isManagedImagePath(path)) throw new Error('the server returned an unexpected path');
+    return path;
 }
 
 // ---- importing dropped files --------------------------------------------------------

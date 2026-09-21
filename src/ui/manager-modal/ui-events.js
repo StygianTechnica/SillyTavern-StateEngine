@@ -1116,10 +1116,15 @@ export function wireEvents(managerApi, managerState) {
         $editor.find('.se-drop-row').removeClass('se-drop-row');
     };
 
+    // SillyTavern has its own page-wide handler that treats any dropped file as a
+    // CHARACTER CARD to import (script.js: DragAndDropHandler('body', ...)). A file
+    // dropped on this modal must never reach it - so every file drag handled here (and
+    // every stray one anywhere else in the modal, below) is stopped from bubbling.
     $overlay.on('dragenter dragover', '.se-manager-variable-editor-inline', function (event) {
         if (!dragHasFiles(event)) return;
         // Never let the browser open a dropped file (it would replace SillyTavern's page).
         event.preventDefault();
+        event.stopPropagation();
         const $editor = $(this);
         if (!dropTypeOf($editor)) return;
         event.originalEvent.dataTransfer.dropEffect = 'copy';
@@ -1130,6 +1135,7 @@ export function wireEvents(managerApi, managerState) {
     });
 
     $overlay.on('dragleave', '.se-manager-variable-editor-inline', function (event) {
+        if (dragHasFiles(event)) event.stopPropagation();
         const to = event.originalEvent?.relatedTarget;
         if (to && this.contains(to)) return; // still inside the editor
         clearDropHighlight($(this));
@@ -1138,6 +1144,7 @@ export function wireEvents(managerApi, managerState) {
     $overlay.on('drop', '.se-manager-variable-editor-inline', async function (event) {
         if (!dragHasFiles(event)) return;
         event.preventDefault();
+        event.stopPropagation();
         const $editor = $(this);
         const $row = $(event.target).closest('.se-manager-imagemap-row');
         clearDropHighlight($editor);
@@ -1166,6 +1173,22 @@ export function wireEvents(managerApi, managerState) {
             for (const path of rest) $list.append(uiTemplates.buildImageMapRow('', path));
         }
         notifyUser('success', paths.length === 1 ? 'Image imported' : `${paths.length} images imported`);
+    });
+
+    // A file dropped anywhere ELSE in the modal (outside an editor): swallow it, so
+    // SillyTavern does not try to import it as a character, and say where to drop it.
+    // (Editors stop their own drags above, so this only ever sees the strays.)
+    $overlay.on('dragenter dragover', function (event) {
+        if (!dragHasFiles(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.originalEvent.dataTransfer.dropEffect = 'none';
+    });
+    $overlay.on('drop', function (event) {
+        if (!dragHasFiles(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        notifyUser('info', 'To import an image, open an Image, Image list or Image map variable and drop the file on its editor.');
     });
 
     // Live thumbnail as the reference is typed.
