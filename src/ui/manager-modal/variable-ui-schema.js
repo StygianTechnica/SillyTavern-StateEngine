@@ -5,6 +5,27 @@
 import { DEFAULT_CALENDAR_ID } from '../../core/settings-core.js';
 import { getCalendar, toScalar, format, fromStructured } from '../../core/calendar-engine.js';
 
+// Object arrays are extension-facing: they are created through the API only.
+// The manager modal must not create one or turn a variable into one, and saving
+// an API-created one must not damage it. `next` is the definition the editor
+// just built, `previous` the stored one (or undefined for a new variable).
+//   - an object array that was not one before -> item type becomes "any"
+//   - an object array that already was one -> keep its itemSchema and its
+//     default items (the editor has no object item editor, so it would
+//     otherwise replace them with empty {} placeholders)
+// Returns `next` (mutated) for convenience. Never touches other variables.
+export function protectObjectArray(next, previous) {
+    if (!next || next.type !== 'array' || next.itemType !== 'object') return next;
+    const wasObjectArray = previous?.type === 'array' && previous.itemType === 'object';
+    if (!wasObjectArray) {
+        next.itemType = 'any';
+        return next;
+    }
+    next.itemSchema = previous.itemSchema ?? {};
+    next.defaultValue = previous.defaultValue;
+    return next;
+}
+
 export function mergeDefinition(defaults, varDef) {
     const d = Object.assign({}, defaults, varDef);
 

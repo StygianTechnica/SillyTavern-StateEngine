@@ -1402,3 +1402,92 @@ in requirements spec 1.22 - 1.22.5.
 **11.5 Verification**
 
 `tests/fantasy-calendar.test.js`; the full suite passes under `npm test`.
+
+
+SECTION 12 — NOTIFICATION API (2026-09-21)
+
+**12.0 What it is**
+
+One notification surface for every extension. An extension registers an
+ACTIONABLE notification - a message, a severity and (optionally) the id of a
+callback it registered; State Engine shows all of them behind a single button in
+the chat UI and lists them in a panel; clicking one runs the extension's callback
+and then removes the notification. Files: `src/core/notification-core.js` (the
+registry), `src/api/notification-api.js` (this API), `src/ui/notification-ui.js`
+(button and panel). Requirements spec 1.24 has the storage and UI rules.
+
+**12.1 Functions** (all on `stateEngine` and exported from `src/api/index.js`)
+
+| Function | Identity | Returns |
+|---|---|---|
+| `registerNotificationCallback(extensionId, instanceId, callbackId, fn)` | yes | `true` |
+| `unregisterNotificationCallback(extensionId, instanceId, callbackId)` | yes | whether one was removed |
+| `notify(extensionId, instanceId, notification)` | yes | the notification's id |
+| `clearNotification(extensionId, instanceId, id)` | yes | whether it existed |
+| `getNotifications()` | no | copies, oldest first |
+| `invokeNotificationCallback(id)` | no | a Promise (below) |
+
+`notification` = `{ message, severity?, callbackId?, id? }`:
+
+- `message` - required, non-empty text, trimmed, at most 500 characters. It is
+  shown as text, never as HTML.
+- `severity` - `"info"` (default), `"success"`, `"warning"` or `"error"`.
+- `callbackId` - optional; must be a callback THIS extension already registered
+  (`registerNotificationCallback`). With none, clicking just dismisses it.
+- `id` - optional key of your own (letters, digits and `_ . : -`, up to 64).
+  Notifying again with the same `id` REPLACES that notification (new text, fresh
+  timestamp, moved to the end) instead of adding a duplicate. Omitted -> generated.
+
+The stored id is `"<your namespace>::<key>"`; `notify` returns it. Unknown fields
+are rejected.
+
+A stored notification is `{ id, source, severity, message, timestamp,
+callbackId }`. `source` is the caller's namespace - it is taken from the caller's
+identity, never from the notification, so an extension cannot post as another.
+
+**12.2 Callbacks**
+
+A callback is an in-memory function registered under `callbackId`. Functions
+cannot be saved, so a notification only stores the callback's ID, and the
+extension must register its callbacks again on every page load. Until it has, its
+stored notifications are still listed but their action reports "not available".
+Registering an id again replaces the function. The callback is called with a copy
+of the notification and may be async.
+
+**12.3 `invokeNotificationCallback(id)`** (what the panel calls on a click)
+
+Resolves `true` when the action ran (or there was none) and the notification is
+gone; `false` when there is no such notification. It REJECTS - and keeps the
+notification, so the user can try again - when the callback is not registered or
+threw. Removal happens only after the callback succeeds. A second call while the
+action is still running rejects rather than running it twice. It needs no
+identity, like the other reads, because the panel is State Engine's own UI; use
+`clearNotification` for your own cleanup.
+
+**12.4 Behavior and limits**
+
+- Nothing expires: a notification stays until it is cleared, dismissed (the x
+  in the panel) or its callback has run. There is no cap on how many an extension
+  may post - use a fixed `id` for anything that repeats.
+- Every write throws on failure (identity, invalid notification, unregistered
+  callback, clearing another extension's notification), like Sections 10-11.
+  `clearNotification` on an id that is already gone returns `false`, not an error.
+- `stateEngine` is not attached to `window`; an extension imports it from
+  `src/api/index.js` like the rest of this API.
+- Visibility toggles, Pretty Panels integration and auto-expiry are deliberately
+  not part of this pass.
+
+**12.5 Deviation from the request**
+
+The request listed `notify(notification)`, `clearNotification(id)`,
+`getNotifications()` and `invokeNotificationCallback(id)` without identity. Writes
+take `(extensionId, instanceId, ...)` first because every other write in this API
+layer does (Section 7.4), and `source` needs a verified namespace. The two reads
+keep the requested signatures. `registerNotificationCallback` /
+`unregisterNotificationCallback` are not in the list but the callback registry
+needs an entry point ("extensions register callbacks by ID").
+
+**12.6 Verification**
+
+`tests/api/notification-api.test.js` and `tests/notification-ui.test.js`; the full
+suite passes under `npm test`.

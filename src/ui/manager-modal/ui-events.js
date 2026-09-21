@@ -376,6 +376,9 @@ export function wireEvents(managerApi, managerState) {
         const previousDef = preset.variables[newVariable.id];
         if (typeof previousDef?.batch === 'string' && previousDef.batch) newVariable.batch = previousDef.batch;
 
+        // Object arrays are created through the API only (see protectObjectArray).
+        variableSchema.protectObjectArray(newVariable, previousDef);
+
         // Same trap for a datetime's calendar/unit (requirements spec 1.21):
         // the editor has a calendar selector (1.22) only while the type is
         // datetime, and no unit field at all, so a rebuilt definition without

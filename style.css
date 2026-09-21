@@ -770,3 +770,150 @@
     padding: 4px;
     font-size: 0.9em;
 }
+
+/* ---------------------------------------------------------------------------
+   Notification button (send bar) and panel - src/ui/notification-ui.js
+   --------------------------------------------------------------------------- */
+
+.se-notification-button {
+    position: relative;
+    opacity: 0.45;              /* grey: nothing to show */
+}
+
+.se-notification-button.se-has-notifications {
+    opacity: 1;                 /* highlighted: something is waiting */
+    color: var(--SmartThemeQuoteColor, #e18a24);
+}
+
+.se-notification-badge {
+    position: absolute;
+    top: -6px;
+    right: -8px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    box-sizing: border-box;
+    border-radius: 8px;
+    background: var(--SmartThemeQuoteColor, #e18a24);
+    color: #111;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+    pointer-events: none;
+}
+
+.se-notification-badge[hidden] {
+    display: none;
+}
+
+.se-notification-panel {
+    position: fixed;
+    z-index: 5000;
+    max-height: min(60vh, 480px);
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.4));
+    border-radius: 8px;
+    background: var(--SmartThemeBlurTintColor, #1a1a1a);
+    color: var(--SmartThemeBodyColor, #ddd);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
+}
+
+.se-notification-panel[hidden] {
+    display: none;
+}
+
+.se-notification-header {
+    padding: 8px 12px;
+    font-weight: 700;
+    border-bottom: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.3));
+}
+
+.se-notification-list {
+    overflow-y: auto;
+    padding: 4px;
+}
+
+.se-notification-empty {
+    padding: 14px 12px;
+    opacity: 0.7;
+    text-align: center;
+}
+
+.se-notification-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 8px 8px 10px;
+    margin: 2px 0;
+    border-left: 3px solid var(--se-notification-accent, #4a9eff);
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.se-notification-item:hover,
+.se-notification-item:focus-visible {
+    background: rgba(128, 128, 128, 0.18);
+    outline: none;
+}
+
+.se-notification-item.se-notification-busy {
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+.se-sev-info { --se-notification-accent: #4a9eff; }
+.se-sev-success { --se-notification-accent: #4caf50; }
+.se-sev-warning { --se-notification-accent: #e0a030; }
+.se-sev-error { --se-notification-accent: #e05555; }
+
+.se-notification-icon {
+    flex: 0 0 auto;
+    margin-top: 2px;
+    color: var(--se-notification-accent, #4a9eff);
+}
+
+.se-notification-body {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.se-notification-message {
+    overflow-wrap: anywhere;
+}
+
+.se-notification-meta {
+    margin-top: 2px;
+    font-size: 0.8em;
+    opacity: 0.65;
+}
+
+.se-notification-failure {
+    margin-top: 4px;
+    font-size: 0.85em;
+    color: #e05555;
+    overflow-wrap: anywhere;
+}
+
+.se-notification-failure[hidden] {
+    display: none;
+}
+
+.se-notification-dismiss {
+    flex: 0 0 auto;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-size: 1.2em;
+    line-height: 1;
+    opacity: 0.55;
+    cursor: pointer;
+}
+
+.se-notification-dismiss:hover {
+    opacity: 1;
+}

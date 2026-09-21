@@ -400,6 +400,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
     // actually calls registerExtension()/registerEventSource().
     extensions: {},
     eventSources: {},
+    // Notification Core (src/core/notification-core.js): a list of
+    // { id, source, severity, message, timestamp, callbackId }. Never holds
+    // functions - a notification only NAMES its callback.
+    notifications: [],
     // Calendar definitions (see DEFAULT_CALENDARS above).
     calendars: DEFAULT_CALENDARS,
 });
@@ -465,6 +469,11 @@ export function getSettings() {
     if (!settings.lorebookPresetDeclines || typeof settings.lorebookPresetDeclines !== 'object' || Array.isArray(settings.lorebookPresetDeclines)) settings.lorebookPresetDeclines = {};
     if (!settings.extensions || typeof settings.extensions !== 'object') settings.extensions = {};
     if (!settings.eventSources || typeof settings.eventSources !== 'object') settings.eventSources = {};
+    // A hand-edited or corrupted list is replaced; an entry that is not an
+    // object with an id and a message is dropped (every reader assumes both).
+    settings.notifications = Array.isArray(settings.notifications)
+        ? settings.notifications.filter((n) => n && typeof n === 'object' && typeof n.id === 'string' && n.id && typeof n.message === 'string')
+        : [];
     if (!settings.calendars || typeof settings.calendars !== 'object') settings.calendars = {};
     // A calendar entry that is not an object (hand-edited or corrupted
     // settings) is dropped - every reader of settings.calendars assumes one.

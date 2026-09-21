@@ -310,14 +310,23 @@ Operators compare **case-insensitively** and trim spaces for text.
 
 ### 1.7 Regex
 
+**Setup for every manual row below.** Use `QA-Book` entry 7 (Constant, text `ENTRY-7 regex`) and a **string**
+variable (`mood`, or `mood2` if that is what your `QA-Vars` calls it). Open entry 7's *State Engine Conditions* box and make
+sure it holds **only** the one condition you are testing: use the pencil (Edit) on the existing condition and **Save changes**,
+or delete it and add a new one. (Every condition on an entry must be true, and an old leftover condition — for example `/slashes/`
+from WIF-RX-06 — will keep hiding the entry whatever you type.) Then add the condition: variable = your string variable,
+operator = **regex pattern**, Value = the pattern. Set the variable in the tracker, send a message, and read the World Info
+section of Prompt Itemization for `ENTRY-7 regex`. Regex is case-insensitive and matches anywhere in the text unless you anchor
+it with `^` and `$`.
+
 | ID | Pri | Type | Scenario | Expected |
 |---|---|---|---|---|
-| WIF-RX-01 | P1 | A-new | `regex` `^hel+o$` against `hello` | Shown |
-| WIF-RX-02 | P1 | A-new | **Invalid** regex `([` | Entry **shown** (fail-open); console error `Invalid regex in condition` |
-| WIF-RX-03 | P2 | A-new | Invalid regex on one condition, second condition unmet | Hidden (the invalid one counts as true, the other still applies) |
-| WIF-RX-04 | P2 | A-new | Regex against an **array** variable `[a,b]` | Tested against the text `a,b` |
-| WIF-RX-05 | P2 | A-new | Catastrophic regex `(a+)+$` against a 40-char `aaaa…b` string | Records how long the probe takes. **Fail** if the UI freezes >2 s (ReDoS); log a defect |
-| WIF-RX-06 | P3 | A-new | Regex with special characters, unicode, `/slashes/` (slashes are literal, no flags syntax) | Treated as literal pattern text |
+| WIF-RX-01 | P1 | M+A | Pattern `^hel+o$`. Set the variable to `hello`, then `hello world`, then `HELLO` | `hello`: **shown**. `hello world`: **hidden** (the pattern needs the whole text to be hello). `HELLO`: **shown**. If `hello` is hidden, check for a leftover second condition on the entry |
+| WIF-RX-02 | P1 | M+A | Pattern `([` (invalid). Variable = anything | Entry **shown** (fail-open); console error `Invalid regex in condition` |
+| WIF-RX-03 | P2 | M+A | Two conditions on entry 7: the invalid regex `([` **and** `hp` greater than `10`; set `hp`=5 | **Hidden** (the invalid regex counts as true, the `hp` condition still applies). Set `hp`=20: shown |
+| WIF-RX-04 | P2 | A-new | Regex against an **array** variable `[a,b]` | Tested against the text `a,b`. **Automated only:** the editor does not offer *regex pattern* for array variables (arrays get contains / not contains / length / item at index), so it cannot be set up by hand |
+| WIF-RX-05 | P2 | M | **Known risk — read first.** Pattern `(a+)+$`, variable = 25 `a` characters followed by `b`. (Do **not** use 40: the time roughly doubles with every extra character, ~2 s at 25 and ~6 s at 30, so 40 would hang the tab for hours.) | Send a message: the tab pauses for a couple of seconds (about 2 s at 25 characters, about 6 s at 30, so use 30 if you want to notice it), then the entry is hidden (no match). **No console error is expected** - a slow regex is not an error. Record how long. **Defect if it freezes:** the browser cannot time-limit a regex. If nothing pauses, the variable does not hold the string you think — check its value in the tracker and that entry 7 holds only this condition |
+| WIF-RX-06 | P3 | M+A | Pattern `/slashes/` (slashes are literal text, not a flags syntax). Set the variable to `/slashes/`, then to `slashes` | `/slashes/`: shown. `slashes`: **hidden** (the slashes are part of the pattern) |
 
 ### 1.8 World names and entry keys
 

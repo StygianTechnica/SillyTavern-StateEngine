@@ -23,6 +23,7 @@ import { initPanel } from './src/ui/settings-panel-ui.js';
 import { initLorebookBindingsUi } from './src/ui/lorebook-bindings-ui.js';
 import { exposeStateEngineWI } from './src/world-info/wi-api.js';
 import { addStateEngineWandUi, watchChatSelection, updateManagerButtonState } from './src/ui/wand-ui.js';
+import { initNotificationUi } from './src/ui/notification-ui.js';
 import { registerTemplates, loadManagerModalStyles } from './src/ui/ui-entrypoints.js';
 
 import { registerEvents } from './src/events/event-engine.js';
@@ -40,6 +41,7 @@ jQuery(async () => {
         initLorebookBindingsUi();
         exposeStateEngineWI();
         addStateEngineWandUi();
+        initNotificationUi();
         registerEvents();
         registerSlashCommand();
         updateManagerButtonState();

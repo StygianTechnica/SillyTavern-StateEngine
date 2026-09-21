@@ -296,7 +296,7 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                     <option value="number" ${itemType === 'number' ? 'selected' : ''}>Number</option>
                     <option value="boolean" ${itemType === 'boolean' ? 'selected' : ''}>Boolean</option>
                     <option value="enum" ${itemType === 'enum' ? 'selected' : ''}>Enum</option>
-                    <option value="object" ${itemType === 'object' ? 'selected' : ''}>Object</option>
+                    ${itemType === 'object' ? '<option value="object" selected>Object (created through the API)</option>' : ''}
                     <option value="any" ${itemType === 'any' ? 'selected' : ''}>Any</option>
                 </select>
 

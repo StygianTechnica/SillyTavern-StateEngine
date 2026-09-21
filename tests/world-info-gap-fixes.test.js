@@ -768,3 +768,38 @@ describe('every kind of attached lorebook is seen', () => {
         delete context.powerUserSettings;
     });
 });
+
+describe('object arrays are created through the API only (manager modal)', () => {
+    it('the Item type dropdown lists Object only for a variable that already is an object array', () => {
+        const src = read('src', 'ui', 'manager-modal', 'ui-templates.js');
+        expect(src).toContain(`\${itemType === 'object' ? '<option value="object" selected>`);
+        expect(src).not.toContain(`<option value="object" \${itemType === 'object' ? 'selected' : ''}>Object</option>`);
+    });
+
+    it('a new variable, or one that was not an object array, cannot become one', async () => {
+        const { protectObjectArray } = await import('../src/ui/manager-modal/variable-ui-schema.js');
+        expect(protectObjectArray({ type: 'array', itemType: 'object' }, undefined).itemType).toBe('any');
+        expect(protectObjectArray({ type: 'array', itemType: 'object' }, { type: 'array', itemType: 'string' }).itemType).toBe('any');
+        expect(protectObjectArray({ type: 'array', itemType: 'object' }, { type: 'number' }).itemType).toBe('any');
+    });
+
+    it('saving an API-created object array keeps its schema and default items', async () => {
+        const { protectObjectArray } = await import('../src/ui/manager-modal/variable-ui-schema.js');
+        const previous = { type: 'array', itemType: 'object', itemSchema: { hp: { type: 'number' } }, defaultValue: '[{"hp":5}]' };
+        const next = protectObjectArray({ type: 'array', itemType: 'object', itemSchema: {}, defaultValue: '[{}]' }, previous);
+        expect(next.itemType).toBe('object');
+        expect(next.itemSchema).toEqual({ hp: { type: 'number' } });
+        expect(next.defaultValue).toBe('[{"hp":5}]');
+    });
+
+    it('other variables are left alone', async () => {
+        const { protectObjectArray } = await import('../src/ui/manager-modal/variable-ui-schema.js');
+        const v = { type: 'array', itemType: 'string', defaultValue: '["a"]' };
+        expect(protectObjectArray({ ...v }, { type: 'array', itemType: 'object' })).toEqual(v);
+        expect(protectObjectArray({ type: 'number' }, undefined)).toEqual({ type: 'number' });
+    });
+
+    it('the save handler applies it', () => {
+        expect(read('src', 'ui', 'manager-modal', 'ui-events.js')).toContain('variableSchema.protectObjectArray(newVariable, previousDef);');
+    });
+});

@@ -11,3 +11,4 @@ export * from './capability-graph.js';
 export * from './batching.js';
 export * from './dependency-graph.js';
 export * from './independent-presets.js';
+export * from './notification-api.js';

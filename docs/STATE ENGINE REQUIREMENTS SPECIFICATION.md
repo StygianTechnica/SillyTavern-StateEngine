@@ -1538,6 +1538,17 @@ what runs and the additions built on it.
   never breaks filtering (entryConditionsMet therefore fails open for it). The
   manager's variable editor notes it on the Object item type. WI conditions are
   primitive-only.
+- Object arrays are created through the API only (2026-09-21). The manager modal is
+  for narrative-facing variables: its Item type dropdown no longer offers "Object".
+  It is listed (as "Object (created through the API)") only while editing a variable
+  that already is an object array, so opening one does not silently change its type;
+  once switched away it cannot be switched back in that editor. On save,
+  protectObjectArray() (variable-ui-schema.js) turns any object array that was not
+  one before into item type "any", and for one that already was, keeps its
+  itemSchema and default items - the editor has no object item editor and would
+  otherwise replace them with empty {} placeholders. Nothing in the core, the API,
+  array operations, sanitizing or schema validation changed; API-created object
+  arrays load and work as before.
 - Preset export/import (src/core/preset-export.js): exportPreset(presetId) is a
   deep copy; importPreset(data) always creates a NEW preset (never overwrites),
   with a fresh id, a unique display name, fresh variable ids and variable names
@@ -1563,6 +1574,38 @@ what runs and the additions built on it.
 - Settings panel (settings.html): a "Lorebook Preset Bindings" section - a
   lorebook dropdown, a preset list with checkboxes, Bind / Unbind, and bundle
   Export / Import.
+
+1.24 Notification Core (2026-09-21)
+
+A single notification surface for every extension (API: docs/STATE ENGINE API
+SPECIFICATION.md Section 12).
+
+- Registry: settings.notifications is a list of { id, source, severity, message,
+  timestamp, callbackId }, persisted with the settings and repaired on load
+  (settings-core.js drops anything that is not an object with an id and a
+  message). It never holds a function: a notification only NAMES its callback.
+- Callback registry: src/core/notification-core.js keeps an in-memory Map of
+  "<namespace>::<callbackId>" -> function. It is rebuilt every page load by each
+  extension registering again, so after a reload a stored notification is listed
+  but cannot run its action until its extension has registered the callback.
+- Ids are "<source namespace>::<key>"; source is the caller's namespace, taken
+  from its verified identity. Notifying again with the same id replaces that
+  notification (fresh timestamp, moved to the end).
+- Nothing expires. A notification is removed when the user clicks it AFTER its
+  callback succeeded, when the user dismisses it (x), or when its extension
+  clears it. A callback that is missing or throws leaves the notification in
+  place and the panel shows the reason on it; a double click cannot run an
+  action twice.
+- UI (src/ui/notification-ui.js): one bell button appended to SillyTavern's send
+  bar (#leftSendForm, beside the wand) - grey (dimmed) with no badge when there
+  are none, highlighted with a count badge ("99+" above 99) when there are. It
+  is restored on CHAT_CHANGED in case SillyTavern rebuilt the bar. Clicking it
+  toggles a panel (newest first: severity icon, message, source and age, and an
+  x); Escape or a click elsewhere closes it; it redraws live while open and stays
+  open, showing "No notifications.", after the last one is gone. Rows are also
+  operable from the keyboard (Enter / Space). All stored text is escaped.
+- Deliberately not included yet: visibility toggles, Pretty Panels integration,
+  auto-expiry.
 
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:

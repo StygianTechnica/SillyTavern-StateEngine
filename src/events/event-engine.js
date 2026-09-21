@@ -11,6 +11,7 @@ import { offerLorebookPresets } from '../core/initialization-engine.js';
 import { observeWIEditorChanges } from '../world-info/wi-condition-ui.js';
 import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
 import { refreshManagerButtonLater } from '../ui/wand-ui.js';
+import { renderNotificationUi } from '../ui/notification-ui.js';
 import { populateConnectionProfileDropdown } from '../ui/connection-profile-ui.js';
 
 export function registerEvents() {
@@ -139,6 +140,12 @@ export function registerEvents() {
 
         try {
             refreshManagerButtonLater();
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
+
+        try {
+            renderNotificationUi(); // puts the notification button back if ST rebuilt the send bar
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
         }
