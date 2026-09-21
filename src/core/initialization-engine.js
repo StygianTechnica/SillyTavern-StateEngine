@@ -3,7 +3,7 @@
 import { LOG_PREFIX, getSettings, migrateAllSettings, persistSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets, addPresetToChat } from './preset-manager.js';
 import { getActiveLorebookNames, getPresetsForLorebook, declineKey, pruneDeclinesForChat } from './lorebook-bindings.js';
-import { setVar, loadChatState } from './chat-state.js';
+import { setVar, loadChatState, saveChatState } from './chat-state.js';
 import { getDefaultValue } from './variable-schema.js';
 import { shouldSkipPromptedRefresh, runPromptedStateUpdate } from './prompted-engine.js';
 import { recalculateDependents, recalculateAllForChat } from './calculated-engine.js';
@@ -154,6 +154,25 @@ export function applyNewChatChoice(chatId, choice, source) {
     return result;
 }
 
+// Whether the chat that just loaded is a brand-new one: no message from the user
+// yet (at most a greeting), no active presets, no stored variables, not asked
+// before. SillyTavern only emits CHAT_CREATED for a chat that starts with a
+// greeting - a character with no first message never gets it - so the new-chat
+// question is also asked from CHAT_CHANGED, using this test to tell a new chat
+// from an old one being opened. Never throws.
+export function looksLikeNewChat(chatId, context = SillyTavern.getContext()) {
+    try {
+        if (!chatId) return false;
+        const messages = Array.isArray(context.chat) ? context.chat : [];
+        if (messages.length > 1 || messages.some((m) => m && m.is_user)) return false;
+        if (getPresetsForChat(chatId).length > 0) return false;
+        const state = loadChatState(chatId);
+        return !state.newChatStartAsked && Object.keys(state.variables || {}).length === 0;
+    } catch {
+        return false;
+    }
+}
+
 const askedThisSession = new Set();
 
 // CHAT_CREATED / GROUP_CHAT_CREATED handler body. Asks once per chat, applies the
@@ -162,9 +181,15 @@ const askedThisSession = new Set();
 export async function offerNewChatStart(chatId, ask = askNewChatStart) {
     try {
         if (!chatId || askedThisSession.has(chatId)) return { choice: null, activated: [], copied: 0 };
+        // Remembered with the chat (not just for the session): this question is
+        // asked from two events (see looksLikeNewChat) and must never repeat.
+        if (loadChatState(chatId).newChatStartAsked) return { choice: null, activated: [], copied: 0 };
         const source = findPreviousChat(chatId);
         if (!source) return { choice: null, activated: [], copied: 0 };
         askedThisSession.add(chatId);
+        const asked = loadChatState(chatId);
+        asked.newChatStartAsked = true;
+        saveChatState(chatId, asked);
 
         const settings = getSettings();
         const presetNames = source.presetIds.map((id) => settings.presets[id]?.name || id);

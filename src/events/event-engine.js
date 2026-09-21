@@ -1,7 +1,7 @@
 // State Engine — event wiring
 
 import { LOG_PREFIX } from '../core/settings-core.js';
-import { applyResetOnNewChat, runStartupOnce, offerNewChatStart } from '../core/initialization-engine.js';
+import { applyResetOnNewChat, runStartupOnce, offerNewChatStart, looksLikeNewChat } from '../core/initialization-engine.js';
 import { runPromptedStateUpdate } from '../core/prompted-engine.js';
 import { runDeterministicIncrements } from '../core/deterministic-engine.js';
 import { seedVariablesForChat, hydrateMacroStoreForChat, loadChatState } from '../core/chat-state.js';
@@ -78,7 +78,7 @@ export function registerEvents() {
     // A brand-new GROUP chat emits GROUP_CHAT_CREATED instead of CHAT_CREATED.
     if (eventTypes.GROUP_CHAT_CREATED) eventSource.on(eventTypes.GROUP_CHAT_CREATED, onChatCreated);
 
-    eventSource.on(eventTypes.CHAT_CHANGED, () => {
+    eventSource.on(eventTypes.CHAT_CHANGED, async () => {
         const context = SillyTavern.getContext();
         const chatId = context.chatId;
 
@@ -90,6 +90,16 @@ export function registerEvents() {
 
         try {
             hydrateMacroStoreForChat(chatId);
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
+
+        try {
+            // A new chat whose character has no greeting never gets CHAT_CREATED,
+            // so the "start from your last chat?" question is also asked here.
+            // Asked BEFORE the lorebook offer so the earlier chat's presets are
+            // settled first (a preset already active is not offered again).
+            if (looksLikeNewChat(chatId, context)) await offerNewChatStart(chatId);
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
         }

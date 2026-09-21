@@ -9,7 +9,7 @@ import { loadChatState, setVar } from '../src/core/chat-state.js';
 import { addPresetToChat, getPresetsForChat } from '../src/core/preset-manager.js';
 import { recalculateAllForChat } from '../src/core/calculated-engine.js';
 import {
-    findPreviousChat, applyNewChatChoice, offerNewChatStart, offerCopyFromPreviousChat, NEW_CHAT_CHOICES,
+    findPreviousChat, applyNewChatChoice, offerNewChatStart, offerCopyFromPreviousChat, looksLikeNewChat, NEW_CHAT_CHOICES,
 } from '../src/core/initialization-engine.js';
 
 vi.mock('../src/core/background-llm.js', () => ({ callBackgroundLLM: vi.fn() }));
@@ -290,5 +290,49 @@ describe('wiring', () => {
         expect(src).toContain('await offerNewChatStart(chatId)');
         expect(src).toContain('eventSource.on(eventTypes.CHAT_CREATED, onChatCreated)');
         expect(src).toContain('eventSource.on(eventTypes.GROUP_CHAT_CREATED, onChatCreated)');
+    });
+});
+
+describe('a character with no greeting never gets CHAT_CREATED: CHAT_CHANGED asks too', () => {
+    it('looksLikeNewChat: empty or greeting-only chat, no presets, no variables, not asked', () => {
+        makeNewChat();
+        expect(looksLikeNewChat(NEW, { chat: [] })).toBe(true);
+        expect(looksLikeNewChat(NEW, { chat: [{ mes: 'Hello', is_user: false }] })).toBe(true);
+    });
+
+    it('an old chat being opened is not new: user messages, several messages, presets or variables', () => {
+        makeNewChat();
+        expect(looksLikeNewChat(NEW, { chat: [{ is_user: true, mes: 'hi' }] })).toBe(false);
+        expect(looksLikeNewChat(NEW, { chat: [{ mes: 'a' }, { mes: 'b' }] })).toBe(false);
+        expect(looksLikeNewChat(undefined, { chat: [] })).toBe(false);
+        addPresetToChat(NEW, hp);
+        expect(looksLikeNewChat(NEW, { chat: [] })).toBe(false);
+    });
+
+    it('is asked once even though both events may fire, and the answer is remembered with the chat', async () => {
+        makeSourceChat('chat-OLD-x', { presetIds: [hp, mood] });
+        makeNewChat();
+        const first = ask(NEW_CHAT_CHOICES.PRESETS);
+        await offerNewChatStart(NEW, first);
+        expect(first).toHaveBeenCalledTimes(1);
+        expect(getPresetsForChat(NEW)).toEqual([hp, mood]);
+        expect(loadChatState(NEW).newChatStartAsked).toBe(true);
+        expect(looksLikeNewChat(NEW, { chat: [] })).toBe(false);
+    });
+
+    it('a chat already asked (an earlier session) is not asked again', async () => {
+        makeSourceChat('chat-OLD-y', { presetIds: [hp] });
+        const state = makeNewChat();
+        state.newChatStartAsked = true;
+        const fn = ask(NEW_CHAT_CHOICES.PRESETS);
+        expect((await offerNewChatStart(NEW, fn)).choice).toBe(null);
+        expect(fn).not.toHaveBeenCalled();
+    });
+
+    it('CHAT_CHANGED is wired to ask before the lorebook offer', () => {
+        const src = read('src', 'events', 'event-engine.js');
+        expect(src).toContain('eventSource.on(eventTypes.CHAT_CHANGED, async () => {');
+        expect(src).toContain('if (looksLikeNewChat(chatId, context)) await offerNewChatStart(chatId);');
+        expect(src.indexOf('looksLikeNewChat(chatId, context)')).toBeLessThan(src.lastIndexOf('offerLorebookPresets(chatId);'));
     });
 });
