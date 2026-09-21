@@ -1506,6 +1506,14 @@ non-string `currentKeyVariable`, or `behaviors.increment: true` on an `image` or
 Nothing is fetched or checked when one is created. Image variables cannot be used in
 World Info conditions and are never asked of the prompted LLM.
 
+**12.9 Presets with images**
+
+`exportPresetWithImages(presetId)` and `importPresetWithImages(presetData)` in
+`src/core/preset-export.js` are the async forms of `exportPreset` / `importPresetDetailed`
+that carry a preset's image files (requirements spec 1.27). They are internal (used by the
+manager modal); the existing synchronous functions are unchanged, except that a plain
+import discards an embedded `stateEngineImages` block.
+
 **12.6 Verification**
 
 `tests/api/notification-api.test.js` and `tests/notification-ui.test.js`; the full

@@ -1729,6 +1729,66 @@ src/ui/image-preview.js (safe thumbnails).
   element; a reference with no scheme is treated as a path only if it contains "/" or
   ends in an image extension.
 
+1.27 Portable Image Import (drag and drop) (2026-09-21)
+
+Image files can be dragged into an image, imageList or imageMap editor in the manager
+modal. Code: src/core/image-import.js (rules, upload, export/import of the files),
+the drop handlers in src/ui/manager-modal/ui-events.js. No change to the image
+variable rules (1.26), the expression language or the tracker.
+
+- Core rule: what a drop stores is ALWAYS a portable, reload-safe relative path -
+  never an absolute OS path, a blob: URL, another temporary browser URL or a data:
+  URL - and it is escaped wherever it is drawn.
+- Where the copy goes - a deliberate difference from the request: NOT
+  SillyTavern/public/state-engine-images/. A browser extension cannot write into
+  public/, and a browser never reveals where a dropped file lives, so "is it already
+  inside public/?" cannot be asked (a dropped File carries a name, not a path). What
+  SillyTavern does provide is POST /api/images/upload (the route other extensions,
+  e.g. Doom's Enhancement Suite, use), which writes into the user's image folder and
+  serves the file at a relative path. State Engine's folder is
+  data/<user>/user/images/state-engine-images/ and the stored reference is
+  user/images/state-engine-images/<file> - one relative path, the same on every
+  install, valid for every chat and after any reload. Every dropped file is copied
+  there; nothing is stored from where it came from.
+- The pipeline: (1) each file is checked - refused if it is not an image (MIME type),
+  SVG (an SVG opened directly can run scripts), empty, over 20 MB, or if its first
+  bytes are not really PNG / JPEG / GIF / WEBP / BMP (the bytes decide, not the name;
+  a JPEG named .png is saved as .jpg); (2) the base name is kept as far as possible
+  (letters, digits, space, _ and -; dots are replaced, because SillyTavern would read
+  them as an extension); (3) a name already in the folder gets a numeric suffix
+  (name-1.png, name-2.png...) - the server overwrites silently, so the folder is listed
+  first, and a timestamp is used if it cannot be listed; (4) the file is uploaded and
+  the server's answer must be a path inside the folder, otherwise nothing is stored;
+  (5) the preview updates at once from the new relative path.
+- Editor behavior: image - the reference is replaced (extra files are ignored with a
+  warning); imageList - each file appends a row; imageMap - dropped on a row it
+  updates that row's reference (its key is kept; further files become new rows), dropped
+  anywhere else it adds a row with an empty key (which must be filled in before saving).
+  The editor is highlighted while a file is dragged over it (the row under the pointer
+  too, in a map); "Image imported" (or "N images imported") is shown as a toast,
+  errors per file; previews have hover-to-enlarge like every image variable. The
+  browser is always stopped from opening a dropped file, in any editor.
+- Saving refuses a typed or pasted reference that is not portable: a blob: URL, or a
+  path on this computer (file:, C:\..., \\server\..., /Users/..., /home/...), with a
+  message pointing at drag-and-drop. http(s) URLs, relative paths and data: URLs typed by
+  hand are still allowed (1.26); only the drop pipeline never produces them.
+- Export / import: exporting a preset (manager modal, and each preset of a lorebook
+  bundle) embeds the image files its image variables reference in State Engine's folder,
+  as stateEngineImages: { "<file name>": "<base64>" } - only files actually referenced,
+  each verified to be a real image; one that cannot be read is reported and left as a
+  reference. A preset with no such images exports exactly as before. Importing puts the
+  files back into the same folder first: a free name is used as is, a name held by an
+  IDENTICAL file is reused (no duplicates on re-import), a name held by a DIFFERENT file gets
+  a numeric suffix and the preset's references are rewritten to match (arrays, objects and
+  JSON-text defaults keep their shape). Embedded entries with an unsafe name or bytes that are
+  not an image are refused and reported. The pictures are never stored in settings (a plain
+  synchronous import discards stateEngineImages). References to anything outside the folder
+  (URLs, other paths) are left alone.
+- Not handled: a dropped file cannot be matched to a file already in public/ or
+  elsewhere, so it is always copied; images are not deleted when a variable or preset is
+  removed (they stay in the folder); a shared preset without its embedded files keeps
+  its paths, which show the placeholder until the files exist.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 

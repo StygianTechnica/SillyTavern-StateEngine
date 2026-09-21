@@ -21,6 +21,7 @@ import { LOG_PREFIX, getSettings, persistSettings } from './settings-core.js';
 import { getPresetsForChat, addPresetToChat } from './preset-manager.js';
 import { getPresetsForLorebook, getLorebookBindings } from './lorebook-bindings.js';
 import { exportPreset, importPresetDetailed } from './preset-export.js';
+import { embedManagedImages, restoreEmbeddedImages } from './image-import.js';
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
@@ -46,7 +47,8 @@ export async function exportLorebookBundle(world, lorebookId = world) {
 
     const presetIds = getPresetsForLorebook(world, lorebookId);
     const presets = {};
-    for (const presetId of presetIds) presets[presetId] = exportPreset(presetId);
+    // Each preset carries the image files its image variables use (image-import.js).
+    for (const presetId of presetIds) presets[presetId] = (await embedManagedImages(exportPreset(presetId))).data;
     const conditions = conditionsForWorld(world);
     const bound = getLorebookBindings()?.[world]?.[lorebookId];
 
@@ -113,7 +115,11 @@ export async function importLorebookBundle(bundle, options = {}) {
     const bundledBindings = se.lorebookPresetBindings && typeof se.lorebookPresetBindings === 'object' ? se.lorebookPresetBindings : {};
     const bundledPresets = {};
     for (const [id, data] of Object.entries(se.presets && typeof se.presets === 'object' ? se.presets : {})) {
-        if (data && typeof data === 'object' && data.variables && typeof data.variables === 'object') bundledPresets[id] = data;
+        if (data && typeof data === 'object' && data.variables && typeof data.variables === 'object') {
+            // Embedded image files go back into State Engine's image folder first (the
+            // preset's references are rewritten if a name was taken by another file).
+            bundledPresets[id] = (await restoreEmbeddedImages(data)).data;
+        }
     }
 
     // The original world/lorebook names come from the binding entry (or the name).

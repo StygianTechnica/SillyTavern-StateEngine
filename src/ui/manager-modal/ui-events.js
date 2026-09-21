@@ -2,7 +2,7 @@
 // Uses ES6 modules - imported by manager-modal.js
 
 import * as presetManager from './preset-manager.js';
-import { exportPreset, importPresetDetailed } from '../../core/preset-export.js';
+import { exportPresetWithImages, importPresetWithImages } from '../../core/preset-export.js';
 import { downloadJson, pickJsonFile } from '../file-io.js';
 import * as variableSchema from './variable-ui-schema.js';
 import * as uiTemplates from './ui-templates.js';
@@ -14,6 +14,7 @@ import { refreshVariableMacros } from '../../core/macro-registration.js';
 import { BUILTIN_NAMESPACE, DEFAULT_CALENDAR_ID, BUILTIN_CALENDAR_IDS } from '../../core/settings-core.js';
 import { formatIsoScalar, getCalendar, toScalar } from '../../core/calendar-engine.js';
 import { isImageType } from '../../core/image-variables.js';
+import { importImageFiles, firstNonPortableReference } from '../../core/image-import.js';
 import { updateThumb } from '../image-preview.js';
 import {
     blankCalendarEditorValues, editorValuesFromDefinition, definitionFromEditorValues, updatePatchFromDefinition,
@@ -145,25 +146,36 @@ export function wireEvents(managerApi, managerState) {
 
     // Export a preset as a JSON file / import one as a NEW preset (never an
     // overwrite; colliding variable names get a unique name - preset-export.js).
-    $overlay.on('click', '.se-manager-export-preset', function () {
+    $overlay.on('click', '.se-manager-export-preset', async function () {
         const presetId = $(this).attr('data-preset-id');
-        const data = exportPreset(presetId);
-        if (!data) return;
-        downloadJson(`${data.name || 'preset'}.preset`, data);
-        managerApi.setStatus(`Exported preset "${data.name}".`);
+        try {
+            // The preset plus the image files its image variables use (image-import.js).
+            const exported = await exportPresetWithImages(presetId);
+            if (!exported) return;
+            const { data, missing } = exported;
+            downloadJson(`${data.name || 'preset'}.preset`, data);
+            const files = Object.keys(data.stateEngineImages || {}).length;
+            managerApi.setStatus(`Exported preset "${data.name}"${files ? ` with ${files} image${files === 1 ? '' : 's'}` : ''}.`
+                + (missing.length ? ` ${missing.length} referenced image${missing.length === 1 ? ' was' : 's were'} not found and left out.` : ''), missing.length > 0);
+        } catch (err) {
+            console.error('[State Engine]', err);
+            alert(err?.message || 'Export failed.');
+        }
     });
 
     $overlay.on('click', '#se-manager-import-preset', async function () {
         try {
             const file = await pickJsonFile();
             if (!file) return;
-            const imported = importPresetDetailed(file.data?.preset ?? file.data);
+            const imported = await importPresetWithImages(file.data?.preset ?? file.data);
             if (!imported) {
                 alert('That file is not a State Engine preset (expected an object with a "variables" object).');
                 return;
             }
             uiRender.renderPresetsTab(managerApi, managerState.currentPresetId);
-            managerApi.setStatus(`Imported preset "${managerApi.getSettings().presets[imported.presetId].name}".`);
+            const failed = imported.images?.failed?.length || 0;
+            managerApi.setStatus(`Imported preset "${managerApi.getSettings().presets[imported.presetId].name}".`
+                + (failed ? ` ${failed} image${failed === 1 ? '' : 's'} could not be restored.` : ''), failed > 0);
         } catch (err) {
             console.error('[State Engine]', err);
             alert(err?.message || 'Import failed.');
@@ -365,6 +377,15 @@ export function wireEvents(managerApi, managerState) {
         }
         delete values._keylessRow;
         delete values._duplicateKey;
+
+        // A reference must be portable: not a blob: URL (gone after a reload) and not
+        // a path on this computer (useless on any other). Dropping the file onto the
+        // editor imports it and stores a portable path instead.
+        const notPortable = firstNonPortableReference({ type: values.type, defaultValue: values.defaultValue });
+        if (notPortable) {
+            alert(`"${notPortable.reference}" cannot be stored: ${notPortable.reason}. Drop the image file onto this editor instead - it is copied into SillyTavern and saved as a portable path.`);
+            return;
+        }
 
         console.log("VALUES BEFORE SAVE:", values);
 
@@ -1073,6 +1094,78 @@ export function wireEvents(managerApi, managerState) {
 
     $overlay.on('click', '.se-manager-imagemap-delete', function () {
         $(this).closest('.se-manager-imagemap-row').remove();
+    });
+
+    // ---- Image variables: drag and drop image files onto the editor ------------------
+    // A dropped file is copied into State Engine's image folder on the SillyTavern
+    // server and only the resulting RELATIVE path is stored (core/image-import.js) -
+    // never the file's own location, a blob: or data: URL. image: replaces the
+    // reference; imageList: appends a row; imageMap: updates the row it was dropped on,
+    // or adds a row with an empty key.
+    const notifyUser = (kind, message) => {
+        if (typeof toastr !== 'undefined' && typeof toastr[kind] === 'function') toastr[kind](message);
+        else managerApi.setStatus(message, kind === 'error');
+    };
+    const dropTypeOf = ($editor) => {
+        const type = $editor.find('[data-field="type"]').val();
+        return isImageType(type) ? type : null;
+    };
+    const dragHasFiles = (event) => Array.from(event.originalEvent?.dataTransfer?.types ?? []).includes('Files');
+    const clearDropHighlight = ($editor) => {
+        $editor.removeClass('se-drop-active');
+        $editor.find('.se-drop-row').removeClass('se-drop-row');
+    };
+
+    $overlay.on('dragenter dragover', '.se-manager-variable-editor-inline', function (event) {
+        if (!dragHasFiles(event)) return;
+        // Never let the browser open a dropped file (it would replace SillyTavern's page).
+        event.preventDefault();
+        const $editor = $(this);
+        if (!dropTypeOf($editor)) return;
+        event.originalEvent.dataTransfer.dropEffect = 'copy';
+        $editor.addClass('se-drop-active');
+        const $row = $(event.target).closest('.se-manager-imagemap-row');
+        $editor.find('.se-drop-row').not($row).removeClass('se-drop-row');
+        if ($row.length) $row.addClass('se-drop-row');
+    });
+
+    $overlay.on('dragleave', '.se-manager-variable-editor-inline', function (event) {
+        const to = event.originalEvent?.relatedTarget;
+        if (to && this.contains(to)) return; // still inside the editor
+        clearDropHighlight($(this));
+    });
+
+    $overlay.on('drop', '.se-manager-variable-editor-inline', async function (event) {
+        if (!dragHasFiles(event)) return;
+        event.preventDefault();
+        const $editor = $(this);
+        const $row = $(event.target).closest('.se-manager-imagemap-row');
+        clearDropHighlight($editor);
+        const type = dropTypeOf($editor);
+        const files = Array.from(event.originalEvent.dataTransfer.files || []);
+        if (!type || files.length === 0) return;
+
+        const { imported, errors } = await importImageFiles(files);
+        for (const { file, error } of errors) notifyUser('error', `${file || 'File'}: ${error}`);
+        if (imported.length === 0) return;
+
+        const paths = imported.map((i) => i.path);
+        if (type === 'image') {
+            $editor.find('[data-field="defaultValue"]').val(paths[0]).trigger('input');
+            if (paths.length > 1) notifyUser('warning', 'An image variable holds one image: the first file was used.');
+        } else if (type === 'imageList') {
+            const $list = $editor.find('.se-manager-image-list');
+            for (const path of paths) $list.append(uiTemplates.buildImageListRow(path, $list.children().length));
+        } else {
+            const $list = $editor.find('.se-manager-imagemap-list');
+            let rest = paths;
+            if ($row.length) {
+                $row.find('.se-manager-imagemap-value').val(rest[0]).trigger('input');
+                rest = rest.slice(1);
+            }
+            for (const path of rest) $list.append(uiTemplates.buildImageMapRow('', path));
+        }
+        notifyUser('success', paths.length === 1 ? 'Image imported' : `${paths.length} images imported`);
     });
 
     // Live thumbnail as the reference is typed.

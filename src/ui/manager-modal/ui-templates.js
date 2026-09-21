@@ -291,7 +291,7 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                 <button type="button" class="menu_button se-manager-array-add">
                     <i class="fa-solid fa-plus"></i> Add image
                 </button>
-                <div class="se-empty">Only references are stored (URLs, paths, ids or base64 data) - never the image itself. Nothing is fetched or checked.</div>
+                <div class="se-empty">Only references are stored (URLs, paths, ids or base64 data) - never the image itself. Nothing is fetched or checked. Drop image files anywhere on this editor to add them.</div>
             ` : d.type === 'imageMap' ? `
                 <label class="se-manager-label">Images by key</label>
                 <div class="se-manager-imagemap-list">
@@ -309,7 +309,7 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                     ${d.currentKeyVariable && !otherVars.some((v) => v.name === d.currentKeyVariable)
                         ? `<option value="${escapeHtml(d.currentKeyVariable)}" selected>${escapeHtml(d.currentKeyVariable)} (not in this preset)</option>` : ''}
                 </select>
-                <div class="se-empty">The tracker shows the image under that variable's current value (a string, an enum, an array's current value or a calculated result, read as text). No matching key: a placeholder - there is no default key. Only references are stored; nothing is fetched or checked.</div>
+                <div class="se-empty">The tracker shows the image under that variable's current value (a string, an enum, an array's current value or a calculated result, read as text). No matching key: a placeholder - there is no default key. Only references are stored; nothing is fetched or checked. Drop an image file on a row to set its image, or on empty space to add a row.</div>
             ` : d.type === 'calculated' ? `
                 <div class="se-empty">Calculated variables have no manually-set default value - they evaluate automatically.</div>
             ` : `
@@ -317,7 +317,7 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                     data-field="defaultValue"
                     placeholder="${d.type === 'datetime' ? 'Default date-time as YYYY-MM-DD HH:mm:ss (numeric month), e.g. 1203-08-17 12:00:00' : d.type === 'image' ? 'Image URL, path or id' : 'Default value'}"
                     value="${escapeHtml(d.defaultValue)}" />
-                ${d.type === 'image' ? `<div class="se-image-editor-preview">${thumbHtml(typeof d.defaultValue === 'string' ? d.defaultValue : '', { enlarge: true, extraClass: 'se-image-preview' })}<small>Only a reference is stored (a URL, path, id or base64 data) - never the image itself. Nothing is fetched or checked.</small></div>` : ''}
+                ${d.type === 'image' ? `<div class="se-image-editor-preview">${thumbHtml(typeof d.defaultValue === 'string' ? d.defaultValue : '', { enlarge: true, extraClass: 'se-image-preview' })}<small>Only a reference is stored (a URL, path, id or base64 data) - never the image itself. Nothing is fetched or checked. Drop an image file anywhere on this editor to import it.</small></div>` : ''}
                 ${d.type === 'datetime' ? `<small class="se-manager-datetime-preview">${escapeHtml(variableSchema.datetimeDefaultPreview(d.calendar, d.defaultValue))}</small>` : ''}
             `}
 

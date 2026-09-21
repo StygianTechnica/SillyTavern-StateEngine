@@ -389,6 +389,246 @@ describe('the manager modal, end to end', () => {
         save();
         expect(stored('se__icon2').behaviors).toEqual({ increment: false, prompted: false });
     });
+
+    // ---- drag and drop of image files (core/image-import.js) ----
+    describe('dropping image files', () => {
+        const PREFIX = 'user/images/state-engine-images/';
+        const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
+        const pngFile = (name = 'portrait.png') => new File([PNG], name, { type: 'image/png' });
+        let serverFiles; let uploads;
+
+        beforeEach(() => {
+            serverFiles = new Map();
+            uploads = [];
+            vi.stubGlobal('fetch', vi.fn(async (url, init) => {
+                if (url === '/api/images/list') return { ok: true, json: async () => [...serverFiles.keys()] };
+                if (url === '/api/images/upload') {
+                    const body = JSON.parse(init.body);
+                    uploads.push(body);
+                    serverFiles.set(body.filename, body.image);
+                    return { ok: true, json: async () => ({ path: `user/images/${body.ch_name}/${body.filename}` }) };
+                }
+                throw new Error(`unexpected request ${url}`);
+            }));
+            globalThis.toastr = { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() };
+        });
+        afterEach(() => {
+            vi.unstubAllGlobals();
+            delete globalThis.toastr;
+        });
+
+        const fire = (type, target, files = [], types = ['Files']) => {
+            const event = new Event(type, { bubbles: true, cancelable: true });
+            Object.defineProperty(event, 'dataTransfer', { value: { files, types, dropEffect: '' } });
+            target.dispatchEvent(event);
+            return event;
+        };
+        const settle = () => new Promise((r) => setTimeout(r, 30));
+        const drop = async (target, files) => { const event = fire('drop', target, files); await settle(); return event; };
+
+        it('image: dragging over highlights the editor, dropping replaces the reference, previews it and says so', async () => {
+            startNew('icon', 'image');
+            const editorEl = editor()[0];
+            expect(fire('dragover', editorEl).defaultPrevented).toBe(true);
+            expect(editor().hasClass('se-drop-active')).toBe(true);
+
+            const event = await drop(editorEl, [pngFile('Elf Queen.png')]);
+            expect(event.defaultPrevented).toBe(true);
+            expect(editor().hasClass('se-drop-active')).toBe(false);
+            expect(editor().find('[data-field="defaultValue"]').val()).toBe(`${PREFIX}Elf Queen.png`);
+            expect(editor().find('.se-image-editor-preview img').attr('src')).toBe(`${PREFIX}Elf Queen.png`);
+            expect(editor().find('.se-image-editor-preview .se-image-thumb').attr('data-enlarge')).toBe('1');   // hover-to-enlarge
+            expect(globalThis.toastr.success).toHaveBeenCalledWith('Image imported');
+
+            save();
+            expect(stored('se__icon').defaultValue).toBe(`${PREFIX}Elf Queen.png`);
+        });
+
+        it('image: a second drop replaces the first (one reference)', async () => {
+            startNew('icon', 'image');
+            await drop(editor()[0], [pngFile('one.png')]);
+            await drop(editor()[0], [pngFile('two.png')]);
+            expect(editor().find('[data-field="defaultValue"]').val()).toBe(`${PREFIX}two.png`);
+        });
+
+        it('imageList: each dropped file is appended as a new row, with a preview', async () => {
+            startNew('faces', 'imageList');
+            editor().find('.se-manager-array-add').trigger('click');
+            setRef(editor().find('.se-manager-array-item').first(), 'https://x.test/existing.png');
+            await drop(editor()[0], [pngFile('a.png')]);
+            await drop(editor()[0], [pngFile('b.png'), pngFile('c.png')]);
+
+            const rows = editor().find('.se-manager-image-list .se-manager-array-row');
+            expect(rows.map((_, r) => $(r).find('.se-manager-array-item').val()).get())
+                .toEqual(['https://x.test/existing.png', `${PREFIX}a.png`, `${PREFIX}b.png`, `${PREFIX}c.png`]);
+            expect(rows.eq(3).find('img').attr('src')).toBe(`${PREFIX}c.png`);
+            expect(rows.eq(3).find('.se-image-thumb').attr('data-enlarge')).toBe('1');
+            expect(globalThis.toastr.success).toHaveBeenLastCalledWith('2 images imported');
+            save();
+            expect(JSON.parse(stored('se__faces').defaultValue).slice(1)).toEqual([`${PREFIX}a.png`, `${PREFIX}b.png`, `${PREFIX}c.png`]);
+        });
+
+        describe('imageMap', () => {
+            const setupMap = () => {
+                startNew('portraits', 'imageMap');
+                editor().find('.se-manager-imagemap-add').trigger('click');
+                editor().find('.se-manager-imagemap-key').first().val('happy');
+                setRef(editor().find('.se-manager-imagemap-value').first(), 'https://x.test/old.png');
+            };
+
+            it("dropped ON a row: that row's image is updated and its key is kept; hovering it highlights the row", async () => {
+                setupMap();
+                const row = editor().find('.se-manager-imagemap-row')[0];
+                fire('dragover', row.querySelector('.se-manager-imagemap-value'));
+                expect($(row).hasClass('se-drop-row')).toBe(true);
+
+                await drop(row.querySelector('.se-manager-imagemap-value'), [pngFile('happy.png')]);
+                expect(editor().find('.se-manager-imagemap-row').length).toBe(1);
+                expect(editor().find('.se-manager-imagemap-key').val()).toBe('happy');
+                expect(editor().find('.se-manager-imagemap-value').val()).toBe(`${PREFIX}happy.png`);
+                expect(editor().find('.se-manager-imagemap-row img').attr('src')).toBe(`${PREFIX}happy.png`);
+                expect($('.se-drop-row').length).toBe(0);
+            });
+
+            it('dropped into empty space: a new row with an EMPTY key and the imported path', async () => {
+                setupMap();
+                await drop(editor().find('.se-manager-label').first()[0], [pngFile('new.png')]);
+                const rows = editor().find('.se-manager-imagemap-row');
+                expect(rows.length).toBe(2);
+                expect(rows.eq(1).find('.se-manager-imagemap-key').val()).toBe('');
+                expect(rows.eq(1).find('.se-manager-imagemap-value').val()).toBe(`${PREFIX}new.png`);
+                expect(rows.eq(0).find('.se-manager-imagemap-value').val()).toBe('https://x.test/old.png'); // untouched
+                expect(rows.eq(1).find('.se-image-thumb').attr('data-enlarge')).toBe('1');
+            });
+
+            it('several files on a row: the first updates it, the rest become new rows', async () => {
+                setupMap();
+                await drop(editor().find('.se-manager-imagemap-value')[0], [pngFile('a.png'), pngFile('b.png')]);
+                const rows = editor().find('.se-manager-imagemap-row');
+                expect(rows.map((_, r) => $(r).find('.se-manager-imagemap-value').val()).get()).toEqual([`${PREFIX}a.png`, `${PREFIX}b.png`]);
+                expect(rows.eq(1).find('.se-manager-imagemap-key').val()).toBe('');
+            });
+
+            it('a new row with an empty key cannot be saved until it has a key', async () => {
+                setupMap();
+                await drop(editor().find('.se-manager-label').first()[0], [pngFile('new.png')]);
+                save();
+                expect(globalThis.alert).toHaveBeenLastCalledWith(expect.stringContaining('needs a key'));
+                expect(stored('se__portraits')).toBeUndefined();
+                editor().find('.se-manager-imagemap-key').last().val('sad');
+                save();
+                expect(JSON.parse(stored('se__portraits').defaultValue)).toEqual({ happy: 'https://x.test/old.png', sad: `${PREFIX}new.png` });
+            });
+        });
+
+        it('files that are not images are refused with a message and change nothing', async () => {
+            startNew('faces', 'imageList');
+            await drop(editor()[0], [new File(['hello'], 'notes.txt', { type: 'text/plain' }), new File([new Uint8Array([1, 2, 3, 4, 5])], 'fake.png', { type: 'image/png' })]);
+            expect(editor().find('.se-manager-image-list .se-manager-array-row').length).toBe(0);
+            expect(globalThis.toastr.error).toHaveBeenCalledWith(expect.stringMatching(/notes\.txt: only image files/));
+            expect(globalThis.toastr.error).toHaveBeenCalledWith(expect.stringMatching(/fake\.png: that file is not a supported image/));
+            expect(globalThis.toastr.success).not.toHaveBeenCalled();
+            expect(uploads).toEqual([]);
+        });
+
+        it('a mixed drop imports the images and reports the rest', async () => {
+            startNew('faces', 'imageList');
+            await drop(editor()[0], [pngFile('ok.png'), new File(['x'], 'bad.txt', { type: 'text/plain' })]);
+            expect(editor().find('.se-manager-image-list .se-manager-array-row').length).toBe(1);
+            expect(globalThis.toastr.error).toHaveBeenCalledTimes(1);
+            expect(globalThis.toastr.success).toHaveBeenCalledWith('Image imported');
+        });
+
+        it('a failed upload is reported and nothing is added', async () => {
+            fetch.mockImplementation(async (url) => (url === '/api/images/list' ? { ok: true, json: async () => [] } : { ok: false, status: 500, json: async () => ({}) }));
+            startNew('faces', 'imageList');
+            await drop(editor()[0], [pngFile('a.png')]);
+            expect(editor().find('.se-manager-image-list .se-manager-array-row').length).toBe(0);
+            expect(globalThis.toastr.error).toHaveBeenCalledWith(expect.stringContaining('refused the upload'));
+        });
+
+        it('leaving the editor removes the highlight; non-file drags (text, links) are ignored', async () => {
+            startNew('faces', 'imageList');
+            fire('dragover', editor()[0]);
+            expect(editor().hasClass('se-drop-active')).toBe(true);
+            fire('dragleave', editor()[0]);
+            expect(editor().hasClass('se-drop-active')).toBe(false);
+
+            const text = fire('dragover', editor()[0], [], ['text/plain']);
+            expect(text.defaultPrevented).toBe(false);
+            expect(editor().hasClass('se-drop-active')).toBe(false);
+            const textDrop = fire('drop', editor()[0], [], ['text/plain']);
+            await settle();
+            expect(textDrop.defaultPrevented).toBe(false);
+            expect(uploads).toEqual([]);
+        });
+
+        it('an editor of another type takes no drops - but the browser is still stopped from opening the file', async () => {
+            startNew('name', 'string');
+            const over = fire('dragover', editor()[0]);
+            expect(over.defaultPrevented).toBe(true);           // never navigate away from SillyTavern
+            expect(editor().hasClass('se-drop-active')).toBe(false);
+            const event = await drop(editor()[0], [pngFile('a.png')]);
+            expect(event.defaultPrevented).toBe(true);
+            expect(uploads).toEqual([]);
+            expect(globalThis.toastr.success).not.toHaveBeenCalled();
+        });
+
+        it('a drop stores only a managed relative path - never a blob, data, absolute or original location', async () => {
+            startNew('faces', 'imageList');
+            const file = pngFile('C:\\Users\\me\\Desktop\\pic.png');
+            await drop(editor()[0], [file]);
+            const value = editor().find('.se-manager-array-item').val();
+            expect(value).toBe(`${PREFIX}pic.png`);
+            expect(value).not.toMatch(/^(blob:|data:|file:|[a-z]:|\/|\\)/i);
+            save();
+            expect(stored('se__faces').defaultValue).not.toMatch(/blob:|data:|C:|Users/);
+        });
+
+        it('every stored reference is escaped when drawn', async () => {
+            startNew('faces', 'imageList');
+            await drop(editor()[0], [pngFile('x"><img src=y onerror=alert(1)>.png')]);
+            expect(editor().find('img[onerror]').length).toBe(0);
+            expect(editor().find('script').length).toBe(0);
+            expect(editor().find('.se-manager-array-item').val()).toMatch(/^user\/images\/state-engine-images\/[^"<>]+\.png$/);
+        });
+    });
+
+    describe('saving refuses references that are not portable', () => {
+        it('a typed blob: URL or a path on this computer is refused with a way out; nothing is written', () => {
+            startNew('icon', 'image');
+            setRef(editor().find('[data-field="defaultValue"]'), 'blob:http://localhost:8000/1234-5678');
+            save();
+            expect(globalThis.alert).toHaveBeenLastCalledWith(expect.stringMatching(/blob:.*temporary.*Drop the image file/s));
+            expect(stored('se__icon')).toBeUndefined();
+
+            setRef(editor().find('[data-field="defaultValue"]'), 'C:\\Users\\me\\a.png');
+            save();
+            expect(globalThis.alert).toHaveBeenLastCalledWith(expect.stringContaining('absolute path on this computer'));
+            expect(stored('se__icon')).toBeUndefined();
+
+            setRef(editor().find('[data-field="defaultValue"]'), 'user/images/state-engine-images/a.png');
+            save();
+            expect(stored('se__icon').defaultValue).toBe('user/images/state-engine-images/a.png');
+        });
+
+        it('in a list or a map too', () => {
+            startNew('faces', 'imageList');
+            editor().find('.se-manager-array-add').trigger('click');
+            setRef(editor().find('.se-manager-array-item'), '/home/me/a.png');
+            save();
+            expect(globalThis.alert).toHaveBeenLastCalledWith(expect.stringContaining('/home/me/a.png'));
+            expect(stored('se__faces')).toBeUndefined();
+
+            startNew('moods', 'imageMap');
+            editor().find('.se-manager-imagemap-add').trigger('click');
+            editor().find('.se-manager-imagemap-key').val('a');
+            setRef(editor().find('.se-manager-imagemap-value'), 'file:///C:/a.png');
+            save();
+            expect(globalThis.alert).toHaveBeenLastCalledWith(expect.stringContaining('file:///C:/a.png'));
+            expect(stored('se__moods')).toBeUndefined();
+        });
+    });
 });
 
 // ---------------------------------------------------------------------------

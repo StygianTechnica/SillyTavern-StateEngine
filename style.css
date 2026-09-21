@@ -1007,3 +1007,16 @@
     max-width: 320px;
     max-height: 320px;
 }
+
+/* Drag-and-drop import of image files - manager modal editors */
+.se-manager-variable-editor-inline.se-drop-active {
+    outline: 2px dashed var(--SmartThemeQuoteColor, #e18a24);
+    outline-offset: 2px;
+    background: rgba(225, 138, 36, 0.08);
+}
+
+.se-manager-imagemap-row.se-drop-row {
+    outline: 2px solid var(--SmartThemeQuoteColor, #e18a24);
+    background: rgba(225, 138, 36, 0.18);
+    border-radius: 4px;
+}

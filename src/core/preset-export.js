@@ -11,6 +11,7 @@
 import { LOG_PREFIX, BUILTIN_NAMESPACE, getSettings, persistSettings } from './settings-core.js';
 import { genId } from './variable-schema.js';
 import { isVariableNameTaken } from './preset-manager.js';
+import { embedManagedImages, restoreEmbeddedImages } from './image-import.js';
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -19,6 +20,30 @@ const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 export function exportPreset(presetId) {
     const preset = getSettings().presets?.[presetId];
     return preset ? clone(preset) : null;
+}
+
+// exportPreset() plus the image files its image variables reference in State
+// Engine's image folder (core/image-import.js), embedded as
+// `stateEngineImages: { "<file name>": "<base64>" }` so the preset can be shared
+// without breaking its pictures. -> { data, missing } (missing = referenced paths
+// whose file could not be read; they are left as references), or null when there
+// is no such preset. A preset with no such images comes back exactly as
+// exportPreset() gives it. `deps` is for tests.
+export async function exportPresetWithImages(presetId, deps) {
+    const data = exportPreset(presetId);
+    return data ? embedManagedImages(data, deps) : null;
+}
+
+// importPresetDetailed() for data that may carry embedded images: the files are
+// put back into State Engine's image folder first (same name, or a numeric suffix
+// when a different file already has it, or reused when it is the same file) and the
+// preset's references are rewritten to match. -> { ...importPresetDetailed's result,
+// images: { restored, reused, failed } } or null when the data is not a preset.
+export async function importPresetWithImages(presetData, deps) {
+    if (!presetData || typeof presetData !== 'object' || Array.isArray(presetData)) return importPresetDetailed(presetData);
+    const { data, restored, reused, failed } = await restoreEmbeddedImages(presetData, deps);
+    const result = importPresetDetailed(data);
+    return result ? { ...result, images: { restored, reused, failed } } : null;
 }
 
 function uniquePresetName(namespace, wanted) {
@@ -44,6 +69,9 @@ export function importPresetDetailed(presetData) {
 
     const settings = getSettings();
     const data = clone(presetData);
+    // Embedded image files belong to the image folder, never to the stored preset
+    // (importPresetWithImages() restores them first); a plain import just drops them.
+    delete data.stateEngineImages;
 
     // A namespace this install does not know is imported into the built-in one,
     // swapping the "<ns>__" prefix its variable names carry.
