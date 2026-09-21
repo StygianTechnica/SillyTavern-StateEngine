@@ -1615,7 +1615,13 @@ installed extension has an update available. Code: src/events/extension-updates.
 - Data source: the same endpoints the extension manager uses (verified against
   SillyTavern 1.18): GET /api/extensions/discover for the list and POST
   /api/extensions/version { extensionName, global } per third-party extension;
-  isUpToDate === false means outdated. The endpoint runs "git fetch origin"
+  isUpToDate === false means outdated. Only ENABLED extensions are checked:
+  ids in extension_settings.disabledExtensions ("third-party/Name", the names
+  discover returns) are skipped, as SillyTavern's own startup check skips them - a
+  disabled extension is not running, so its update is not worth nagging about, and
+  skipping it saves a request each. Enabling one includes it in the next check; a
+  notification caused only by an extension that has since been disabled is cleared
+  by the next check. The endpoint runs "git fetch origin"
   itself; State Engine never touches git and never updates anything (no
   auto-update).
 - The notification: source "se" (State Engine's built-in namespace), severity

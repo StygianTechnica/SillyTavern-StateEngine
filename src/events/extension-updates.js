@@ -51,10 +51,26 @@ function requestHeaders() {
 
 // ---- the check -----------------------------------------------------------------
 
-// Every installed third-party extension as { folder, global }.
-// Returns null when the list could not be read (so "unknown" is not mistaken for
-// "nothing installed").
-async function listThirdPartyExtensions(fetchImpl) {
+// The extensions the user has switched off, as SillyTavern records them:
+// extension_settings.disabledExtensions holds ids like "third-party/Name" - the
+// same names /api/extensions/discover returns. An unreadable list counts as none
+// (every extension is checked rather than none).
+function disabledExtensionIds() {
+    try {
+        const list = SillyTavern.getContext().extensionSettings?.disabledExtensions;
+        return new Set(Array.isArray(list) ? list : []);
+    } catch {
+        return new Set();
+    }
+}
+
+// Every installed, ENABLED third-party extension as { folder, global }. A
+// disabled extension is skipped, as SillyTavern's own startup check skips it: it
+// is not running, so an update to it is not something to nag about (and it saves
+// a `git fetch` per disabled extension). Enabling it makes the next check include
+// it. Returns null when the list could not be read (so "unknown" is not mistaken
+// for "nothing installed").
+async function listThirdPartyExtensions(fetchImpl, disabled) {
     try {
         const response = await fetchImpl('/api/extensions/discover');
         if (!response.ok) return null;
@@ -62,6 +78,7 @@ async function listThirdPartyExtensions(fetchImpl) {
         if (!Array.isArray(list)) return null;
         return list
             .filter((e) => e && typeof e.name === 'string' && e.name.startsWith('third-party/'))
+            .filter((e) => !disabled.has(e.name))
             .map((e) => ({ folder: e.name.slice('third-party/'.length), global: e.type === 'global' }))
             .filter((e) => e.folder);
     } catch (err) {
@@ -134,7 +151,7 @@ export function registerUpdateNotificationCallback() {
 
 // ---- entry point -----------------------------------------------------------------
 
-// Checks every third-party extension and updates the notification to match:
+// Checks every enabled third-party extension and updates the notification to match:
 //   at least one outdated                      -> ONE notification (replaced if present)
 //   none outdated (and the check could answer) -> none (a stale one is cleared)
 //   the check could not answer at all          -> left exactly as it was
@@ -147,7 +164,7 @@ export function checkForExtensionUpdates(reason = 'manual', fetchImpl = (...args
     inFlight = (async () => {
         const result = { checked: 0, outdated: 0, notified: false };
         try {
-            const extensions = await listThirdPartyExtensions(fetchImpl);
+            const extensions = await listThirdPartyExtensions(fetchImpl, disabledExtensionIds());
             if (!extensions) return result;
 
             const answers = await mapLimited(extensions, CONCURRENCY, (e) => isOutdated(e, fetchImpl));

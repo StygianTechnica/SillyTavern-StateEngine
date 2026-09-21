@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import '../tests/harness/context.js';
+import context from '../tests/harness/context.js';
 import { stateEngine } from '../src/api/index.js';
 import { resetNotificationRuntimeForTests } from '../src/core/notification-core.js';
 import {
@@ -129,6 +129,44 @@ describe('what counts', () => {
             { extensionName: 'Mine', global: false },
             { extensionName: 'Shared', global: true },
         ]);
+    });
+
+    it('disabled extensions are not checked, and cannot cause the notification', async () => {
+        context.extensionSettings.disabledExtensions = ['third-party/Off', 'third-party/AlsoOff', 'memory'];
+        const server = fakeServer({ installed: [tp('On'), tp('Off'), tp('AlsoOff'), tp('Shared', 'global')], versions: { Off: 'outdated', AlsoOff: 'outdated' } });
+        const result = await checkForExtensionUpdates('test', server.fetchImpl);
+        expect(server.calls.version.map((v) => v.extensionName)).toEqual(['On', 'Shared']);
+        expect(result).toMatchObject({ checked: 2, outdated: 0, notified: false });
+        expect(notes()).toEqual([]);
+    });
+
+    it('an outdated ENABLED extension still counts when others are disabled', async () => {
+        context.extensionSettings.disabledExtensions = ['third-party/Off'];
+        const server = fakeServer({ installed: [tp('On'), tp('Off')], versions: { On: 'outdated', Off: 'outdated' } });
+        await checkForExtensionUpdates('test', server.fetchImpl);
+        expect(server.calls.version).toEqual([{ extensionName: 'On', global: false }]);
+        expect(notes()).toHaveLength(1);
+    });
+
+    it('a leftover notification clears once the only outdated extension is disabled; enabling it flags it again', async () => {
+        const server = fakeServer({ installed: [tp('Only')], versions: { Only: 'outdated' } });
+        await checkForExtensionUpdates('startup', server.fetchImpl);
+        expect(notes()).toHaveLength(1);
+
+        context.extensionSettings.disabledExtensions = ['third-party/Only'];
+        await checkForExtensionUpdates('manager', server.fetchImpl);
+        expect(notes()).toEqual([]);
+
+        context.extensionSettings.disabledExtensions = [];
+        await checkForExtensionUpdates('manager', server.fetchImpl);
+        expect(notes()).toHaveLength(1);
+    });
+
+    it('an unreadable disabled list means everything is checked', async () => {
+        context.extensionSettings.disabledExtensions = 'garbage';
+        const server = fakeServer({ installed: [tp('A'), tp('B')] });
+        await checkForExtensionUpdates('test', server.fetchImpl);
+        expect(server.calls.version).toHaveLength(2);
     });
 
     it('an extension that cannot answer is ignored, not treated as outdated', async () => {
