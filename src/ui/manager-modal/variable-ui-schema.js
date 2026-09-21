@@ -3,6 +3,7 @@
 // variable definitions. Uses ES6 modules - imported by manager-modal.js
 
 import { DEFAULT_CALENDAR_ID } from '../../core/settings-core.js';
+import { isImageType } from '../../core/image-variables.js';
 import { getCalendar, toScalar, format, fromStructured } from '../../core/calendar-engine.js';
 
 // Object arrays are extension-facing: they are created through the API only.
@@ -68,7 +69,8 @@ export function datetimeDefaultPreview(calendarId, text) {
 }
 
 export function canIncrement(type) {
-    return (type === 'number' || type === 'boolean' || type === 'enum' || type === 'array' || type === 'datetime');
+    // An image list can rotate; an image and an image map cannot (nothing to rotate).
+    return (type === 'number' || type === 'boolean' || type === 'enum' || type === 'array' || type === 'datetime' || type === 'imageList');
 }
 
 // Splits multiline-editor textarea content into individual entries. The
@@ -202,9 +204,12 @@ export function normalizeCollectedValues(values) {
 
     // Behaviors
     if (values.behaviors !== undefined) {
+        // An image variable is never prompted (its value is not narrative), and only
+        // an image list can be incremented (rotated).
+        const imageType = isImageType(values.type);
         out.behaviors = {
-            increment: !!values.behaviors.increment,
-            prompted: !!values.behaviors.prompted,
+            increment: !!values.behaviors.increment && (!imageType || values.type === 'imageList'),
+            prompted: !!values.behaviors.prompted && !imageType,
         };
     }
 
@@ -311,6 +316,10 @@ export function describeVariable(d) {
             out.push(`Each increment cycles through the enum values.`);
         } else if (d.type === 'datetime') {
             out.push(`Each increment advances the time by ${d.increment?.delta ?? '1s'}.`);
+        } else if (d.type === 'imageList') {
+            const op = d.increment?.operation;
+            const what = { rotateNext: 'shows the next image', rotate: 'shows the previous image' }[op];
+            out.push(what ? `Each increment ${what}.` : `No rotation is configured, so increments do nothing.`);
         } else if (d.type === 'array') {
             const op = d.increment?.operation;
             out.push(op ? `Each increment applies the "${op}" operation to the array.` : `No array operation is configured, so increments do nothing.`);

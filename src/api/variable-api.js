@@ -37,6 +37,7 @@ import { validateCallerIdentity, resolveCallerRecord } from './identity.js';
 import { normalizeBatchName } from './batch-rules.js';
 import { findPresetEntry } from './preset-api.js';
 import { blankDefinition, TIME_BATCH } from '../core/variable-schema.js';
+import { isImageType, checkImageValue, emptyImageValue } from '../core/image-variables.js';
 import * as calendarEngine from '../core/calendar-engine.js';
 import { getCalendar, toScalar } from '../core/calendar-engine.js';
 import { isVariableNameTaken } from '../core/preset-manager.js';
@@ -93,6 +94,30 @@ function checkedDatetime(def, fnName) {
     }
     def.calendar = calendarId;
     def.defaultValue = scalar;
+    return { ok: true };
+}
+
+// Image variables (image, imageList, imageMap - core/image-variables.js) through the
+// same create/update calls as every other type. `def` is the FULL definition. Rules:
+//   - defaultValue must be a string / an array of strings / an object of strings
+//     (a JSON string is parsed); it is rewritten in that normalized form. The
+//     blank definition's numeric default is replaced by the empty value ('' / [] / {})
+//     when the caller gave none (`hadDefault` false). No URL is looked at or fetched.
+//   - an image map's currentKeyVariable, when given, is a string (a variable name)
+//   - an image or an image map cannot rotate: increment behavior is refused
+// Returns { ok: true } or { ok: false, error }; never throws.
+function checkedImage(def, fnName, hadDefault) {
+    if (!isImageType(def.type)) return { ok: true };
+    if (!hadDefault) def.defaultValue = emptyImageValue(def.type);
+    const checked = checkImageValue(def.type, def.defaultValue);
+    if (!checked.ok) return { ok: false, error: `${fnName}: defaultValue - ${checked.error}` };
+    def.defaultValue = checked.value;
+    if (def.currentKeyVariable !== undefined && typeof def.currentKeyVariable !== 'string') {
+        return { ok: false, error: `${fnName}: currentKeyVariable must be a variable name (a string)` };
+    }
+    if ((def.type === 'image' || def.type === 'imageMap') && def.behaviors?.increment === true) {
+        return { ok: false, error: `${fnName}: an ${def.type} cannot rotate - only an imageList can be incremented` };
+    }
     return { ok: true };
 }
 
@@ -254,6 +279,11 @@ export function createVariable(extensionId, instanceId, def) {
             if (!checked.ok) return null;
             fullDef.batch = checked.batch;
         }
+        const imageCheck = checkedImage(fullDef, 'createVariable', def.defaultValue !== undefined);
+        if (!imageCheck.ok) {
+            console.warn(LOG_PREFIX, imageCheck.error);
+            return null;
+        }
         if (fullDef.type === 'datetime') {
             const datetime = checkedDatetime(fullDef, 'createVariable');
             if (!datetime.ok) {
@@ -368,6 +398,15 @@ export function updateVariable(extensionId, instanceId, ref, patch) {
         }
 
         const newDef = { ...def, ...safePatch };
+
+        // A variable that just BECAME an image type without a new default starts
+        // empty (the old type's default - a number, say - is not a valid one).
+        const becameImage = isImageType(newDef.type) && def.type !== newDef.type;
+        const imageCheck = checkedImage(newDef, 'updateVariable', !becameImage || safePatch.defaultValue !== undefined);
+        if (!imageCheck.ok) {
+            console.warn(LOG_PREFIX, imageCheck.error);
+            return null;
+        }
 
         if (newDef.type === 'datetime') {
             // Same rules as createVariable(), on the merged definition - so a

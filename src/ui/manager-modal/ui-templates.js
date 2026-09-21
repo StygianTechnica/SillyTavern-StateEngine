@@ -6,6 +6,8 @@ import { escapeHtml } from './utils.js';
 import * as variableSchema from './variable-ui-schema.js';
 import { listCalendars } from '../../core/calendar-engine.js';
 import { BUILTIN_CALENDAR_IDS } from '../../core/settings-core.js';
+import { isImageType } from '../../core/image-variables.js';
+import { thumbHtml } from '../image-preview.js';
 
 export function buildPresetRow(presetId, preset, chatPresets, TRIGGER_KEYS, currentChatId) {
     const isActive = chatPresets.includes(presetId);
@@ -143,6 +145,57 @@ function buildArrayItemRow(val, i, itemType, itemEnumValuesArray) {
     `;
 }
 
+// One row of an IMAGE LIST editor: grip (drag to reorder), a safe thumbnail preview,
+// the reference text, move up / move down (reordering without a mouse drag) and
+// remove. Reuses the array editor's row classes so its collect-at-save code
+// (.se-manager-array-item) reads it unchanged.
+export function buildImageListRow(reference, i) {
+    return `
+        <div class="se-manager-array-row se-manager-image-row" data-index="${i}">
+            <span class="se-manager-array-grip"><i class="fa-solid fa-grip-vertical"></i></span>
+            ${thumbHtml(reference, { enlarge: true, extraClass: 'se-image-preview' })}
+            <input class="text_pole se-manager-array-item" value="${escapeHtml(reference)}" placeholder="Image URL, path or id" />
+            <button type="button" class="menu_button se-manager-image-up" title="Move up"><i class="fa-solid fa-arrow-up"></i></button>
+            <button type="button" class="menu_button se-manager-image-down" title="Move down"><i class="fa-solid fa-arrow-down"></i></button>
+            <button type="button" class="menu_button se-manager-array-delete" title="Remove image">
+                <i class="fa-solid fa-trash"></i>
+            </button>
+        </div>
+    `;
+}
+
+// One row of an IMAGE MAP editor: key, reference, a safe thumbnail preview, remove.
+export function buildImageMapRow(key, reference) {
+    return `
+        <div class="se-manager-imagemap-row se-manager-image-row">
+            <input class="text_pole se-manager-imagemap-key" value="${escapeHtml(key)}" placeholder="Key" />
+            <input class="text_pole se-manager-imagemap-value" value="${escapeHtml(reference)}" placeholder="Image URL, path or id" />
+            ${thumbHtml(reference, { enlarge: true, extraClass: 'se-image-preview' })}
+            <button type="button" class="menu_button se-manager-imagemap-delete" title="Remove entry">
+                <i class="fa-solid fa-trash"></i>
+            </button>
+        </div>
+    `;
+}
+
+// An image list's / image map's stored default as the editor rows need it.
+function imageListItems(defaultValue) {
+    let value = defaultValue;
+    if (typeof value === 'string' && value.trim()) {
+        try { value = JSON.parse(value); } catch { value = []; }
+    }
+    return Array.isArray(value) ? value.filter((item) => typeof item === 'string') : [];
+}
+
+function imageMapEntries(defaultValue) {
+    let value = defaultValue;
+    if (typeof value === 'string' && value.trim()) {
+        try { value = JSON.parse(value); } catch { value = {}; }
+    }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+    return Object.entries(value).filter(([, ref]) => typeof ref === 'string');
+}
+
 export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars = listCalendars()) {
     otherVars = Array.isArray(otherVars) ? otherVars : [];
     // enumValuesMultiline carries the live (possibly-unsaved) list-editor rows
@@ -203,6 +256,9 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                 <option value="array" ${d.type === 'array' ? 'selected' : ''}>Array</option>
                 <option value="calculated" ${d.type === 'calculated' ? 'selected' : ''}>Calculated</option>
                 <option value="datetime" ${d.type === 'datetime' ? 'selected' : ''}>Date &amp; time</option>
+                <option value="image" ${d.type === 'image' ? 'selected' : ''}>Image</option>
+                <option value="imageList" ${d.type === 'imageList' ? 'selected' : ''}>Image list</option>
+                <option value="imageMap" ${d.type === 'imageMap' ? 'selected' : ''}>Image map</option>
             </select>
 
             ${d.type === 'datetime' ? `
@@ -227,13 +283,41 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                 <button type="button" class="menu_button se-manager-array-add">
                     <i class="fa-solid fa-plus"></i> Add item
                 </button>
+            ` : d.type === 'imageList' ? `
+                <label class="se-manager-label">Images (in order - the first one is the one shown)</label>
+                <div class="se-manager-array-list se-manager-image-list">
+                    ${imageListItems(d.defaultValue).map((ref, i) => buildImageListRow(ref, i)).join('')}
+                </div>
+                <button type="button" class="menu_button se-manager-array-add">
+                    <i class="fa-solid fa-plus"></i> Add image
+                </button>
+                <div class="se-empty">Only references are stored (URLs, paths, ids or base64 data) - never the image itself. Nothing is fetched or checked.</div>
+            ` : d.type === 'imageMap' ? `
+                <label class="se-manager-label">Images by key</label>
+                <div class="se-manager-imagemap-list">
+                    ${imageMapEntries(d.defaultValue).map(([key, ref]) => buildImageMapRow(key, ref)).join('')}
+                </div>
+                <button type="button" class="menu_button se-manager-imagemap-add">
+                    <i class="fa-solid fa-plus"></i> Add entry
+                </button>
+                <label class="se-manager-label">Current key comes from variable</label>
+                <select class="text_pole se-manager-var-field" data-field="currentKeyVariable">
+                    <option value="">-- none (the tracker shows a placeholder) --</option>
+                    ${otherVars.filter((v) => v.type !== 'imageMap').map((v) => `
+                        <option value="${escapeHtml(v.name)}" ${d.currentKeyVariable === v.name ? 'selected' : ''}>${escapeHtml(v.name)}${v.label ? ` (${escapeHtml(v.label)})` : ''} [${escapeHtml(v.type)}]</option>
+                    `).join('')}
+                    ${d.currentKeyVariable && !otherVars.some((v) => v.name === d.currentKeyVariable)
+                        ? `<option value="${escapeHtml(d.currentKeyVariable)}" selected>${escapeHtml(d.currentKeyVariable)} (not in this preset)</option>` : ''}
+                </select>
+                <div class="se-empty">The tracker shows the image under that variable's current value (a string, an enum, an array's current value or a calculated result, read as text). No matching key: a placeholder - there is no default key. Only references are stored; nothing is fetched or checked.</div>
             ` : d.type === 'calculated' ? `
                 <div class="se-empty">Calculated variables have no manually-set default value - they evaluate automatically.</div>
             ` : `
                 <input class="text_pole se-manager-var-field"
                     data-field="defaultValue"
-                    placeholder="${d.type === 'datetime' ? 'Default date-time as YYYY-MM-DD HH:mm:ss (numeric month), e.g. 1203-08-17 12:00:00' : 'Default value'}"
+                    placeholder="${d.type === 'datetime' ? 'Default date-time as YYYY-MM-DD HH:mm:ss (numeric month), e.g. 1203-08-17 12:00:00' : d.type === 'image' ? 'Image URL, path or id' : 'Default value'}"
                     value="${escapeHtml(d.defaultValue)}" />
+                ${d.type === 'image' ? `<div class="se-image-editor-preview">${thumbHtml(typeof d.defaultValue === 'string' ? d.defaultValue : '', { enlarge: true, extraClass: 'se-image-preview' })}<small>Only a reference is stored (a URL, path, id or base64 data) - never the image itself. Nothing is fetched or checked.</small></div>` : ''}
                 ${d.type === 'datetime' ? `<small class="se-manager-datetime-preview">${escapeHtml(variableSchema.datetimeDefaultPreview(d.calendar, d.defaultValue))}</small>` : ''}
             `}
 
@@ -345,7 +429,9 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
             <!-- Behavior toggles -->
             <div class="se-manager-variable-behaviors">
 
-                ${d.type !== 'calculated' ? `
+                ${isImageType(d.type) ? `
+                <div class="se-empty">Image variables are references for display and extensions: the AI never sets them${d.type === 'imageList' ? ', but an image list can rotate on a schedule (below)' : ''}.</div>
+                ` : d.type !== 'calculated' ? `
                 <!-- Prompted toggle -->
                 <div class="se-manager-toggle-row">
                     <div class="se-row">
@@ -419,6 +505,15 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                         <label>Cycle through enum values</label>
                     ` : ''}
 
+                    ${d.type === 'imageList' ? `
+                        <label>Rotation:</label>
+                        <select class="text_pole se-manager-var-field" data-field="increment.operation">
+                            <option value="" ${!d.increment.operation ? 'selected' : ''}>-- none (no-op) --</option>
+                            <option value="rotateNext" ${d.increment.operation === 'rotateNext' ? 'selected' : ''}>Next image (first goes to the end)</option>
+                            <option value="rotate" ${d.increment.operation === 'rotate' ? 'selected' : ''}>Previous image (last comes to the front)</option>
+                        </select>
+                    ` : ''}
+
                     ${d.type === 'array' ? `
                         <label>Operation:</label>
                         <select class="text_pole se-manager-var-field" data-field="increment.operation">
@@ -451,7 +546,7 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
 
             <!-- Explanation box -->
             <div class="se-manager-variable-explanation">
-                ${variableSchema.describeVariable(d)}
+                ${escapeHtml(variableSchema.describeVariable(d))}
             </div>
 
             <!-- Actions -->

@@ -2,6 +2,7 @@
 
 import { DEFAULT_CALENDAR_ID } from './settings-core.js';
 import { toScalar } from './calendar-engine.js';
+import { checkImageValue, emptyImageValue } from './image-variables.js';
 
 export function genId() {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -45,7 +46,7 @@ export function blankDefinition() {
         scope: 'chat', // chat | global
 
         // Type system
-        type: 'number', // number | string | boolean | enum | array | calculated | datetime
+        type: 'number', // number | string | boolean | enum | array | calculated | datetime | image | imageList | imageMap
         enumValues: [],
 
         // Calculated-variable configuration (only meaningful when
@@ -55,6 +56,12 @@ export function blankDefinition() {
         // docs/TINY EXPRESSION DSL SPECIFICATION.md).
         dependencies: [],
         expression: '',
+
+        // Image map only (type === 'imageMap'): the NAME of the variable whose
+        // current value picks the map's key (any variable that resolves to a string:
+        // string, enum, an array's current value, a calculated result). '' = none, so
+        // the tracker shows a placeholder. See image-variables.js.
+        currentKeyVariable: '',
 
         // Typed-array schema (only meaningful when type === 'array')
         itemType: 'any',    // string | number | boolean | enum | object | any
@@ -132,6 +139,14 @@ export function getDefaultValue(def) {
             // else is 0.
             const scalar = toScalar(def.calendar || DEFAULT_CALENDAR_ID, def.defaultValue);
             return scalar ?? 0;
+        }
+        case 'image':
+        case 'imageList':
+        case 'imageMap': {
+            // '' / [] / {} unless the definition carries a valid default (a JSON
+            // string is accepted for the list and the map, like an array's).
+            const checked = checkImageValue(def.type, def.defaultValue ?? emptyImageValue(def.type));
+            return checked.ok ? checked.value : emptyImageValue(def.type);
         }
         case 'array':
             if (Array.isArray(def.defaultValue)) return [...def.defaultValue];

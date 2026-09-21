@@ -21,6 +21,7 @@ import { LOG_PREFIX, getSettings, persistSettings } from './settings-core.js';
 import { setMacroValue, deleteMacroValue } from './macro-store.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
 import { getDefaultValue } from './variable-schema.js';
+import { isImageType, sanitizeImageValue } from './image-variables.js';
 import { DEFAULT_CALENDAR_ID } from './settings-core.js';
 import { incrementScalar, toScalar } from './calendar-engine.js';
 
@@ -158,6 +159,14 @@ function sanitizeArrayValue(def, rawValue) {
     return items;
 }
 
+// The definition sanitizeArrayValue() and the array operations should read: an
+// image list is an array whose items are strings (no unique/sorted - reordering
+// is the point of a list of images - and no max length unless the definition
+// sets one). Any other definition is returned as is.
+function arrayViewOf(def) {
+    return def?.type === 'imageList' ? { ...def, itemType: 'string', sorted: false } : def;
+}
+
 // Applies one array operation to a copy of currentArray and returns the
 // (unsanitized) result - every caller (applyIncrement below, and
 // prompted-engine.js for LLM-issued operation objects) writes the result
@@ -182,8 +191,12 @@ export function applyArrayOperation(currentArray, operation, value, def) {
             arr.shift();
             return arr;
         case 'rotate':
-            // Move the last element to the front.
+            // Move the last element to the front (for an image list: the previous image).
             if (arr.length > 1) arr.unshift(arr.pop());
+            return arr;
+        case 'rotateNext':
+            // Move the first element to the end (for an image list: the next image).
+            if (arr.length > 1) arr.push(arr.shift());
             return arr;
         case 'clear':
             return [];
@@ -339,9 +352,12 @@ export function setVar(chatId, varName, value, def) {
         // unique, sorted) so the isolated store - the source of truth, spec
         // 1.1 - never holds an unvalidated array, not even transiently
         // before the macro-store mirror below.
-        const storedValue = effectiveDef?.type === 'array'
-            ? sanitizeArrayValue(effectiveDef, value)
-            : value;
+        // An image list is an array of strings and goes through the same
+        // sanitizer as one (see arrayViewOf); an image or an image map is kept to
+        // strings (sanitizeImageValue) - "must be strings", nothing more.
+        const storedValue = effectiveDef?.type === 'array' || effectiveDef?.type === 'imageList'
+            ? sanitizeArrayValue(arrayViewOf(effectiveDef), value)
+            : (isImageType(effectiveDef) ? sanitizeImageValue(effectiveDef.type, value) : value);
 
         state.variables[varName] = {
             value: storedValue,
@@ -379,7 +395,7 @@ export function applyIncrement(chatId, varName, delta, def) {
             // case) - visible verbatim wherever something reads state.variables
             // directly rather than through getMacroValue's array-aware fallback
             // (e.g. the Variable Management tab's JSON preview).
-            state.variables[varName] = { value: def?.type === 'array' ? [] : (def?.type === 'boolean' ? false : (def?.type === 'datetime' ? getDefaultValue(def) : 0)), def: def ?? null };
+            state.variables[varName] = { value: def?.type === 'array' || def?.type === 'imageList' ? [] : (isImageType(def) ? getDefaultValue(def) : def?.type === 'boolean' ? false : (def?.type === 'datetime' ? getDefaultValue(def) : 0)), def: def ?? null };
             entry = state.variables[varName];
         } else if (def) {
             // Keep the stored schema snapshot current. This never sources
@@ -399,7 +415,9 @@ export function applyIncrement(chatId, varName, delta, def) {
             }
             const idx = list.indexOf(entry.value);
             next = idx === -1 ? list[0] : list[(idx + 1) % list.length];
-        } else if (def?.type === 'array') {
+        } else if (def?.type === 'array' || def?.type === 'imageList') {
+            // An image list rotates through the same operations an array does; an
+            // image map never rotates (below), and a single image has nothing to.
             const operation = def.increment?.operation;
             if (!operation) {
                 // No operation configured - do nothing, per spec.
@@ -408,7 +426,11 @@ export function applyIncrement(chatId, varName, delta, def) {
             }
             const currentArr = Array.isArray(entry.value) ? entry.value : [];
             const result = applyArrayOperation(currentArr, operation, def.increment?.operand, def);
-            next = sanitizeArrayValue(def, result);
+            next = sanitizeArrayValue(arrayViewOf(def), result);
+        } else if (def?.type === 'image' || def?.type === 'imageMap') {
+            // No rotation for an image or an image map: leave the value untouched.
+            saveChatState(chatId, state);
+            return;
         } else if (def?.type === 'boolean') {
             // The editor only ever offers "Toggle value on increment" for
             // booleans (ui-templates.js) - no delta/operand field exists for

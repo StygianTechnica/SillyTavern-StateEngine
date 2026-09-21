@@ -13,6 +13,8 @@ import { recalculateAllForChat, recalculateDependents, getCalculatedVariableErro
 import { refreshVariableMacros } from '../../core/macro-registration.js';
 import { BUILTIN_NAMESPACE, DEFAULT_CALENDAR_ID, BUILTIN_CALENDAR_IDS } from '../../core/settings-core.js';
 import { formatIsoScalar, getCalendar, toScalar } from '../../core/calendar-engine.js';
+import { isImageType } from '../../core/image-variables.js';
+import { updateThumb } from '../image-preview.js';
 import {
     blankCalendarEditorValues, editorValuesFromDefinition, definitionFromEditorValues, updatePatchFromDefinition,
 } from './calendar-ui-schema.js';
@@ -351,6 +353,18 @@ export function wireEvents(managerApi, managerState) {
             alert(`Default value "${values.defaultValue}" is not a date-time in calendar "${values.calendar || previousCalendarId(preset, values.id)}". ` + variableSchema.datetimeDefaultPreview(values.calendar || previousCalendarId(preset, values.id), values.defaultValue) + ' (A number of seconds is accepted too.)');
             return;
         }
+
+        // Image map rows the editor could not turn into a map: say why, write nothing.
+        if (values._keylessRow) {
+            alert('Every image map entry needs a key. Fill in the key or remove the row.');
+            return;
+        }
+        if (values._duplicateKey !== undefined) {
+            alert(`The key "${values._duplicateKey}" is used more than once in this image map. Keys must be unique.`);
+            return;
+        }
+        delete values._keylessRow;
+        delete values._duplicateKey;
 
         console.log("VALUES BEFORE SAVE:", values);
 
@@ -864,7 +878,23 @@ export function wireEvents(managerApi, managerState) {
         const values = collectInlineVariableValues($row);
 
         // Update only the type in the working copy
+        // The dropdown already holds the NEW type when this fires, so the type the
+        // editor was drawn for is remembered separately (showInlineVariableEditor).
+        const previousType = $editor.data('rendered-type') ?? values.type;
         values.type = $(this).val();
+
+        // An image type's default (a reference, a list, a map) means nothing to any
+        // other type and vice versa, so it starts blank whenever the type changes to
+        // or from one - and an image is never prompted, and only an image list can
+        // be incremented (rotated).
+        if (isImageType(values.type) || isImageType(previousType)) {
+            if (values.type !== previousType) values.defaultValue = '';
+            values.behaviors = values.behaviors || {};
+            if (isImageType(values.type)) {
+                values.behaviors.prompted = false;
+                if (values.type !== 'imageList') values.behaviors.increment = false;
+            }
+        }
 
         // Re-render the editor with updated working copy
         showInlineVariableEditor(values, $row);
@@ -879,6 +909,8 @@ export function wireEvents(managerApi, managerState) {
 
         // Disable increment for strings
         if (values.type === 'string') {
+            // (an editor with no behavior checkboxes - image, calculated - has no behaviors yet)
+            values.behaviors = values.behaviors || {};
             values.behaviors.increment = false;
         }
 
@@ -972,6 +1004,12 @@ export function wireEvents(managerApi, managerState) {
         const $editor = $row.find('.se-manager-variable-editor-inline');
         const $list = $editor.find('.se-manager-array-list');
 
+        // An image list reuses this list; its rows are blank references with a preview.
+        if ($editor.find('[data-field="type"]').val() === 'imageList') {
+            $list.append(uiTemplates.buildImageListRow('', $list.children().length));
+            return;
+        }
+
         const itemType = $editor.find('[data-field="itemType"]').val() || 'any';
 
         let itemHtml;
@@ -1010,6 +1048,40 @@ export function wireEvents(managerApi, managerState) {
 
     $overlay.on('click', '.se-manager-array-delete', function () {
         $(this).closest('.se-manager-array-row').remove();
+    });
+
+    // ---- Image variables: image list reordering, image map rows, live previews ----
+    // (references only; previews come from image-preview.js, which escapes
+    // everything and loads an image only when a preview is drawn)
+    $overlay.on('click', '.se-manager-image-up', function () {
+        const $row = $(this).closest('.se-manager-array-row');
+        const $prev = $row.prev('.se-manager-array-row');
+        if ($prev.length) $row.insertBefore($prev);
+    });
+
+    $overlay.on('click', '.se-manager-image-down', function () {
+        const $row = $(this).closest('.se-manager-array-row');
+        const $next = $row.next('.se-manager-array-row');
+        if ($next.length) $row.insertAfter($next);
+    });
+
+    $overlay.on('click', '.se-manager-imagemap-add', function () {
+        const $list = $(this).closest('.se-manager-variable-editor-inline').find('.se-manager-imagemap-list');
+        $list.append(uiTemplates.buildImageMapRow('', ''));
+        $list.children().last().find('.se-manager-imagemap-key').trigger('focus');
+    });
+
+    $overlay.on('click', '.se-manager-imagemap-delete', function () {
+        $(this).closest('.se-manager-imagemap-row').remove();
+    });
+
+    // Live thumbnail as the reference is typed.
+    $overlay.on('input', '.se-manager-image-row .se-manager-array-item, .se-manager-imagemap-value', function () {
+        updateThumb($(this).closest('.se-manager-image-row').find('.se-image-thumb')[0], $(this).val(), { enlarge: true });
+    });
+    $overlay.on('input', '[data-field="defaultValue"]', function () {
+        const $preview = $(this).siblings('.se-image-editor-preview').find('.se-image-thumb');
+        if ($preview.length) updateThumb($preview[0], $(this).val(), { enlarge: true });
     });
 
     // Dependency clipboard icon (item 5, 2026-09-09): copies the exact
@@ -1138,7 +1210,7 @@ export function wireEvents(managerApi, managerState) {
 
         const $editor = $row.find('.se-manager-variable-editor-inline');
 
-        $editor.html(uiTemplates.buildInlineVariableEditor(d, canIncrement, otherVars)).data('editing-id', d.id).data('editing-existing', !d._isNew).show();
+        $editor.html(uiTemplates.buildInlineVariableEditor(d, canIncrement, otherVars)).data('editing-id', d.id).data('editing-existing', !d._isNew).data('rendered-type', d.type).show();
 
         // Enable drag-and-drop reordering for the enum, item-enum, and
         // array-default list editors, if present.
@@ -1250,7 +1322,26 @@ export function wireEvents(managerApi, managerState) {
                     items.push({});
                 }
             });
-            values.defaultValue = JSON.stringify(items);
+            // An image list keeps only rows that hold a reference.
+            values.defaultValue = JSON.stringify(values.type === 'imageList' ? items.filter((s) => String(s).trim() !== '') : items);
+        }
+
+        // Image map rows (key + reference) serialize into defaultValue as a JSON
+        // object. Rows with neither a key nor a reference are dropped; a repeated key
+        // is reported (values._duplicateKey / values._keylessRow) for the save handler
+        // to refuse - the first one is kept meanwhile.
+        const $mapList = $editor.find('.se-manager-imagemap-list');
+        if ($mapList.length) {
+            const map = {};
+            $mapList.find('.se-manager-imagemap-row').each(function () {
+                const key = String($(this).find('.se-manager-imagemap-key').val() ?? '').trim();
+                const ref = String($(this).find('.se-manager-imagemap-value').val() ?? '').trim();
+                if (key === '' && ref === '') return;
+                if (key === '') { values._keylessRow = true; return; }
+                if (Object.prototype.hasOwnProperty.call(map, key)) { values._duplicateKey = values._duplicateKey ?? key; return; }
+                map[key] = ref;
+            });
+            values.defaultValue = JSON.stringify(map);
         }
 
         // Calculated-variable dependency checkboxes: only present in the DOM

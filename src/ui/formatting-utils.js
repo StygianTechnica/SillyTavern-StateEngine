@@ -89,6 +89,9 @@ export function typeLabel(type) {
     if (type === 'enum') return 'Choice';
     if (type === 'array') return 'Array';
     if (type === 'calculated') return 'Calculated';
+    if (type === 'image') return 'Image';
+    if (type === 'imageList') return 'Image list';
+    if (type === 'imageMap') return 'Image map';
     return 'Text';
 }
 
@@ -120,5 +123,7 @@ export function formatValueForDisplay(value, def) {
         return `[${value.map(v => typeof v === 'string' ? `"${v}"` : String(v)).join(', ')}]`;
     }
     if (value === '' || value === undefined || value === null) return '—';
+    // An image map (an object of key -> reference) as JSON, not "[object Object]".
+    if (typeof value === 'object') return JSON.stringify(value);
     return String(value);
 }

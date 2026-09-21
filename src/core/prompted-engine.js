@@ -3,6 +3,7 @@
 import { LOG_PREFIX, DEFAULT_CALENDAR_ID, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED_VARIABLE_RULES, getSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
 import { DEFAULT_BATCH, TIME_BATCH, batchOf, getDefaultValue } from './variable-schema.js';
+import { isImageType } from './image-variables.js';
 import { format, resolveInstruction, toScalar } from './calendar-engine.js';
 import { getVar, setVar, applyIncrement, loadChatState } from './chat-state.js';
 import { recalculateDependents } from './calculated-engine.js';
@@ -85,9 +86,14 @@ export async function runPromptedStateUpdate(triggerType) {
             // increment.operation/operand through applyIncrement, exactly
             // like every other incrementable type already works. Arrays
             // never see or produce an operation object themselves.
+            // An image variable's VALUE is never asked of the LLM (image.md rules:
+            // references are for UI and extensions, not narrative logic - the model
+            // would only invent URLs). A prompted INCREMENT on an image list (a
+            // true/false "rotate now?") is still allowed: it is explicit rotation.
             const isPromptedUpdate =
                 def.behaviors?.prompted === true &&
                 def.behaviors?.increment !== true &&
+                !isImageType(def) &&
                 !shouldSkipPromptedRefresh(def);
 
             const isPromptedIncrement =

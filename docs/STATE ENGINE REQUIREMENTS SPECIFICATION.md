@@ -1654,6 +1654,81 @@ installed extension has an update available. Code: src/events/extension-updates.
   the caller's verified namespace, and a namespace name cannot contain an
   underscore, so "state_engine" is not possible.
 
+1.26 Image Variables (2026-09-21)
+
+Three variable types that store REFERENCES to images for UI, display logic and
+extension back ends. Code: src/core/image-variables.js (pure rules),
+src/ui/image-preview.js (safe thumbnails).
+
+- Types and storage: "image" - a string; "imageList" - an ordered array of strings;
+  "imageMap" - an object of string keys to string values. A reference is a URL, an
+  asset path, a resource id or a base64 data URL. No image data is stored and nothing
+  is ever fetched, prefetched or validated: an <img> is created only when a thumbnail
+  is drawn on screen (lazily), and the enlarged hover copy only on hover.
+- Validation (variable-validation.js, checkImageValue): image must be a string;
+  imageList an array of strings; imageMap an object whose values are strings (a JSON
+  string is parsed for the list and the map). A wrong shape is refused - default value
+  used, error reported. What setVar stores (sanitizeImageValue) is kept to strings so
+  one bad item does not wipe a whole list (non-string list items / map values are
+  dropped), exactly as array items are filtered. Defaults are '' / [] / {}.
+- Serialization: all three are plain JSON and round-trip through presets. A blank
+  definition gains currentKeyVariable ('').
+- Not for narrative logic: image variables never appear in World Info conditions
+  (getAvailableVariablesForConditions leaves them out; a stored condition on one is
+  treated as met, with a console warning) and the prompted LLM update never asks for
+  their value, even if marked prompted. A prompted INCREMENT on an image list is still
+  possible (explicit rotation).
+- Computed variables: an image behaves like a string, an image list like an array
+  (.length, .contains(), [n]) and an image map like an object. The expression
+  language gained lookups, target[index] (DSL spec 6.4): an array by whole number,
+  an object by key (a string, or a number/boolean read as its text) it owns, e.g.
+  portraits[currentEmotion]. A missing index or key is an error (the variable keeps its
+  previous value) - never a guessed default. A lookup must produce a number, string or
+  boolean.
+- Rotation: only an imageList rotates (increment behavior). Operations rotateNext
+  (first image to the end) and rotate (last image to the front); the first element is
+  the active image, so rotating changes it. An image and an imageMap cannot be
+  incremented (createVariable/updateVariable and the modal refuse it; applyIncrement
+  leaves the value alone). Nothing rotates unless an extension, a computed variable
+  or the user's configured increment does it.
+- Which image the tracker shows: image - its value; imageList - the first element;
+  imageMap - the image under the CURRENT KEY. The key is the resolved value of the
+  variable named in def.currentKeyVariable, read as a string: a string or enum as is,
+  a number or boolean (a calculated result) as its text, an array's current value
+  (its first element) as its text. A key that is not in the map, no current-key
+  variable, or a variable that is not active -> a neutral placeholder. There is no
+  default or fallback key. Only the map's own keys count.
+- Manager modal: the type dropdown has Image, Image list and Image map. image - a text
+  input with a thumbnail preview; imageList - the array editor with a thumbnail per row,
+  drag-grip plus up/down buttons to reorder, add/remove; imageMap - a key / reference
+  table with a thumbnail per row, add/remove, and a "Current key comes from variable"
+  choice (any other variable in the preset except another image map). A repeated or
+  missing key is refused on save. Image variables have no prompted behavior; only an
+  image list has increment (rotation). Switching the type to or from an image type
+  starts the default blank. No World Info condition editing anywhere in it. (The
+  editor's explanation text is now HTML-escaped - it was not, for any type.)
+- Tracker: a thumbnail of the one active image (hover or focus to enlarge), or the
+  placeholder; never the whole list or map; no editing from the tracker. Values are
+  read from the isolated store, because SillyTavern's variable store would turn a
+  numeric-looking reference ("12345") into a number.
+- Previews are safe: a reference becomes an <img src> only if it is an http(s) URL, a
+  data:image/... URL or a path (contains "/" or ends in an image extension) with no
+  other URL scheme; javascript:, data:text/html, bare resource ids and anything else
+  show the placeholder with the reference as escaped text. Every attribute is
+  escaped, images carry referrerpolicy="no-referrer", and a broken image becomes the
+  placeholder.
+- API: createVariable / updateVariable accept the three types with no new functions.
+  The default must be valid for the type (normalized on store; the blank definition's
+  numeric default is replaced by the empty value when none is given, and a variable that
+  becomes an image type starts empty); currentKeyVariable must be a string; increment
+  behavior on an image or an imageMap is refused. {{name}} for an image map gives its
+  JSON.
+- Decisions to confirm (not specified): the image map's key variable is a NAME field
+  (currentKeyVariable), not a fixed key, because a portrait map is only useful when the
+  key follows a variable such as an emotion; an array key variable uses its FIRST
+  element; a reference with no scheme is treated as a path only if it contains "/" or
+  ends in an image extension.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 

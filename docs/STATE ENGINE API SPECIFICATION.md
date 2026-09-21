@@ -1494,6 +1494,18 @@ State Engine itself posts through this API as the built-in `se` namespace: the
 1.25, `src/events/extension-updates.js`). Its key is `extension-updates`, its
 callback id is `open-extension-manager`, and it is replaced, never duplicated.
 
+**12.8 Image variables through the variable API**
+
+`createVariable` / `updateVariable` accept `type: "image" | "imageList" | "imageMap"`
+(requirements spec 1.26); there are no new functions. `defaultValue` is the way a value
+is supplied: a string, an array of strings, or an object of strings (a JSON string is
+accepted and stored parsed); it is '' / [] / {} when omitted. A wrong shape, a
+non-string `currentKeyVariable`, or `behaviors.increment: true` on an `image` or
+`imageMap` is refused with a warning and `null`, like any invalid definition. An
+`imageList` may be incremented with `increment.operation` `"rotateNext"` or `"rotate"`.
+Nothing is fetched or checked when one is created. Image variables cannot be used in
+World Info conditions and are never asked of the prompted LLM.
+
 **12.6 Verification**
 
 `tests/api/notification-api.test.js` and `tests/notification-ui.test.js`; the full

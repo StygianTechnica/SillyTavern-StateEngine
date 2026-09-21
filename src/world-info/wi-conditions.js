@@ -5,6 +5,7 @@ import { toScalar } from '../core/calendar-engine.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from '../core/preset-manager.js';
 import { getMacroValue } from '../core/macro-store.js';
 import { normalizeWorldName } from './world-names.js';
+import { isImageType } from '../core/image-variables.js';
 
 // World Info conditional display operators
 const CONDITION_OPERATORS = {
@@ -212,6 +213,13 @@ export function evaluateCondition(varName, operator, condValue) {
             return true;
         }
 
+        // Image variables are references for UI and extensions, never narrative
+        // logic: a stored condition on one (hand-edited or old data) is met.
+        if (isImageType(def)) {
+            console.warn(`${LOG_PREFIX} Image variable "${varName}" cannot be used in WI conditions — treating condition as met.`);
+            return true;
+        }
+
         const varValue = getMacroValue(context, def);
         condValue = datetimeConditionValue(def, operator, condValue);
         const operatorFunc = CONDITION_OPERATORS[operator];
@@ -317,6 +325,9 @@ export function getAvailableVariablesForConditions() {
 
             // Arrays of objects cannot be used in World Info conditions.
             if (def.type === 'array' && def.itemType === 'object') continue;
+
+            // Neither can image variables (image, imageList, imageMap).
+            if (isImageType(def)) continue;
 
             const entry = {
                 name: varName, // the key a condition stores (the variable's id)

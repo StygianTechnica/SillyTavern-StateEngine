@@ -3,6 +3,7 @@
 import { getDefaultValue, clampNumber } from './variable-schema.js';
 import { DEFAULT_CALENDAR_ID } from './settings-core.js';
 import { toScalar } from './calendar-engine.js';
+import { checkImageValue } from './image-variables.js';
 
 // Validate a value against type constraints; return {valid: boolean, value: coerced, error?: string}
 export function validateValueStrict(def, raw) {
@@ -116,6 +117,22 @@ export function validateValueStrict(def, raw) {
                 break;
             }
 
+            case 'image':
+            case 'imageList':
+            case 'imageMap': {
+                // A string / an array of strings / an object of strings, exactly
+                // (a JSON string is parsed for the list and the map). Anything else is
+                // refused and the default is used; no URL is looked at or fetched.
+                const checked = checkImageValue(def.type, raw);
+                if (checked.ok) {
+                    coerced = checked.value;
+                } else {
+                    errors.push(checked.error);
+                    coerced = getDefaultValue(def);
+                }
+                break;
+            }
+
             case 'calculated': {
                 // Calculated values are produced deterministically by
                 // expression-dsl.js (always a number, string, or boolean -
@@ -173,6 +190,12 @@ export function coerceValue(def, raw) {
         }
         case 'datetime':
             return toScalar(def.calendar || DEFAULT_CALENDAR_ID, raw) ?? getDefaultValue(def);
+        case 'image':
+        case 'imageList':
+        case 'imageMap': {
+            const checked = checkImageValue(def.type, raw);
+            return checked.ok ? checked.value : getDefaultValue(def);
+        }
         case 'calculated':
             return raw;
         default:

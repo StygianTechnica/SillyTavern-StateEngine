@@ -67,7 +67,7 @@ export function refreshVariableMacros() {
                 () => {
                     try {
                         const value = getMacroValue(SillyTavern.getContext(), def);
-                        return value === null || value === undefined ? '' : String(value);
+                        return value === null || value === undefined ? '' : (typeof value === 'object' && !Array.isArray(value) ? JSON.stringify(value) : String(value));
                     } catch {
                         return '';
                     }

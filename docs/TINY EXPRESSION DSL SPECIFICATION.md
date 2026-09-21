@@ -195,6 +195,21 @@ Rules:
 The referenced variable must be of type array.  
 Otherwise evaluation fails.
 
+### 6.4 Lookups: target[index]
+
+myArray[0]
+portraits[currentEmotion]
+
+- An array is indexed by a whole number within its bounds.
+- An object (an image map) is indexed by a key it owns. The key is treated as a
+  string: a string as is, a number or boolean as its text.
+- A missing index or key fails evaluation (the variable keeps its previous value);
+  there is no default.
+- The result must be a number, string or boolean (there is no array- or
+  object-producing operation), so `parties[0]` on an array of arrays fails.
+- Any other operand fails. Lookups chain with the string and array operations:
+  `portraits[mood].length`, `gallery[0].upper()`.
+
 ---
 
 ## 7. String Operations

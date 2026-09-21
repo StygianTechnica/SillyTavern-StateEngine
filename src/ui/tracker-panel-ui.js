@@ -3,13 +3,15 @@
 import { getSettings, persistSettings, debugLog, DEFAULT_CALENDAR_ID } from '../core/settings-core.js';
 import { getPresetLoadOrder, getAllVariablesFromPresets, getTrackerPresets, addPresetToTracker, removePresetFromTracker } from '../core/preset-manager.js';
 import { getMacroValue } from '../core/macro-store.js';
-import { setVar } from '../core/chat-state.js';
+import { setVar, getVar } from '../core/chat-state.js';
 import { getDefaultValue } from '../core/variable-schema.js';
 import { coerceValue, validateValueStrict } from '../core/variable-validation.js';
 import { format } from '../core/calendar-engine.js';
 import { formatPartial } from '../core/calendar-engine.js';
 import { recalculateDependents, getCalculatedVariableError } from '../core/calculated-engine.js';
 import { formatValueForDisplay } from './formatting-utils.js';
+import { isImageType, activeImageRef } from '../core/image-variables.js';
+import { thumbHtml } from './image-preview.js';
 import { setStatus } from './settings-panel-ui.js';
 
 // A variable is runtime-editable from the tracker when nothing else already
@@ -21,6 +23,7 @@ import { setStatus } from './settings-panel-ui.js';
 function isStaticVariable(def) {
     return !!def
         && def.type !== 'calculated'
+        && !isImageType(def) // shown as a picture only - no editing from the tracker
         && def.behaviors?.prompted !== true
         && def.behaviors?.increment !== true;
 }
@@ -44,6 +47,24 @@ export function resolveTrackerEdit(def, rawValue) {
         return { ok: true, value: result.value };
     }
     return { ok: true, value: coerceValue(def, rawValue) };
+}
+
+// The value an image variable shows, read from the isolated store (the source of
+// truth) - the macro mirror is SillyTavern's variable store, which turns a
+// numeric-looking string ("12345", a resource id) into a number.
+function imageVariableValue(chatId, def, context) {
+    const stored = chatId ? getVar(chatId, def.name) : undefined;
+    return stored ? stored.value : getMacroValue(context, def);
+}
+
+// The current value of the variable an image map names in def.currentKeyVariable
+// (found by name among this chat's active variables), or undefined when it names
+// none / that variable is not active. Any type is fine - the key is the value read
+// as text (image-variables.js resolveKeyString).
+function imageMapKeyValue(def, variables, context) {
+    if (!def.currentKeyVariable) return undefined;
+    const keyDef = Object.values(variables).find((d) => d?.name === def.currentKeyVariable);
+    return keyDef ? getMacroValue(context, keyDef) : undefined;
 }
 
 // A datetime's stored scalar as the tracker shows it, via calendar-engine's
@@ -172,7 +193,7 @@ export function renderTrackerPanel() {
     }
 
     for (const def of defs) {
-        const value = getMacroValue(context, def);
+        const value = isImageType(def) ? imageVariableValue(chatId, def, context) : getMacroValue(context, def);
         const $row = $('<div></div>').addClass('se-tracker-row');
         if (def.showInTracker === false) $row.addClass('se-tracker-row-hidden');
 
@@ -205,9 +226,22 @@ export function renderTrackerPanel() {
             }
         }
 
-        const $value = $('<span></span>')
-            .addClass('se-tracker-value')
-            .text(def.type === 'datetime' ? String(datetimeText(def, value)) : formatValueForDisplay(value, def));
+        // An image variable shows the ONE image currently active - a thumbnail (hover to
+        // enlarge), or a neutral placeholder when there is none: an image's value, an
+        // image list's first element, an image map's entry for the current key (no key,
+        // or a key that is not in the map: placeholder - never a default). The full
+        // list or map is never shown, and nothing here edits it.
+        let $value;
+        if (isImageType(def)) {
+            const ref = activeImageRef(def, value, def.type === 'imageMap' ? imageMapKeyValue(def, variables, context) : undefined);
+            $value = $('<span></span>')
+                .addClass('se-tracker-value se-tracker-image')
+                .html(thumbHtml(ref, { enlarge: true, label: def.type === 'imageMap' ? 'No image for the current key' : 'No image' }));
+        } else {
+            $value = $('<span></span>')
+                .addClass('se-tracker-value')
+                .text(def.type === 'datetime' ? String(datetimeText(def, value)) : formatValueForDisplay(value, def));
+        }
 
         // A fantasy calendar's season/cycle rides under its date, in the
         // value's tooltip and as a small second line (spec 1.22).

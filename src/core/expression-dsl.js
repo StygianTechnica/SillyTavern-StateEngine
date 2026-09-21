@@ -79,7 +79,7 @@ function tokenize(expr) {
             continue;
         }
 
-        if ('+-*/%<>!().,?:'.includes(c)) {
+        if ('+-*/%<>!().,?:[]'.includes(c)) {
             tokens.push({ type: 'op', value: c });
             i++;
             continue;
@@ -211,7 +211,16 @@ class Parser {
 
     parsePostfix() {
         let node = this.parsePrimary();
-        while (this.isOp('.')) {
+        while (this.isOp('.') || this.isOp('[')) {
+            // target[index]: an array element by number, or an object (image map)
+            // entry by string key - see the 'index' case in evaluateNode().
+            if (this.isOp('[')) {
+                this.next();
+                const index = this.parseOr();
+                this.expectOp(']');
+                node = { kind: 'index', target: node, index };
+                continue;
+            }
             this.next();
             const nameTok = this.next();
             if (nameTok.type !== 'ident') throw new Error('Expected a property or method name after "."');
@@ -382,6 +391,35 @@ function evaluateNode(node, deps, values) {
             return node.op === '&&' ? (l && r) : (l || r);
         }
 
+        case 'index': {
+            // portraits[emotion] / gallery[0]. An ARRAY is indexed by a whole number
+            // inside its bounds; an OBJECT (an image map) by a string key it owns.
+            // A missing index or key is an error, never a guessed default - the
+            // variable then retains its previous value (section 11.3). Like every
+            // DSL result, what comes out must be a number, string or boolean.
+            const target = evaluateNode(node.target, deps, values);
+            const index = evaluateNode(node.index, deps, values);
+            let result;
+            if (Array.isArray(target)) {
+                if (typeof index !== 'number' || !Number.isInteger(index)) throw new Error('An array index must be a whole number');
+                if (index < 0 || index >= target.length) throw new Error(`Index ${index} is out of range (length ${target.length})`);
+                result = target[index];
+            } else if (target !== null && typeof target === 'object') {
+                // The key is treated as a string: a string as is, a number or boolean
+                // (an enum's or a calculated variable's result) as its text.
+                if (typeof index !== 'string' && typeof index !== 'number' && typeof index !== 'boolean') throw new Error('An object key must be a string');
+                const key = String(index);
+                if (!Object.prototype.hasOwnProperty.call(target, key)) throw new Error(`No entry named "${key}"`);
+                result = target[key];
+            } else {
+                throw new Error('Only an array or an object can be indexed with [ ]');
+            }
+            if (typeof result !== 'number' && typeof result !== 'string' && typeof result !== 'boolean') {
+                throw new Error('Indexing must produce a number, string or boolean');
+            }
+            return result;
+        }
+
         case 'prop': {
             const target = evaluateNode(node.target, deps, values);
             if (node.prop === 'length') {
@@ -517,6 +555,10 @@ function collectIdentifiers(node, into) {
             return;
         case 'prop':
             collectIdentifiers(node.target, into);
+            return;
+        case 'index':
+            collectIdentifiers(node.target, into);
+            collectIdentifiers(node.index, into);
             return;
         case 'call':
             collectIdentifiers(node.target, into);
