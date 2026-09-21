@@ -1487,6 +1487,13 @@ keep the requested signatures. `registerNotificationCallback` /
 `unregisterNotificationCallback` are not in the list but the callback registry
 needs an entry point ("extensions register callbacks by ID").
 
+**12.7 Built-in user: extension updates**
+
+State Engine itself posts through this API as the built-in `se` namespace: the
+"One or more extensions have updates available." notification (requirements spec
+1.25, `src/events/extension-updates.js`). Its key is `extension-updates`, its
+callback id is `open-extension-manager`, and it is replaced, never duplicated.
+
 **12.6 Verification**
 
 `tests/api/notification-api.test.js` and `tests/notification-ui.test.js`; the full

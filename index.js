@@ -24,6 +24,7 @@ import { initLorebookBindingsUi } from './src/ui/lorebook-bindings-ui.js';
 import { exposeStateEngineWI } from './src/world-info/wi-api.js';
 import { addStateEngineWandUi, watchChatSelection, updateManagerButtonState } from './src/ui/wand-ui.js';
 import { initNotificationUi } from './src/ui/notification-ui.js';
+import { initExtensionUpdateNotifier, checkForExtensionUpdates, onStateEngineUpdate } from './src/events/extension-updates.js';
 import { registerTemplates, loadManagerModalStyles } from './src/ui/ui-entrypoints.js';
 
 import { registerEvents } from './src/events/event-engine.js';
@@ -42,12 +43,15 @@ jQuery(async () => {
         exposeStateEngineWI();
         addStateEngineWandUi();
         initNotificationUi();
+        initExtensionUpdateNotifier();
         registerEvents();
         registerSlashCommand();
         updateManagerButtonState();
         watchChatSelection();
         // Covers the case where APP_READY already fired before we got here.
         runStartupOnce();
+        // Once per page load: is any installed extension outdated? (not awaited)
+        void checkForExtensionUpdates('startup');
 
         // Load manager modal styles
         loadManagerModalStyles();
@@ -57,3 +61,6 @@ jQuery(async () => {
         console.error(LOG_PREFIX, 'failed to initialize', err);
     }
 });
+
+// SillyTavern calls this after it updates State Engine (manifest.json hooks.update).
+export { onStateEngineUpdate };

@@ -1607,6 +1607,47 @@ SPECIFICATION.md Section 12).
 - Deliberately not included yet: visibility toggles, Pretty Panels integration,
   auto-expiry.
 
+1.25 Extension Update Notification (2026-09-21)
+
+State Engine posts ONE notification through the Notification Core (1.24) when any
+installed extension has an update available. Code: src/events/extension-updates.js.
+
+- Data source: the same endpoints the extension manager uses (verified against
+  SillyTavern 1.18): GET /api/extensions/discover for the list and POST
+  /api/extensions/version { extensionName, global } per third-party extension;
+  isUpToDate === false means outdated. The endpoint runs "git fetch origin"
+  itself; State Engine never touches git and never updates anything (no
+  auto-update).
+- The notification: source "se" (State Engine's built-in namespace), severity
+  "warning", message "One or more extensions have updates available.", key
+  "extension-updates" (stored id "se::extension-updates"), callback
+  "open-extension-manager". Several outdated extensions still make one
+  notification. Posting again with the same key REPLACES it, so it never
+  duplicates. Nothing is posted when nothing is outdated, and a leftover one is
+  cleared when a later check finds everything current.
+- A check that cannot answer (list unreadable, every version request failed) leaves
+  the notification exactly as it was. One extension failing to answer is ignored,
+  never counted as outdated. At most 5 version checks run at once (as SillyTavern
+  does); overlapping triggers share one run.
+- Clicking it runs the callback - it clicks SillyTavern's "Manage extensions"
+  button (#extensions_details) - and, once that succeeds, the notification is
+  removed (1.24). The manager then checks every extension itself and shows an
+  Update button on each outdated one. It cannot open a filtered "updates only"
+  view because SillyTavern's manager has none. If the button is missing the
+  notification stays and says why.
+- When it runs (never on a timer, never per message): once per page load
+  (startup, from index.js); when the extension manager draws its list
+  (SillyTavern re-draws it after every extension update and emits no event, so a
+  MutationObserver watches for the popup - a <dialog> containing .extensions_info
+  - and checks after 1 second); and after State Engine itself is updated, through
+  SillyTavern's manifest hook (manifest.json "hooks": { "update":
+  "onStateEngineUpdate" }, exported from index.js; it starts the check without
+  waiting, since hooks get 5 seconds).
+- Deliberate differences from the request: severity is "warning" (the Notification
+  Core's name for it; "warn" is rejected), and the source is "se" - the source is
+  the caller's verified namespace, and a namespace name cannot contain an
+  underscore, so "state_engine" is not possible.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 
