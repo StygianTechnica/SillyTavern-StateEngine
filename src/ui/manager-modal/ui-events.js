@@ -12,7 +12,7 @@ import { resetValueIfTypeChanged, hydrateMacroStoreForChat, seedVariablesForChat
 import { recalculateAllForChat, recalculateDependents, getCalculatedVariableError } from '../../core/calculated-engine.js';
 import { refreshVariableMacros } from '../../core/macro-registration.js';
 import { BUILTIN_NAMESPACE, DEFAULT_CALENDAR_ID, BUILTIN_CALENDAR_IDS } from '../../core/settings-core.js';
-import { formatIsoScalar, getCalendar, toScalar } from '../../core/calendar-engine.js';
+import { formatIsoScalar, getCalendar, toScalar, isValidDelta } from '../../core/calendar-engine.js';
 import { isImageType } from '../../core/image-variables.js';
 import { importImageFiles, firstNonPortableReference } from '../../core/image-import.js';
 import { updateThumb } from '../image-preview.js';
@@ -481,6 +481,31 @@ export function wireEvents(managerApi, managerState) {
             && toScalar(values.calendar || previousCalendarId(preset, values.id), values.defaultValue) === null) {
             alert(`Default value "${values.defaultValue}" is not a date-time in calendar "${values.calendar || previousCalendarId(preset, values.id)}". ` + variableSchema.datetimeDefaultPreview(values.calendar || previousCalendarId(preset, values.id), values.defaultValue) + ' (A number of seconds is accepted too.)');
             return;
+        }
+
+        // Calculated-datetime extension (requirements spec 1.31): this editor
+        // writes preset.variables directly (below) rather than going through
+        // createVariable()/updateVariable(), so checkedDatetime()'s rules
+        // (variable-api.js) never run for it - re-checked here instead, same
+        // reason the calendar/defaultValue checks just above are duplicated
+        // rather than shared. A self-reference is not checked: the dropdown
+        // (otherVars) already excludes the variable being edited, so it can
+        // never be offered.
+        if (values.type === 'datetime' && values.fixedIncrement
+            && !isValidDelta(values.calendar || previousCalendarId(preset, values.id), values.tickUnit)) {
+            alert(`Tick amount "${values.tickUnit}" is not a valid duration for this calendar (e.g. "1h", "1d", "1mo", "1y").`);
+            return;
+        }
+        if (values.type === 'datetime' && values.deltaSource) {
+            const sourceDef = Object.values(preset.variables || {}).find((v) => v.name === values.deltaSource);
+            if (!sourceDef) {
+                alert(`Narrative jump source "${values.deltaSource}" does not exist in this preset.`);
+                return;
+            }
+            if (sourceDef.type !== 'string') {
+                alert(`Narrative jump source "${values.deltaSource}" must be a String variable (it is currently "${sourceDef.type}").`);
+                return;
+            }
         }
 
         // Image map rows the editor could not turn into a map: say why, write nothing.
@@ -959,6 +984,24 @@ export function wireEvents(managerApi, managerState) {
             values.behaviors.prompted = isOn;
             values.behaviors.increment = $('#se-manager-increment-toggle').is(':checked');
 
+            showInlineVariableEditor(values, $row);
+        }, 0);
+    });
+
+    // Calculated-datetime extension (requirements spec 1.31): shows/hides the
+    // tickUnit/accumulate fields, mirroring the prompted/increment toggles
+    // above - immediate .toggle() for visual feedback, then a full re-render
+    // (via showInlineVariableEditor) so tickUnit/deltaSource/accumulate
+    // already typed elsewhere in this same editor session are preserved.
+    $overlay.on('change', '#se-manager-fixedincrement-toggle', function () {
+        const $row = $(this).closest('.se-manager-variable-row');
+        const isOn = $(this).is(':checked');
+
+        $overlay.find('.se-manager-datetime-tick-settings').toggle(isOn);
+
+        setTimeout(() => {
+            const values = collectInlineVariableValues($row);
+            values.fixedIncrement = isOn;
             showInlineVariableEditor(values, $row);
         }, 0);
     });

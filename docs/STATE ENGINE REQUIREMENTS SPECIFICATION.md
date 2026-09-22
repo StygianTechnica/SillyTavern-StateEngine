@@ -2039,16 +2039,46 @@ increment path cannot express - only a fixed, preconfigured delta).
   recalculateDependents() (1.29) at its two write sites, so a deltaSource
   answered by an independent preset run triggers the identical cascade with
   no independent-presets.js changes at all.
-- UI: deferred (this pass is engine/schema/API only, per the request's own
-  phasing) - fixedIncrement/tickUnit/deltaSource/accumulate are configurable
-  today only through createVariable/updateVariable, not the manager modal's
-  inline editor.
-- Tests: tests/calculated-datetime.test.js (37 tests) - validation, ticking
-  (including the accumulate/fixedIncrement truth table), delta consumption
-  (including fan-out and a fantasy calendar), the tick-suppression
-  interaction, cycle-guard behavior (including why a real cycle cannot form),
-  end-to-end through both the main prompted update and an independent
-  preset, and export.
+- UI (2026-09-22, second pass): the datetime editor (manager-modal/
+  ui-templates.js's buildInlineVariableEditor) gained an "Automatic time
+  flow" section, shown only for type === 'datetime', separate from the
+  legacy "Incremented Behavior" toggle further down (the two are
+  independent mechanisms - both may be used together, so they are not
+  folded into one section): a fixedIncrement checkbox ("Advance
+  automatically on every message"), a tickUnit text field and an accumulate
+  checkbox ("Automatic advancing is turned ON") shown only while
+  fixedIncrement is checked (live show/hide, mirroring the existing
+  prompted/increment toggle pattern), and a deltaSource dropdown
+  ("Narrative jump source") offering only this preset's other type: 'string'
+  variables - never the variable being edited itself (otherVars already
+  excludes it, the same guarantee that made the engine-layer self-reference
+  check dead code in 1.31's first pass).
+- This editor writes preset.variables directly rather than through
+  createVariable()/updateVariable(), so variable-api.js's checkedDatetime()
+  validation never runs for it (same reason the calendar/defaultValue checks
+  already duplicate that module's rules locally) - re-implemented here too:
+  an invalid tickUnit, or a deltaSource that no longer exists or is not a
+  String variable, is refused with an alert and nothing is written.
+- Bug found and fixed while building this (not assumed - caught by mutation
+  testing): the "flag a stale/invalid stored deltaSource" fallback option
+  checked only whether a variable of that NAME still existed, not whether it
+  was still type: 'string' - a deltaSource pointing at a variable that still
+  exists but was retyped away from String rendered as blank (matching no
+  `<option>` at all) instead of the flagged fallback, so editing and
+  re-saving without touching the dropdown would have silently resubmitted
+  the invalid value with no visible warning in the UI (the save-time alert
+  still caught it, but only after the fact). Fixed by checking existence AND
+  type together.
+- Tests: tests/calculated-datetime.test.js (37 tests, Phase 1: engine/schema/
+  API - validation, ticking, delta consumption, tick-suppression, cycle
+  guard, end-to-end, export) and tests/calculated-datetime-ui.test.js (17
+  tests, Phase 2: template rendering and defaults, normalizeCollectedValues
+  coercion, the live show/hide toggle, the dropdown's type filter and stale-
+  option fallback (including the bug above), save-time validation for all
+  three failure modes, self-reference exclusion, and editing/updating an
+  already-configured datetime variable end to end through the real manager
+  modal). Every new rule in both passes was verified by deliberately
+  breaking it and confirming the suite catches the break (mutation testing).
 
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:

@@ -1838,16 +1838,30 @@ result. The one-shot jump/tick-suppression flag (requirements spec 1.31) is
 purely internal to `calculated-engine.js`/`deterministic-engine.js` and is
 not part of the public API.
 
-**14.4 Verification**
+**14.4 Manager modal UI (2026-09-22, second pass)**
 
-`tests/calculated-datetime.test.js` (37 tests): schema defaults, every
-validation rule, the fixedIncrement/accumulate truth table, deltaSource
+Not a new `stateEngine.*` function - 14.3 still holds. The datetime editor
+in the manager modal (a caller of `createVariable`/`updateVariable` for
+every other type, but one that writes `preset.variables` directly for its
+own inline save, like the rest of that editor) gained fixedIncrement/
+tickUnit/deltaSource/accumulate fields and re-implements checkedDatetime()'s
+validation locally for them, for the same reason it already duplicates the
+calendar/defaultValue checks. Full UI details, including a rendering bug
+found and fixed by mutation testing (a stale/wrong-type stored `deltaSource`
+was not always flagged), are in requirements spec 1.31.
+
+**14.5 Verification**
+
+`tests/calculated-datetime.test.js` (37 tests, Phase 1): schema defaults,
+every validation rule, the fixedIncrement/accumulate truth table, deltaSource
 consumption (including fan-out to multiple datetime variables and a fantasy
 calendar), the jump-suppresses-the-next-tick interaction, the recursion/
 cycle guard (including why a real infinite cycle cannot form through this
 mechanism), end-to-end through both the main prompted update and
-`runIndependentPreset`, and export. Every rule was verified by deliberately
-breaking it and confirming the suite catches the break (mutation testing);
-one deliberately-added "cannot reference itself" check was found to be
-dead code by this process (already caught by the existence/type checks on
-both the create and update paths) and removed rather than kept untested.
+`runIndependentPreset`, and export. `tests/calculated-datetime-ui.test.js`
+(17 tests, Phase 2): the manager-modal editor above. Every rule in both was
+verified by deliberately breaking it and confirming the suite catches the
+break (mutation testing); one deliberately-added "cannot reference itself"
+check was found to be dead code by this process (already caught by the
+existence/type checks on both the create and update paths) and removed
+rather than kept untested.

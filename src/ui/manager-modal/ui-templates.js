@@ -272,6 +272,41 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                 ${calendarMissing ? `<div class="se-cal-missing-warning" style="color: #e57373;">
                     This variable uses the calendar "${escapeHtml(d.calendar)}", which no longer exists. Pick another calendar before saving.
                 </div>` : ''}
+
+                <!-- Calculated-datetime extension (requirements spec 1.31): fixedIncrement/
+                     tickUnit/deltaSource/accumulate. A SEPARATE, independent mechanism from
+                     the legacy "Incremented Behavior" toggle further down - both may be used
+                     together, so this is its own section rather than folded into that one. -->
+                <div class="se-manager-datetime-auto-section">
+                    <label class="se-manager-label">Automatic time flow (optional)</label>
+
+                    <label class="checkbox_label">
+                        <input id="se-manager-fixedincrement-toggle" type="checkbox" class="se-manager-var-field" data-field="fixedIncrement" ${d.fixedIncrement ? 'checked' : ''} />
+                        <span>Advance automatically on every message</span>
+                    </label>
+
+                    <div class="se-manager-datetime-tick-settings" style="display: ${d.fixedIncrement ? 'block' : 'none'};">
+                        <label>Amount per message (e.g. 1h, 1d, 1mo, 1y):</label>
+                        <input class="text_pole se-manager-var-field" data-field="tickUnit" value="${escapeHtml(d.tickUnit || '')}" />
+
+                        <label class="checkbox_label">
+                            <input type="checkbox" class="se-manager-var-field" data-field="accumulate" ${d.accumulate ? 'checked' : ''} />
+                            <span>Automatic advancing is turned ON</span>
+                        </label>
+                        <div class="se-empty">Both switches above must be on for this to actually tick - this lets the amount be set up without turning it on yet.</div>
+                    </div>
+
+                    <label class="se-manager-label">Narrative jump source (optional)</label>
+                    <select class="text_pole se-manager-var-field" data-field="deltaSource">
+                        <option value="">-- none --</option>
+                        ${otherVars.filter((v) => v.type === 'string').map((v) => `
+                            <option value="${escapeHtml(v.name)}" ${d.deltaSource === v.name ? 'selected' : ''}>${escapeHtml(v.name)}${v.label ? ` (${escapeHtml(v.label)})` : ''}</option>
+                        `).join('')}
+                        ${d.deltaSource && !otherVars.some((v) => v.name === d.deltaSource && v.type === 'string')
+                            ? `<option value="${escapeHtml(d.deltaSource)}" selected>${escapeHtml(d.deltaSource)} (not a String variable in this preset)</option>` : ''}
+                    </select>
+                    <div class="se-empty">When the chosen String variable's value changes to something other than blank (e.g. a prompted update writes "3 days" or "advance 1 hour" into it), that text is applied to this date/time and the source is cleared. Independent of the ticking above - both can be used together. Only String variables in this preset are offered.</div>
+                </div>
             ` : ''}
 
             ${d.type === 'array' ? `

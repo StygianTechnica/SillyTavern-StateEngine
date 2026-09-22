@@ -618,6 +618,26 @@
     margin-top: 10px;
 }
 
+/* Calculated-datetime extension (requirements spec 1.31) */
+.se-manager-datetime-auto-section {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--SmartThemeBorderColor, #444);
+}
+
+.se-manager-datetime-auto-section label,
+.se-manager-datetime-tick-settings label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 4px 0;
+}
+
+.se-manager-datetime-tick-settings {
+    margin-top: 6px;
+    margin-left: 4px;
+}
+
 /* Explanation box */
 .se-manager-variable-explanation {
     margin-top: 12px;
