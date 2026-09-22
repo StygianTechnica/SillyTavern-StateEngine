@@ -8,7 +8,7 @@ import { format, resolveInstruction, toScalar } from './calendar-engine.js';
 import { getVar, setVar, applyIncrement, loadChatState } from './chat-state.js';
 import { recalculateDependents } from './calculated-engine.js';
 import { callBackgroundLLM } from './background-llm.js';
-import { extractJsonObject, stripHtml, describeConstraint } from '../ui/formatting-utils.js';
+import { extractJsonObject, describeConstraint, buildRecentMessagesSection } from '../ui/formatting-utils.js';
 import { setStatus } from '../ui/settings-panel-ui.js';
 import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
 
@@ -149,18 +149,16 @@ export async function runPromptedStateUpdate(triggerType) {
             const count = Math.min(historyCap, userRequestedCount);
             const recent = context.chat.slice(-count);
             const maxMessageLength = Number(settings.maxMessageLength) || 0;
-            const transcript = recent
-                .map((m) => {
-                    const speaker = m.is_user ? (context.name1 || 'User') : (m.name || context.name2 || 'Character');
-                    let text = stripHtml(m.mes);
-                    // Trims only this local prompt copy - m.mes (the stored message) is never touched.
-                    if (maxMessageLength > 0 && text.length > maxMessageLength) {
-                        text = text.slice(0, maxMessageLength) + '…';
-                    }
-                    return `${speaker}: ${text}`;
-                })
-                .filter((line) => line.trim().length > 0)
-                .join('\n');
+            // formatting-utils.js's buildRecentMessagesSection() - shared with
+            // independent-presets.js's identical need - explicitly labels the
+            // actual last chat message "Most recent roleplay message",
+            // distinct from "Recent conversation" (everything before it): see
+            // its own header comment for why (a variable's own prompted
+            // instructions saying "look at the latest message" had no
+            // reliable term to mean this rather than the synthetic "Output
+            // the JSON object now" turn that comes after the whole system
+            // prompt).
+            const contextSection = buildRecentMessagesSection(recent, { name1: context.name1, name2: context.name2, maxMessageLength });
 
             const updateVarLines = updateVars
                 .map((def) => {
@@ -189,7 +187,7 @@ export async function runPromptedStateUpdate(triggerType) {
                 settings.promptedHeader || DEFAULT_PROMPTED_HEADER,
                 settings.promptedRules || DEFAULT_UNIFIED_VARIABLE_RULES,
                 '',
-                transcript ? `Recent conversation:\n${transcript}` : 'No conversation yet.',
+                contextSection,
             ];
 
             if (updateVarLines) {

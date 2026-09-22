@@ -109,7 +109,14 @@ let renderedForChatId = null;
 // toggles, the variable list, the stored-variable list). The Variables tab
 // keeps the preset that is selected in its dropdown.
 function renderChatDependentTabs() {
-    const selected = $('#se-manager-preset-selector').val() || managerCurrentPresetId;
+    // Reads the combobox's own data-selected-id (stamped by ui-render.js on
+    // every render, updated whenever a row is picked - ui-events.js's click
+    // handler updates a SEPARATE managerState.currentPresetId this module
+    // never sees directly) rather than this module's own managerCurrentPresetId,
+    // which would otherwise still be whatever buildManagerModal() first set.
+    // Same bridge role the old <select>'s own .val() used to serve before
+    // it became a searchable combobox.
+    const selected = $('#se-manager-preset-combobox-input').attr('data-selected-id') || managerCurrentPresetId;
     uiRender.renderPresetsTab(managerApi, selected, managerCurrentPresetsSubtab);
     managerCurrentPresetId = uiRender.renderVariablesTab(managerApi, selected);
     uiRender.renderWorldInfoTab(managerApi);

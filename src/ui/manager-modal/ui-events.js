@@ -349,9 +349,14 @@ export function wireEvents(managerApi, managerState) {
         }
     });
 
-    // Variables tab
-    $overlay.on('change', '#se-manager-preset-selector', function () {
-        const presetId = $(this).val();
+    // Variables tab: picking a row from the searchable preset dropdown
+    // (ui-render.js wires everything else about it - opening, live filter,
+    // keyboard nav, closing). A full re-render naturally closes the list
+    // (it rebuilds the combobox fresh, hidden by default) and updates the
+    // input to show the newly selected preset's name - no explicit close
+    // call needed here.
+    $overlay.on('click', '.se-manager-preset-combobox-row', function () {
+        const presetId = $(this).attr('data-preset-id');
         managerState.currentPresetId = presetId;
         managerState.currentPresetId = uiRender.renderVariablesTab(managerApi, managerState.currentPresetId);
     });

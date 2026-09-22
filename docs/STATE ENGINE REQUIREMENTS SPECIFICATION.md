@@ -1278,6 +1278,36 @@ lookalikes" - all seven lookalikes, date-only and date+time, the incidental
 minus-sign benefit, and that parseDateTime itself is unaffected. Verified
 by mutation testing (removing the normalization call) before calling it done.
 
+BUG FIX (2026-09-22): a second real report, same shape as the one above -
+a deltaSource string variable (1.31) prompted with natural phrasing like
+"One Month" or "one day" never advanced the datetime it targeted, at all.
+Root-caused by reproducing the exact reported input through the real
+resolveInstruction()/applyDatetimeDeltaTriggers() path, not assumed:
+DELTA_TOKEN (calendar-engine.js), the low-level duration-string tokenizer
+every calendar delta already goes through, only ever accepted a literal
+digit sequence (`\d+`) as an amount - a spelled-out number is letters, so
+it never matched, and the delta silently failed to parse (console.warn'd
+and discarded - both the datetime value and the source left untouched,
+exactly like an unparseable delta always has) with no visible reason.
+Fixed in parseDeltaFor() - normalizing spelled-out cardinal numbers (one
+through nineteen, the tens twenty/thirty/.../ninety, simple compounds like
+"twenty-five" or "twenty five", and "a"/"an" as 1) to digits before
+DELTA_TOKEN ever runs, the same "normalize before the strict parser" shape
+as the dash fix above, at the one root every duration-string caller
+(deltaSource jumps, a legacy increment.delta "Advance by", independent-
+preset interval/delay/repeat schedule values - 1.32) already shares.
+Compounds are normalized before their own standalone words, so "twenty"
+is never replaced out from under its own "-five" first; "a"/"an" only
+ever match as complete words, so "and" (the delta list's own separator,
+"1y, 2mo and 3d") and any longer word merely containing "a"/"an" (e.g.
+"advance" itself) are never touched. Test: tests/datetime.test.js's
+"accepts spelled-out cardinal numbers" (and two related tests confirming
+"and"/"advance" survive, and that real gibberish is still rejected) plus
+an end-to-end reproduction of the exact reported phrasing in
+tests/calculated-datetime.test.js. Verified by mutation testing (removing
+the normalization call, and reordering compound-vs-standalone matching,
+and loosening the a/an word-boundary) before calling it done.
+
 1.21.5 Calendar Formatting (2026-09-18)
 
 - Datetime variables store scalar seconds. That does not change.
@@ -2282,6 +2312,138 @@ SPECIFICATION.md Section 15 for the full design.
   its test, which had picked an absolute-date example insensitive to the
   mutation - fixed by choosing a relative-duration example instead, not by
   weakening the mutation.
+
+1.33 Manager Modal: Variables Tab Preset Picker (2026-09-22)
+
+The Variables tab's preset dropdown had no ordering (raw Object.keys() =
+creation order) and no way to find one once there were more than a
+handful. First pass: alphabetic sort + a separate text box that filtered a
+plain `<select>`'s `<option>` list. Reported as not what was wanted - a
+plain select can only jump to an option by its first letter, not be typed
+into; the request was "open the dropdown and type a few characters to
+limit the options," i.e. an actual searchable combobox. Rebuilt as one
+(src/ui/manager-modal/ui-templates.js/ui-render.js/ui-events.js) - no
+external UI library is loaded anywhere in this codebase, so hand-rolled
+like everything else in the manager modal:
+
+- A text `<input>` (`#se-manager-preset-combobox-input`) shows the
+  currently selected preset's NAME (never its id). Focus/click selects the
+  text (browser-address-bar style - typing immediately replaces it) and
+  opens a row list showing every preset, unfiltered; typing filters the
+  list live, in place (no re-render, same technique
+  filterAndSortVariables() already used for the variable list); Escape,
+  or a mousedown outside the combobox, closes the list and reverts the
+  input to the actually-selected preset's name (a half-typed, unpicked
+  search would otherwise no longer match what the variable list below is
+  showing). ArrowUp/ArrowDown move a highlight among the currently visible
+  rows; Enter picks the highlighted row, or the first visible one if
+  nothing is highlighted.
+- Picking a row (click or Enter->click) is wired in ui-events.js, since it
+  needs managerState to actually switch the active preset - everything
+  else (open/filter/keyboard-nav/close) is self-contained DOM manipulation
+  in ui-render.js, needing no shared state.
+- Real regression found and fixed while rewriting the tests for this (not
+  assumed - the full suite catches it): manager-modal.js's
+  renderChatDependentTabs() had its own, SEPARATE way of asking "which
+  preset is selected right now" - reading the old `<select>` element's
+  `.val()` directly, as a bridge to a DIFFERENT state variable
+  (managerState.currentPresetId, only visible to ui-events.js) than this
+  module's own managerCurrentPresetId, which the click handler never
+  touched. Removing the `<select>` silently broke that bridge - the
+  preset selected via the combobox would revert to whatever was first
+  shown the moment a chat change (or reopening the modal) triggered a
+  redraw. Fixed by stamping the actually-selected preset's id as
+  data-selected-id on the combobox input on every render (ui-templates.js/
+  ui-render.js) and having renderChatDependentTabs() read that instead -
+  same bridge role the old select's own .val() used to serve, just moved
+  to the new element.
+- Two jsdom-only bugs surfaced while writing the tests, both root-caused
+  by reproducing them rather than assumed: jQuery's `:visible` pseudo-
+  selector (used to find which rows the keyboard nav should move among,
+  and which row Enter should pick) depends on real layout - jsdom never
+  computes it, so it silently matched nothing at all, breaking arrow-key
+  navigation and Enter. Replaced with a direct `style.display !== 'none'`
+  check, which is both what was actually meant (rows are only ever
+  toggled that way) and layout-independent. Separately, `scrollIntoView`
+  does not exist in jsdom at all - guarded with `?.` rather than assumed
+  present, since real embedding contexts could plausibly lack it too.
+- Tests: tests/variables-tab-preset-picker.test.js (16 tests, fully
+  rewritten for the combobox - ordering, opening/filtering, picking a row
+  by click or keyboard, and closing without picking) and
+  tests/manager-modal-chat.test.js's existing chat-follows test, updated
+  to drive the combobox instead of a `<select>` (this is the test that
+  caught the data-selected-id regression above). Every behavior was
+  verified by deliberately breaking it and confirming the suite catches
+  the break (mutation testing), including the regression fix itself.
+
+1.34 "Most Recent Roleplay Message" Labeling (2026-09-22)
+
+Reported: a datetime variable's deltaSource (1.31) prompted with natural
+phrasing like "One Month"/"one day" never advanced anything at all - a
+SEPARATE, genuine bug (see 1.21's BUG FIX notes for that one: DELTA_TOKEN,
+calendar-engine.js, never accepted spelled-out numbers, only digits - fixed
+independently of this entry). While reproducing it, a second, unrelated
+problem surfaced: the state-tracking LLM call's `messages` array
+(prompted-engine.js's runPromptedStateUpdate()/independent-presets.js's
+runIndependentPresetInternal()) always ends with a SEPARATE, synthetic
+instruction turn (`{ role: 'user', content: 'Output the JSON object
+now...' }`) appended AFTER the whole system prompt. A variable's own
+prompted instructions naturally say things like "only evaluate the latest
+message" - with no explicit, consistently-named field for "the latest
+message" anywhere in the prompt, the model has no reliable way to know
+that means the actual last roleplay line buried in the "Recent
+conversation" transcript, rather than that trailing wrapper turn, which
+genuinely is the literal last message in the API call.
+
+- Fix: the actual last chat message is now explicitly, separately labeled
+  "Most recent roleplay message" in the context section, distinct from
+  "Recent conversation" (everything before it) - not just folded into one
+  undifferentiated transcript block. `DEFAULT_PROMPTED_HEADER`
+  (settings-core.js) gained two lines establishing the term: that the
+  model will be given a "Most recent roleplay message," and that a
+  variable's own instructions referring to "the latest message" mean that
+  field specifically, never the trailing JSON-request instruction. A user
+  who has already customized settings.promptedHeader keeps their own text
+  unchanged, as any override always has - this only updates the built-in
+  default.
+- Shared, not duplicated: `formatting-utils.js`'s new
+  `buildRecentMessagesSection()` is used by BOTH prompted-engine.js and
+  independent-presets.js, replacing each file's own near-identical inline
+  transcript-building block. independent-presets.js's own header comment
+  documents this as the one deliberate exception to that module's
+  "duplicate rather than extract from prompted-engine.js" rule (1.29) - a
+  pure, read-only piece of prompt TEXT assembly is not the write/
+  classification logic that rule protects, and keeping it duplicated would
+  have meant this exact fix drifting apart between the two call sites
+  instead of being fixed, and tested, once.
+- A genuine, separate bug found and fixed while extracting this (not
+  assumed - caught by this function's own tests): the ORIGINAL inline
+  logic filtered "blank" messages by checking the trimmed length of the
+  ALREADY-PREFIXED line ("Speaker: ") - which always has non-zero length
+  even when the message text itself is empty (an image-only message, a
+  blank system/OOC entry, HTML that strips to nothing), so a blank message
+  was never actually filtered out at all; it just became a bare "Speaker:
+  " line inside the transcript. Harmless before this feature (a stray
+  blank line sat unlabeled in the middle of "Recent conversation"), but
+  would have actively mislabeled a blank trailing message as the "Most
+  recent roleplay message" here. Fixed by checking the message's own
+  stripped text, before the speaker prefix is added.
+- Result: "Recent conversation" only appears when there is real history
+  before the last message (never an empty section); "Most recent roleplay
+  message" always appears whenever there is at least one real message; a
+  chat with nothing real at all (or only blank/whitespace messages) still
+  says "No conversation yet." exactly as before.
+- Tests: tests/formatting-utils.test.js (11 tests - the function's own unit
+  coverage: empty/blank input, the one-message-only case, multi-message
+  splitting, which message counts as "most recent" regardless of who sent
+  it, the blank-trailing-message fix, HTML stripping, truncation without
+  mutating the stored message, and speaker-name fallbacks) plus integration
+  tests in tests/datetime.test.js (the main prompted update) and
+  tests/api/independent-presets.test.js (independent presets) confirming
+  the label actually appears in the real system prompt, and that the
+  literal last API message is a different, synthetic turn entirely. Every
+  rule was verified by deliberately breaking it and confirming the suite
+  catches the break (mutation testing).
 
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:

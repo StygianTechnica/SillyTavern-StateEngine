@@ -297,6 +297,18 @@ describe('1.29 independent context: extension-provided / chat-history / explicit
         expect(prompt).not.toContain('Independent context:');
     });
 
+    // Shared with prompted-engine.js's identical fix (a real report,
+    // 2026-09-22 - see formatting-utils.js's buildRecentMessagesSection).
+    it('mode B: the last chat message is explicitly labeled "Most recent roleplay message", not just folded into the transcript', async () => {
+        create();
+        promptedOn('Indy', 'mood');
+        callBackgroundLLM.mockResolvedValue('{"se__mood":"tense"}');
+        await runIndy();
+        const prompt = callBackgroundLLM.mock.calls[0][2][0].content;
+        expect(prompt).toContain('Recent conversation:\nUser: hello there');
+        expect(prompt).toContain('Most recent roleplay message:\nBot: hi');
+    });
+
     it('mode B still requires the chat to exist - unlike A/C, it depends on it', async () => {
         create();
         promptedOn('Indy', 'mood');

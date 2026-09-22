@@ -7,6 +7,76 @@ export function stripHtml(str) {
     return String(str ?? '').replace(/<[^>]*>/g, '').trim();
 }
 
+// Turns a slice of the chat array into the state-tracking prompt's context
+// section, with the actual LAST chat message explicitly, separately labeled
+// "Most recent roleplay message" - not just folded into the "Recent
+// conversation" block along with everything else.
+//
+// Why this exists (a real report, 2026-09-22): the messages array both
+// prompted-engine.js's runPromptedStateUpdate() and independent-presets.js's
+// runIndependentPresetInternal() send to the background LLM ends with a
+// SEPARATE, synthetic instruction turn ({ role: 'user', content: 'Output
+// the JSON object now...' }) appended AFTER the system prompt (see either
+// file's own `messages` array). That wrapper is genuinely the literal last
+// message in the API call. A user writing a variable's own prompted
+// instructions naturally says things like "only evaluate the latest
+// message" - with no explicit field named "the latest message" anywhere in
+// the prompt, the model has no reliable way to know that means the actual
+// last ROLEPLAY line buried inside the "Recent conversation" transcript,
+// not the wrapper instruction that comes after the whole system prompt.
+// Giving that line its own explicit, consistently-named heading gives every
+// preset's prompted instructions a stable term to reference.
+//
+// `recentMessages` is already sliced to whatever history-length limit the
+// caller computed (contextMessageCount / maxPromptHistoryMessages, or an
+// independent preset's own historyLimit override - both callers already do
+// this themselves, unchanged, before calling this). Returns a single ready-
+// to-embed string:
+//   - nothing at all (or only blank/whitespace messages) -> 'No conversation yet.'
+//   - one real message and nothing before it -> just the "Most recent
+//     roleplay message:" section (no separate "Recent conversation:" for an
+//     empty history)
+//   - otherwise -> "Recent conversation:" (everything except the last
+//     message) followed by "Most recent roleplay message:" (the last one)
+export function buildRecentMessagesSection(recentMessages, { name1, name2, maxMessageLength = 0 } = {}) {
+    const lines = (recentMessages || [])
+        .map((m) => {
+            const speaker = m.is_user ? (name1 || 'User') : (m.name || name2 || 'Character');
+            const strippedText = stripHtml(m.mes);
+            // A message that is blank after HTML-stripping (an image-only
+            // message, a blank system/OOC entry, ...) contributes nothing -
+            // checked on the RAW text, before the speaker prefix is added,
+            // so it is dropped entirely rather than surviving as a bare
+            // "Speaker: " line. Caught by this function's own tests, not
+            // assumed - the ORIGINAL inline version of this logic (before
+            // being extracted here) filtered the already-prefixed line
+            // instead, which a trimmed "Speaker: " line always has non-zero
+            // length even with nothing after the colon, so it never actually
+            // filtered a blank message out. That mattered less before this
+            // feature - a stray blank line just sat unlabeled in "Recent
+            // conversation" - but would have let a blank trailing message
+            // be mislabeled as the "Most recent roleplay message" here.
+            if (!strippedText.trim()) return null;
+            let text = strippedText;
+            // Trims only this local prompt copy - m.mes (the stored message) is never touched.
+            if (maxMessageLength > 0 && text.length > maxMessageLength) {
+                text = text.slice(0, maxMessageLength) + '…';
+            }
+            return `${speaker}: ${text}`;
+        })
+        .filter((line) => line !== null);
+
+    if (lines.length === 0) return 'No conversation yet.';
+
+    const mostRecent = lines[lines.length - 1];
+    const history = lines.slice(0, -1);
+
+    const parts = [];
+    if (history.length > 0) parts.push(`Recent conversation:\n${history.join('\n')}`);
+    parts.push(`Most recent roleplay message:\n${mostRecent}`);
+    return parts.join('\n\n');
+}
+
 export function extractJsonObject(text) {
     if (!text) return null;
     let s = String(text).trim();

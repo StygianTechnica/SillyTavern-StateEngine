@@ -425,6 +425,52 @@ describe('datetime variables', () => {
                 expect(isValidDelta('gregorian', 'banana')).toBe(false);
                 expect(isValidDelta('nope', '1h')).toBe(false);
             });
+
+            // A real report (2026-09-22): a deltaSource string variable
+            // (requirements spec 1.31) prompted with natural phrasing like
+            // "One Month" or "one day" never advanced the datetime at all -
+            // DELTA_TOKEN's amount group is `\d+`, which a spelled-out
+            // number never matches, so the delta silently failed to parse
+            // (console.warn'd and discarded - both the datetime value and
+            // the source left untouched) with no visible reason. Root-
+            // caused by reproducing the exact reported input through the
+            // real resolveInstruction()/applyDatetimeDeltaTriggers() path,
+            // not assumed. Fixed the same way the Unicode-dash-lookalike
+            // report was: normalized before the strict token parser ever
+            // runs, in parseDeltaFor() (calendar-engine.js) - the one root
+            // every duration-string caller already funnels through
+            // (deltaSource jumps, a legacy increment.delta "Advance by",
+            // independent-preset interval/delay/repeat schedule values).
+            it('accepts spelled-out cardinal numbers ("one month", "a day", "twenty-five days"), case-insensitively', () => {
+                expect(incrementScalar('gregorian', 0, 'one month')).toBe(incrementScalar('gregorian', 0, '1mo'));
+                expect(incrementScalar('gregorian', 0, 'One Day')).toBe(86400);
+                expect(incrementScalar('gregorian', 0, 'a day')).toBe(86400);
+                expect(incrementScalar('gregorian', 0, 'an hour')).toBe(3600);
+                expect(incrementScalar('gregorian', 0, 'twenty-five days')).toBe(25 * 86400);
+                expect(incrementScalar('gregorian', 0, 'twenty five days')).toBe(25 * 86400); // no hyphen, same result
+                expect(incrementScalar('gregorian', 0, 'thirty days')).toBe(30 * 86400);
+                expect(incrementScalar('gregorian', 0, 'two years, three months and one day'))
+                    .toBe(incrementScalar('gregorian', 0, '2y, 3mo and 1d'));
+            });
+
+            it('the deltaSource path (resolveInstruction with the "advance " fallback) resolves the exact reported phrasing', () => {
+                const now = ts(2026, 9, 18, 12);
+                expect(resolveInstruction('gregorian', now, 'advance One Month')).toBe(incrementScalar('gregorian', now, '1mo'));
+                expect(resolveInstruction('gregorian', now, 'advance one day')).toBe(now + 86400);
+            });
+
+            it('a spelled-out number never corrupts "and" (the delta list separator) or a word merely containing "a"/"an"', () => {
+                expect(incrementScalar('gregorian', 0, '1y, 2mo and 3d')).toBe(incrementScalar('gregorian', 0, '1y 2mo 3d'));
+                // "advance" itself contains "a" and "an" as substrings, not
+                // as standalone words - must not become "1dv1nce" or similar.
+                expect(resolveInstruction('gregorian', 0, 'advance 1 day')).toBe(86400);
+            });
+
+            it('still rejects real gibberish - the normalization only recognizes actual number words', () => {
+                for (const bad of ['banana', 'zillion days', 'many months', 'a couple of days']) {
+                    expect(() => incrementScalar('gregorian', 0, bad), bad).toThrow();
+                }
+            });
         });
 
         describe('applyIncrement (real chat-state)', () => {
@@ -590,6 +636,36 @@ describe('datetime variables', () => {
                 expect(systemPrompt()).toContain('currently "2026-09-18 12:00:00"');
                 expect(systemPrompt()).toContain('advance 3 hours');
                 expect(systemPrompt()).not.toContain(String(ts(2026, 9, 18, 12)));
+            });
+
+            // A real report (2026-09-22): the messages array sent to the LLM
+            // ends with a SEPARATE synthetic instruction turn ("Output the
+            // JSON object now...", below) - a variable's own prompted
+            // instructions saying "look at the latest message" had no
+            // reliable way to mean the actual last roleplay line instead of
+            // that wrapper. The system prompt now explicitly labels it.
+            it('explicitly labels the actual last chat message "Most recent roleplay message", separate from earlier history', async () => {
+                promptedClock();
+                callBackgroundLLM.mockResolvedValue('{"pp__clock":"advance 1 hour"}');
+
+                await runAi();
+
+                expect(systemPrompt()).toContain('Recent conversation:\nUser: they wait until the evening');
+                expect(systemPrompt()).toContain('Most recent roleplay message:\nBot: Hours pass.');
+                // The actual last message in the API call is a different,
+                // synthetic turn entirely - never confused with the label above.
+                const messages = callBackgroundLLM.mock.calls[0][2];
+                expect(messages[messages.length - 1].content).toBe('Output the JSON object now. JSON only, no other text.');
+            });
+
+            it('the header establishes the "Most recent roleplay message" term for a variable\'s own instructions to reference', async () => {
+                promptedClock();
+                callBackgroundLLM.mockResolvedValue('{"pp__clock":"advance 1 hour"}');
+
+                await runAi();
+
+                expect(systemPrompt()).toContain('Most recent roleplay message');
+                expect(systemPrompt()).toMatch(/latest message.*Most recent roleplay message/s);
             });
 
             it('a prompted INCREMENT runs the configured delta through the calendar', async () => {

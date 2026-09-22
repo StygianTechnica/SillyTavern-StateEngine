@@ -629,6 +629,40 @@
     border-top: 1px dashed var(--SmartThemeBorderColor, #444);
 }
 
+/* Variables tab preset picker: a searchable dropdown (combobox), not a
+   plain <select> - open on focus/click, filters live as you type. */
+.se-manager-preset-combobox {
+    position: relative;
+}
+
+.se-manager-preset-combobox-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    min-width: 100%;
+    max-height: 260px;
+    overflow-y: auto;
+    margin-top: 2px;
+    background-color: var(--bg-secondary, #222);
+    border: 1px solid var(--SmartThemeBorderColor, #444);
+    border-radius: 4px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+    z-index: 20;
+}
+
+.se-manager-preset-combobox-row {
+    padding: 6px 10px;
+    font-size: 0.9em;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.se-manager-preset-combobox-row:hover,
+.se-manager-preset-combobox-row.se-manager-preset-combobox-row-active {
+    background-color: var(--accent-color, #4a9eff);
+    color: #fff;
+}
+
 /* Explanation box */
 .se-manager-variable-explanation {
     margin-top: 12px;

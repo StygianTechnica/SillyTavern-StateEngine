@@ -140,10 +140,9 @@ describe('an open manager follows chat changes', () => {
 
     it('keeps the preset selected in the Variables tab across a redraw', () => {
         buildManagerModal();
-        const select = document.querySelector('#se-manager-preset-selector');
-        select.value = presetB;
+        $(`.se-manager-preset-combobox-row[data-preset-id="${presetB}"]`).trigger('click');
         context.chatId = 'chat-NEW';
         showManagerModal();
-        expect(document.querySelector('#se-manager-preset-selector').value).toBe(presetB);
+        expect(document.getElementById('se-manager-preset-combobox-input').value).toBe('Beta');
     });
 });

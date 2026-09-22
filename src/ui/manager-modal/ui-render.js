@@ -86,12 +86,15 @@ export function renderVariablesTab(managerApi, managerCurrentPresetId) {
     // to find once there were more than a few.
     presetsToShow.sort((a, b) => (settings.presets[a]?.name || '').localeCompare(settings.presets[b]?.name || '', undefined, { sensitivity: 'base' }));
 
-    const presetOptions = presetsToShow
+    const presetRows = presetsToShow
         .map(id => {
             const preset = settings.presets[id];
             const isActive = activePresetIds.includes(id);
             const indicator = isActive ? ' ✓' : '';
-            return `<option value="${id}">${escapeHtml(preset.name)}${indicator}</option>`;
+            // data-preset-name is the lowercased match target for the live
+            // filter below; the visible label (with the active indicator)
+            // stays in the row's text content, escaped separately.
+            return `<div class="se-manager-preset-combobox-row" data-preset-id="${id}" data-preset-name="${escapeHtml((preset.name || '').toLowerCase())}">${escapeHtml(preset.name)}${indicator}</div>`;
         })
         .join('');
 
@@ -113,14 +116,10 @@ export function renderVariablesTab(managerApi, managerCurrentPresetId) {
             .join('');
     }
 
-    const html = uiTemplates.buildVariablesTabContainer(presetOptions, variablesList, showActiveOnly);
+    const selectedPresetName = selectedPresetId ? settings.presets[selectedPresetId]?.name : '';
+    const html = uiTemplates.buildVariablesTabContainer(presetRows, variablesList, showActiveOnly, selectedPresetName, selectedPresetId);
 
     $tab.html(html);
-
-    // Set selected preset
-    if (selectedPresetId) {
-        $('#se-manager-preset-selector').val(selectedPresetId);
-    }
 
     // Wire up search and sort handlers
     $('#se-manager-variable-search').on('input', filterAndSortVariables);
@@ -129,18 +128,108 @@ export function renderVariablesTab(managerApi, managerCurrentPresetId) {
         updateMoveButtonStates();
     });
 
-    // Preset-picker search: filters the <option> list in place (no re-render,
-    // same as filterAndSortVariables above) so the typed text and the
-    // dropdown's own open/scroll state are never disturbed by a keystroke.
-    // The placeholder ("-- Select preset --", value="") always stays, so a
-    // search that matches nothing still leaves a way to deselect.
-    $('#se-manager-preset-search').on('input', function () {
-        const term = $(this).val().trim().toLowerCase();
-        $('#se-manager-preset-selector option').each(function () {
-            const $opt = $(this);
-            if ($opt.val() === '') return;
-            $opt.toggle(term === '' || $opt.text().toLowerCase().includes(term));
+    // Preset picker: a searchable dropdown (a combobox), not a plain
+    // <select> - typing into it filters the row list live, in place (no
+    // re-render, same technique as filterAndSortVariables above), rather
+    // than only being able to jump to an option by its first letter.
+    // Picking a row is wired in ui-events.js (it needs managerState to
+    // switch the active preset); everything here is self-contained open/
+    // filter/keyboard-nav/close behavior over the DOM this render just built.
+    const $comboInput = $('#se-manager-preset-combobox-input');
+    const $comboList = $('#se-manager-preset-combobox-list');
+
+    const comboRows = () => $comboList.find('.se-manager-preset-combobox-row');
+    // Not jQuery's :visible (layout-dependent - offsetWidth/offsetHeight,
+    // which jsdom never computes, making it unusable in tests, and not what
+    // is actually meant here anyway): rows are only ever toggled via inline
+    // display none/block (filterPresetCombobox above), so checking that
+    // directly is both precise and layout-independent.
+    const comboVisibleRows = () => comboRows().filter(function () { return this.style.display !== 'none'; });
+    const clearComboHighlight = () => comboRows().removeClass('se-manager-preset-combobox-row-active');
+    const highlightCombo = ($row) => { clearComboHighlight(); if ($row && $row.length) $row.addClass('se-manager-preset-combobox-row-active'); };
+
+    function filterPresetCombobox() {
+        const term = $comboInput.val().trim().toLowerCase();
+        comboRows().each(function () {
+            const $row = $(this);
+            $row.toggle(term === '' || ($row.attr('data-preset-name') || '').includes(term));
         });
+        clearComboHighlight();
+    }
+
+    // Opening on focus/click must show every row, not re-filter by whatever
+    // text already happens to be displayed (the selected preset's name) -
+    // .select() only highlights that text for an easy overwrite, it does
+    // NOT clear $comboInput.val(), so filterPresetCombobox() would otherwise
+    // treat the CURRENT selection's own name as an active search term and
+    // hide everything else the moment the box is opened.
+    function openPresetComboboxShowingAll() {
+        comboRows().show();
+        clearComboHighlight();
+        $comboList.show();
+    }
+
+    function openPresetCombobox() {
+        filterPresetCombobox();
+        $comboList.show();
+    }
+
+    // Closing without a pick always reverts the input to the ACTUALLY
+    // selected preset's name - a half-typed search left in the box would
+    // otherwise no longer match what the variable list below is showing.
+    function closePresetCombobox() {
+        $comboList.hide();
+        clearComboHighlight();
+        $comboInput.val(selectedPresetName || '');
+    }
+
+    $comboInput.on('focus click', function () {
+        this.select(); // browser-address-bar style: typing immediately replaces it
+        openPresetComboboxShowingAll();
+    });
+    $comboInput.on('input', openPresetCombobox);
+    $comboInput.on('keydown', function (e) {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            closePresetCombobox();
+            this.blur();
+            return;
+        }
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            const $visible = comboVisibleRows();
+            if (!$visible.length) return;
+            const $current = $comboList.find('.se-manager-preset-combobox-row-active');
+            let idx = $current.length ? $visible.index($current) : -1;
+            idx = e.key === 'ArrowDown' ? Math.min(idx + 1, $visible.length - 1) : Math.max(idx - 1, 0);
+            const $next = $visible.eq(idx);
+            highlightCombo($next);
+            // Not implemented at all in jsdom (and conceivably absent in
+            // other embedding contexts) - guarded rather than assumed.
+            $next.get(0)?.scrollIntoView?.({ block: 'nearest' });
+            return;
+        }
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            // Not ':visible' (same layout-dependent, jsdom-incompatible
+            // check already replaced in comboVisibleRows above) - the
+            // highlight is only ever placed on a row that was already
+            // confirmed visible when it was highlighted, so no extra
+            // filter is needed here at all.
+            const $active = $comboList.find('.se-manager-preset-combobox-row-active');
+            const $target = $active.length ? $active : comboVisibleRows().first();
+            if ($target.length) $target.trigger('click');
+        }
+    });
+
+    // Click-outside closes without changing the selection. Namespaced and
+    // rebound (off then on) on every call - this function runs again on
+    // every preset switch/filter toggle, so without the off() first this
+    // would stack a fresh document-level handler on each one.
+    $(document).off('mousedown.sePresetCombobox').on('mousedown.sePresetCombobox', (e) => {
+        if (!$(e.target).closest('#se-manager-preset-combobox').length) {
+            closePresetCombobox();
+        }
     });
 
     // Set initial button states

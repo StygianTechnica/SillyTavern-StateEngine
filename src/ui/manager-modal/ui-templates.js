@@ -931,23 +931,35 @@ export function buildIndependentPresetsTabContainer(rows) {
     `;
 }
 
-export function buildVariablesTabContainer(presetOptions, variablesList, showActiveOnly) {
+export function buildVariablesTabContainer(presetRows, variablesList, showActiveOnly, selectedPresetName, selectedPresetId) {
     return `
         <div class="se-manager-section">
             <div class="se-manager-section-header">
                 <div style="display: flex; align-items: center; gap: 12px; flex: 1; flex-wrap: wrap;">
                     <h3 style="margin: 0;">Variables for Preset:</h3>
-                    <input
-                        type="text"
-                        id="se-manager-preset-search"
-                        class="text_pole"
-                        placeholder="Search presets..."
-                        style="width: 140px; padding: 4px 8px; font-size: 0.9em;"
-                    />
-                    <select id="se-manager-preset-selector" class="text_pole">
-                        <option value="">-- Select preset --</option>
-                        ${presetOptions}
-                    </select>
+                    <!-- Searchable dropdown (a combobox, not a plain <select> - a
+                         native select can only jump to an option by its first
+                         letter, not be typed into to filter). Click/focus opens
+                         the list; typing filters it live; a click or Enter picks
+                         a row. data-preset-id on each row is the source of truth
+                         ui-events.js reads on selection - the visible input text
+                         is always just the selected preset's NAME, reset to it
+                         on blur/Escape/click-outside if nothing was picked. -->
+                    <div class="se-manager-preset-combobox" id="se-manager-preset-combobox">
+                        <input
+                            type="text"
+                            id="se-manager-preset-combobox-input"
+                            class="text_pole"
+                            placeholder="Select preset..."
+                            autocomplete="off"
+                            value="${escapeHtml(selectedPresetName || '')}"
+                            data-selected-id="${escapeHtml(selectedPresetId || '')}"
+                            style="width: 200px; padding: 4px 8px; font-size: 0.9em;"
+                        />
+                        <div class="se-manager-preset-combobox-list" id="se-manager-preset-combobox-list" style="display: none;">
+                            ${presetRows || '<div class="se-empty-inline" style="padding: 6px 10px;">No presets.</div>'}
+                        </div>
+                    </div>
                     <label style="margin: 0; white-space: nowrap; display: flex; align-items: center; gap: 4px;">
                         <input type="checkbox" id="se-manager-filter-active" ${showActiveOnly ? 'checked' : ''} />
                         <span style="font-size: 0.9em;">Show active only</span>

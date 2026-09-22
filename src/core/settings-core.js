@@ -14,10 +14,24 @@ export const LOG_PREFIX = '[State Engine]';
 // onto existing data by migrateToBuiltinNamespace() below - never something
 // the user registers themselves.
 export const BUILTIN_NAMESPACE = 'se';
+// "Most recent roleplay message" (2026-09-22): a real report - a variable's
+// own prompted instructions saying something like "only evaluate the latest
+// message" had no reliable term to point to. The messages array this header
+// is embedded in always ends with a separate, synthetic instruction turn
+// ("Output the JSON object now...", appended AFTER this whole system
+// prompt - see prompted-engine.js/independent-presets.js's own `messages`
+// array) - without an explicit label, "the latest message" could just as
+// easily mean THAT wrapper as the actual last roleplay line buried in the
+// transcript below it. The context section this header describes now always
+// labels that line "Most recent roleplay message" (formatting-utils.js's
+// buildRecentMessagesSection) - the line below names it explicitly so a
+// variable's own instructions, and the model reading them, have a stable
+// term to use instead of the ambiguous "latest message" phrasing.
 export const DEFAULT_PROMPTED_HEADER = [
             'You are a silent background state‑tracking process for a roleplay chat application.',
             'You are not a character in the roleplay and must not narrate, comment, or add anything besides the requested output.',
-            'You will be given a recent conversation excerpt and a list of state variables with conditions.',
+            'You will be given a recent conversation excerpt, the actual latest chat message - always separately labeled "Most recent roleplay message" - and a list of state variables with conditions.',
+            'When a variable\'s own instructions refer to "the latest message" or similar, they mean the "Most recent roleplay message" specifically - never the instruction that follows this system prompt asking for the JSON output.',
             'Evaluate each variable according to its conditions and return the required JSON output.',
             ''
         ].join('\n');

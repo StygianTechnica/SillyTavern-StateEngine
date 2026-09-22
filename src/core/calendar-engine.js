@@ -920,11 +920,45 @@ function lookupUnit(calendar, word) {
 
 const DELTA_TOKEN = /\s*(?:,|\band\b)?\s*([+-]?\d+(?:\.\d+)?)\s*([a-z]*)/y;
 
-// "1h", "3 hours", "1d 2h", "1y, 2mo and 3d", "-2d", "1season", "2 cycles" ->
-// { years, months, seasons, seconds } where seconds already covers every
-// fixed-length unit for `calendar` (a cycle is its first cycle's length in
-// days). A bare number is seconds. Months, years and seasons must be whole
-// numbers (half a month has no fixed length). Throws on anything else.
+// Spelled-out cardinal numbers, normalized to digits before DELTA_TOKEN ever
+// runs: an LLM asked for a time delta naturally writes "one month" or "a
+// day" as often as "1 month" - DELTA_TOKEN's amount group is `\d+`, which
+// "one"/"a" never match, so a real, reported delta ("One Month", "one day")
+// silently failed to parse (console.warn'd and discarded, both the datetime
+// value and the source left untouched - requirements spec 1.31's
+// deltaSource) with no visible reason. Root-caused by reproducing the exact
+// input, not assumed - same pattern as the Unicode-dash-lookalike fix in
+// toScalar(). Compounds ("twenty-five", "twenty five") are handled before
+// the standalone words so "twenty" is never replaced out from under its own
+// "five" first; "a"/"an" -> 1 last (word-boundaries keep this from ever
+// touching "and", the delta list's own separator, or "a" inside a longer
+// word like "advance").
+const WORD_NUMBER_ONES = {
+    zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
+    ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16,
+    seventeen: 17, eighteen: 18, nineteen: 19,
+};
+const WORD_NUMBER_TENS = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+const WORD_NUMBER_TENS_PATTERN = Object.keys(WORD_NUMBER_TENS).join('|');
+const WORD_NUMBER_ONES_PATTERN = Object.keys(WORD_NUMBER_ONES).join('|');
+const WORD_NUMBER_COMPOUND = new RegExp(`\\b(${WORD_NUMBER_TENS_PATTERN})[\\s-]+(${WORD_NUMBER_ONES_PATTERN})\\b`, 'g');
+const WORD_NUMBER_TENS_RE = new RegExp(`\\b(${WORD_NUMBER_TENS_PATTERN})\\b`, 'g');
+const WORD_NUMBER_ONES_RE = new RegExp(`\\b(${WORD_NUMBER_ONES_PATTERN})\\b`, 'g');
+
+function normalizeWordNumbers(text) {
+    return text
+        .replace(WORD_NUMBER_COMPOUND, (_, tens, ones) => String(WORD_NUMBER_TENS[tens] + WORD_NUMBER_ONES[ones]))
+        .replace(WORD_NUMBER_TENS_RE, (w) => String(WORD_NUMBER_TENS[w]))
+        .replace(WORD_NUMBER_ONES_RE, (w) => String(WORD_NUMBER_ONES[w]))
+        .replace(/\ban?\b/g, '1');
+}
+
+// "1h", "3 hours", "1d 2h", "1y, 2mo and 3d", "-2d", "1season", "2 cycles",
+// "one month", "a day", "twenty-five days" -> { years, months, seasons,
+// seconds } where seconds already covers every fixed-length unit for
+// `calendar` (a cycle is its first cycle's length in days). A bare number is
+// seconds. Months, years and seasons must be whole numbers (half a month has
+// no fixed length). Throws on anything else.
 function parseDeltaFor(calendar, delta) {
     if (typeof delta === 'number') {
         if (!Number.isFinite(delta)) throw new Error(`Invalid delta ${delta}`);
@@ -932,7 +966,7 @@ function parseDeltaFor(calendar, delta) {
     }
     if (typeof delta !== 'string' || !delta.trim()) throw new Error(`Invalid delta "${delta}"`);
 
-    const text = delta.trim().toLowerCase();
+    const text = normalizeWordNumbers(delta.trim().toLowerCase());
     const perMinute = calendar.secondsPerMinute;
     const perHour = perMinute * calendar.minutesPerHour;
     const perDay = perHour * calendar.hoursPerDay;

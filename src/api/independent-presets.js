@@ -3,17 +3,25 @@
 // "Independent" presets run their prompted update on their own call
 // (runIndependentPreset) instead of the standard per-message trigger flow
 // in src/core/prompted-engine.js. This module deliberately does NOT modify
-// prompted-engine.js — that file is the codebase's highest-priority,
-// already-stabilized area, per standing project instructions to keep
-// working behavior working. Instead it reuses everything from
-// prompted-engine.js's flow that was already exported and safe to call
-// from outside (callBackgroundLLM, stripHtml, extractJsonObject,
+// prompted-engine.js's own write/classification logic — that file is the
+// codebase's highest-priority, already-stabilized area, per standing
+// project instructions to keep working behavior working. Instead it reuses
+// everything from prompted-engine.js's flow that was already exported and
+// safe to call from outside (callBackgroundLLM, extractJsonObject,
 // describeConstraint, shouldSkipPromptedRefresh, selectBatchVariables,
 // isDoneFlag, setVar/applyIncrement, recalculateDependents), and
-// re-implements the small (~15 line) transcript-building + prompted/
-// increment classification logic locally rather than extracting it out of
-// prompted-engine.js. That local duplication is deliberate, not an
-// oversight — see this pass's implementation report (Part 8).
+// re-implements the small prompted/increment classification logic locally
+// rather than extracting it out of prompted-engine.js. That local
+// duplication is deliberate, not an oversight — see this pass's
+// implementation report (Part 8). Transcript-building (turning a chat slice
+// into "Recent conversation"/"Most recent roleplay message" text) is the
+// one exception, shared via formatting-utils.js's buildRecentMessagesSection()
+// (2026-09-22) rather than duplicated - a pure, read-only piece of prompt
+// TEXT assembly, not classification or a write path, so extracting it does
+// not touch anything the "don't modify prompted-engine.js" rule is actually
+// protecting; keeping it duplicated would have meant both call sites'
+// "Most recent roleplay message" fix drifting apart instead of being fixed,
+// and tested, once.
 //
 // Concurrency: independentRunInProgress below guards against two
 // independent-preset runs overlapping each other. It does NOT guard
@@ -43,7 +51,7 @@ import { DEFAULT_BATCH } from '../core/variable-schema.js';
 import { getVar, setVar, applyIncrement } from '../core/chat-state.js';
 import { recalculateDependents } from '../core/calculated-engine.js';
 import { callBackgroundLLM } from '../core/background-llm.js';
-import { extractJsonObject, stripHtml, describeConstraint } from '../ui/formatting-utils.js';
+import { extractJsonObject, describeConstraint, buildRecentMessagesSection } from '../ui/formatting-utils.js';
 import { shouldSkipPromptedRefresh, isDoneFlag, selectBatchVariables } from '../core/prompted-engine.js';
 import { parseScheduleTarget, scheduleAfterRun } from '../core/schedule-engine.js';
 
@@ -496,18 +504,11 @@ async function runIndependentPresetInternal(chatId, presetRef) {
             const count = Math.min(historyCap, userRequestedCount);
             const recent = context.chat.slice(-count);
             const maxMessageLength = Number(settings.maxMessageLength) || 0;
-            const transcript = recent
-                .map((m) => {
-                    const speaker = m.is_user ? (context.name1 || 'User') : (m.name || context.name2 || 'Character');
-                    let text = stripHtml(m.mes);
-                    if (maxMessageLength > 0 && text.length > maxMessageLength) {
-                        text = text.slice(0, maxMessageLength) + '…';
-                    }
-                    return `${speaker}: ${text}`;
-                })
-                .filter((line) => line.trim().length > 0)
-                .join('\n');
-            contextSection = transcript ? `Recent conversation:\n${transcript}` : 'No conversation yet.';
+            // Shared with prompted-engine.js's identical need - see this
+            // file's own header comment and buildRecentMessagesSection's own
+            // comment (formatting-utils.js) for why the last message gets
+            // its own explicit "Most recent roleplay message" label.
+            contextSection = buildRecentMessagesSection(recent, { name1: context.name1, name2: context.name2, maxMessageLength });
         } else if (contextMode === 'extension') {
             contextSection = `Independent context:\n${describeIndependentContext(independentContext)}`;
         } else {

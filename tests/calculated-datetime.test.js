@@ -165,6 +165,23 @@ describe('calculated-datetime extension', () => {
             expect(stored('clock')).toBe(ts(2026, 11, 18, 12));
         });
 
+        // A real report (2026-09-22): a deltaSource variable prompted with
+        // "One Month" / "one day" never advanced the datetime at all -
+        // DELTA_TOKEN (calendar-engine.js) only ever accepted numeric
+        // digits; fixed by normalizing spelled-out cardinal numbers before
+        // parsing (see tests/datetime.test.js for the parser-level tests).
+        // Reproduced here end to end, through the exact deltaSource path.
+        it('understands spelled-out numbers, the exact reported phrasing ("One Month", "one day")', () => {
+            createDeltaSource('jump');
+            createDatetime('clock', { defaultValue: ts(2026, 9, 18, 12), deltaSource: 'pp__jump' });
+            setDelta('jump', 'One Month');
+            expect(stored('clock')).toBe(ts(2026, 10, 18, 12));
+            expect(stored('jump')).toBe(''); // consumed, same as any other understood delta
+
+            setDelta('jump', 'one day');
+            expect(stored('clock')).toBe(ts(2026, 10, 19, 12));
+        });
+
         it('an absolute date in the delta text sets the value directly (resolveInstruction\'s existing "set" behavior)', () => {
             createDeltaSource('jump');
             createDatetime('clock', { defaultValue: ts(2026, 9, 18, 12), deltaSource: 'pp__jump' });
