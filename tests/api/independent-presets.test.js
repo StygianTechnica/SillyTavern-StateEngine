@@ -182,9 +182,9 @@ const promptedOn = (presetName, varName, extra = {}) => stateEngine.createVariab
 
 describe('1.29 CRUD', () => {
     it('createIndependentPreset makes a real preset, flagged, with its config', () => {
-        const created = create({ batch: 'extra', temperature: 0.4, maxTokens: 200 });
+        const created = create({ temperature: 0.4, maxTokens: 200 });
         expect(created).toMatchObject({ name: 'Indy', namespace: 'se', independentPreset: true });
-        expect(created.independentConfig).toEqual({ batch: 'extra', temperature: 0.4, maxTokens: 200 });
+        expect(created.independentConfig).toEqual({ temperature: 0.4, maxTokens: 200 });
         // It really is a preset - the regular preset machinery sees it too.
         expect(stateEngine.listPresets(extensionId, instanceId, 'se').some((p) => p.name === 'Indy')).toBe(true);
     });
@@ -197,10 +197,10 @@ describe('1.29 CRUD', () => {
     });
 
     it('updateIndependentPreset renames, edits config, and merges (never replaces) unrelated fields', () => {
-        create({ batch: 'extra' });
-        expect(update({ temperature: 0.9 })).toMatchObject({ independentConfig: { batch: 'extra', temperature: 0.9 } });
+        create({ maxTokens: 100 });
+        expect(update({ temperature: 0.9 })).toMatchObject({ independentConfig: { maxTokens: 100, temperature: 0.9 } });
         expect(update({ name: 'Renamed' })).toMatchObject({ name: 'Renamed' });
-        expect(update({ batch: 'core' }, 'Renamed').independentConfig).toEqual({ batch: 'core', temperature: 0.9 });
+        expect(update({ maxTokens: 200 }, 'Renamed').independentConfig).toEqual({ maxTokens: 200, temperature: 0.9 });
     });
 
     it('update/delete/toggle refuse a preset that is not an independent preset - a regular preset is untouched', () => {
@@ -343,28 +343,88 @@ describe('1.29 independent context: extension-provided / chat-history / explicit
     });
 });
 
-describe('1.29 variable batching', () => {
-    it('only the configured batch is asked about; other batches are left alone, even with prompted behavior', async () => {
-        create({ batch: 'extra' });
-        promptedOn('Indy', 'core_var'); // batch: core (default) - not selected
-        stateEngine.assignBatch(extensionId, instanceId, 'core_var', 'extra');
-        promptedOn('Indy', 'other_extra');
-        stateEngine.assignBatch(extensionId, instanceId, 'other_extra', 'something_else');
-
-        callBackgroundLLM.mockResolvedValue('{"se__core_var":"x","se__other_extra":"y"}');
+// Requirements spec 1.20 (rewritten 2026-09-22): there is no "which batch"
+// selection any more - an independent preset's run always operates on
+// EVERY prompted/incrementable variable in the preset itself, automatically
+// (src/core/prompt-chunking.js). Scoping now comes for free from preset
+// membership, with nothing to configure.
+describe('1.20 automatic scoping and chunking (rewritten 2026-09-22)', () => {
+    it('operates on every prompted variable in its own preset, with nothing to configure', async () => {
+        create();
+        promptedOn('Indy', 'mood');
+        promptedOn('Indy', 'weather');
+        callBackgroundLLM.mockResolvedValue('{"se__mood":"tense","se__weather":"stormy"}');
         await runIndy();
 
         const prompt = callBackgroundLLM.mock.calls[0][2][0].content;
-        expect(prompt).toContain('se__core_var');
-        expect(prompt).not.toContain('se__other_extra');
-        expect(getVar('chat-1', 'se__other_extra').value).toBe('calm'); // untouched - not even asked
+        expect(prompt).toContain('se__mood');
+        expect(prompt).toContain('se__weather');
+        expect(getVar('chat-1', 'se__mood').value).toBe('tense');
+        expect(getVar('chat-1', 'se__weather').value).toBe('stormy');
     });
 
-    it('with no batch configured, the default is "core" - unchanged from before this pass', async () => {
+    it('a prompted variable in a DIFFERENT preset is never included - scoping is by preset, not a shared pool', async () => {
         create();
-        promptedOn('Indy', 'mood'); // defaults to batch "core"
-        callBackgroundLLM.mockResolvedValue('{"se__mood":"tense"}');
-        expect(await runIndy()).toBe(true);
+        stateEngine.createPreset(extensionId, instanceId, { namespace: 'se', name: 'Other' });
+        promptedOn('Indy', 'mood');
+        promptedOn('Other', 'reputation');
+
+        callBackgroundLLM.mockResolvedValue('{"se__mood":"tense","se__reputation":"infamous"}');
+        await runIndy();
+
+        const prompt = callBackgroundLLM.mock.calls[0][2][0].content;
+        expect(prompt).toContain('se__mood');
+        expect(prompt).not.toContain('se__reputation');
+        expect(getVar('chat-1', 'se__reputation')).toBeUndefined(); // never even seeded for this run
+    });
+
+    it('an oversized variable set is split into several sequential LLM calls, each contributing its own writes', async () => {
+        create();
+        // Each variable's rendered line is roughly 60-80 characters; a tiny
+        // budget forces several one-or-two-variable chunks.
+        for (let i = 0; i < 6; i++) promptedOn('Indy', `v${i}`);
+        getSettings().maxPromptedVariableChars = 90;
+
+        callBackgroundLLM.mockImplementation(async (_ctx, _settings, messages) => {
+            const body = messages[0].content;
+            const names = [0, 1, 2, 3, 4, 5].filter((i) => body.includes(`se__v${i}`));
+            return JSON.stringify(Object.fromEntries(names.map((i) => [`se__v${i}`, `answer${i}`])));
+        });
+
+        const didWrite = await runIndy();
+
+        expect(didWrite).toBe(true);
+        expect(callBackgroundLLM.mock.calls.length).toBeGreaterThan(1); // actually split
+        for (let i = 0; i < 6; i++) expect(getVar('chat-1', `se__v${i}`).value).toBe(`answer${i}`);
+        // Sequential, never parallel: each call only ever saw the model's
+        // answer for ITS OWN chunk's variables, never variables from a
+        // later chunk (which could only happen if calls overlapped and a
+        // later chunk's variables were somehow already known upfront).
+        expect(status().lastOutcome).toBe('updated');
+    });
+
+    it('a single chunk failing to parse does not stop the remaining chunks from running', async () => {
+        create();
+        for (let i = 0; i < 6; i++) promptedOn('Indy', `v${i}`);
+        getSettings().maxPromptedVariableChars = 90;
+
+        let call = 0;
+        callBackgroundLLM.mockImplementation(async (_ctx, _settings, messages) => {
+            call++;
+            if (call === 1) return 'not json at all';
+            const body = messages[0].content;
+            const names = [0, 1, 2, 3, 4, 5].filter((i) => body.includes(`se__v${i}`));
+            return JSON.stringify(Object.fromEntries(names.map((i) => [`se__v${i}`, `answer${i}`])));
+        });
+
+        await runIndy();
+
+        expect(callBackgroundLLM.mock.calls.length).toBeGreaterThan(1);
+        // Whichever variables landed in the failed first chunk stay at their
+        // default; every other chunk still wrote normally.
+        const values = [0, 1, 2, 3, 4, 5].map((i) => getVar('chat-1', `se__v${i}`).value);
+        expect(values).toContain('calm'); // the failed chunk's variable(s)
+        expect(values.some((v) => v !== 'calm')).toBe(true); // the rest still wrote
     });
 });
 
@@ -454,7 +514,7 @@ describe('1.29 status', () => {
         expect(status()).toMatchObject({ lastOutcome: 'skipped-parse-error', lastError: expect.any(String) });
     });
 
-    it('records skipped-nothing-to-update when the batch has nothing prompted', async () => {
+    it('records skipped-nothing-to-update when the preset has nothing prompted', async () => {
         create();
         stateEngine.createVariable(extensionId, instanceId, { namespace: 'se', presetName: 'Indy', name: 'n', type: 'number', defaultValue: 1 });
         await runIndy();
@@ -467,21 +527,21 @@ describe('1.29 status', () => {
         expect(stateEngine.getIndependentPresetStatus('se', 'Regular')).toBeNull();
     });
 
-    it('reflects the configured batch and context mode', () => {
-        create({ batch: 'extra' });
+    it('reflects the context mode', () => {
+        create();
         setContext({ a: 1 });
-        expect(status()).toMatchObject({ batch: 'extra', contextMode: 'extension' });
+        expect(status()).toMatchObject({ contextMode: 'extension' });
     });
 });
 
 describe('1.29 export / import', () => {
     it('independentPreset, independentConfig (including context) round-trip through export', () => {
-        create({ batch: 'extra', temperature: 0.3 });
+        create({ temperature: 0.3 });
         setContext({ scene: 'a tavern' });
         const presetId = Object.keys(getSettings().presets).find((id) => getSettings().presets[id].name === 'Indy');
         const data = exportPreset(presetId);
         expect(data.independentPreset).toBe(true);
-        expect(data.independentConfig).toEqual({ batch: 'extra', temperature: 0.3, context: { scene: 'a tavern' } });
+        expect(data.independentConfig).toEqual({ temperature: 0.3, context: { scene: 'a tavern' } });
     });
 
     it('independentStatus is stripped from the export - a freshly imported preset never appears to have already run', async () => {
@@ -513,7 +573,7 @@ describe('1.29 export / import', () => {
     it('importPresetDetailed strips a stray independentStatus even if the source data carries one (defense in depth)', () => {
         const data = {
             name: 'Hand Crafted', independentPreset: true,
-            independentConfig: { batch: 'core' },
+            independentConfig: { temperature: 0.5 },
             independentStatus: { lastRunAt: 12345, lastOutcome: 'updated', changedVariables: ['x'] },
             variables: {},
         };
@@ -522,7 +582,7 @@ describe('1.29 export / import', () => {
     });
 
     it('importPresetDetailed restores independentPreset/independentConfig on the new preset, and variable references rewrite exactly like a regular preset', () => {
-        create({ batch: 'extra' });
+        create({ temperature: 0.6 });
         const calc = stateEngine.createVariable(extensionId, instanceId, { namespace: 'se', presetName: 'Indy', name: 'hp', type: 'number', defaultValue: 10 });
         stateEngine.createVariable(extensionId, instanceId, {
             namespace: 'se', presetName: 'Indy', name: 'hpDoubled', type: 'calculated', expression: `${calc.name} * 2`,

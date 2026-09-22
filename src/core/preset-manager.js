@@ -393,7 +393,7 @@ export function createPreset(name) {
         // separate storage system - a preset IS a preset (it has variables,
         // namespace, name already); this just marks that it also runs through
         // src/api/independent-presets.js's dispatcher. independentConfig (added
-        // lazily by that module, not here) holds its own model/batch/context/
+        // lazily by that module, not here) holds its own model/context/
         // schedule settings.
         independentPreset: false,
     };

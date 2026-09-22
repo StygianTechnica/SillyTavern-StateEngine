@@ -34,9 +34,8 @@
 import { LOG_PREFIX, persistSettings } from '../core/settings-core.js';
 import { validateNamespace } from './namespace-manager.js';
 import { validateCallerIdentity, resolveCallerRecord } from './identity.js';
-import { normalizeBatchName } from './batch-rules.js';
 import { findPresetEntry } from './preset-api.js';
-import { blankDefinition, TIME_BATCH } from '../core/variable-schema.js';
+import { blankDefinition } from '../core/variable-schema.js';
 import { isImageType, checkImageValue, emptyImageValue } from '../core/image-variables.js';
 import * as calendarEngine from '../core/calendar-engine.js';
 import { getCalendar, toScalar, normalizeForDatetimeMode } from '../core/calendar-engine.js';
@@ -58,19 +57,6 @@ function findVariableEntry(preset, namespace, localName) {
         if (def?.name === target) return [varId, def];
     }
     return null;
-}
-
-// A `batch` carried by a definition or patch goes through the same rule as
-// assignBatch() (batch-rules.js), so no entry point can store a batch name
-// the others would refuse. Follows this module's convention for a bad
-// payload: warn and signal failure (ok: false), never throw.
-function checkedBatch(value, fnName) {
-    try {
-        return { ok: true, batch: normalizeBatchName(value, (reason) => { throw new Error(reason); }) };
-    } catch (err) {
-        console.warn(LOG_PREFIX, `${fnName}: ${err.message}`);
-        return { ok: false };
-    }
 }
 
 // Datetime rules (requirements spec 1.21) shared by createVariable() and
@@ -365,11 +351,6 @@ export function createVariable(extensionId, instanceId, def) {
 
         const { namespace: _ns, presetName: _presetName, name: _localName, id: _ignoredId, ...rest } = def;
         const fullDef = { ...blankDefinition(), ...rest, name: target };
-        if (def.batch !== undefined) {
-            const checked = checkedBatch(def.batch, 'createVariable');
-            if (!checked.ok) return null;
-            fullDef.batch = checked.batch;
-        }
         const imageCheck = checkedImage(fullDef, 'createVariable', def.defaultValue !== undefined);
         if (!imageCheck.ok) {
             console.warn(LOG_PREFIX, imageCheck.error);
@@ -386,9 +367,6 @@ export function createVariable(extensionId, instanceId, def) {
                 console.warn(LOG_PREFIX, datetime.error);
                 return null;
             }
-            // Datetime variables live in batch "time" unless the caller
-            // chose another (a batch given in `def` was applied above).
-            if (def.batch === undefined) fullDef.batch = TIME_BATCH;
         }
 
         // Nothing is written to settings.presets until validation (above)
@@ -487,12 +465,6 @@ export function updateVariable(extensionId, instanceId, ref, patch) {
         // object and replacing preset.variables[id] wholesale — mirrored
         // here, root-caused against this module's own functional smoke
         // test rather than assumed.
-        if (safePatch.batch !== undefined) {
-            const checked = checkedBatch(safePatch.batch, 'updateVariable');
-            if (!checked.ok) return null;
-            safePatch.batch = checked.batch;
-        }
-
         const newDef = { ...def, ...safePatch };
 
         // A variable that just BECAME an image type without a new default starts
@@ -519,9 +491,6 @@ export function updateVariable(extensionId, instanceId, ref, patch) {
                 console.warn(LOG_PREFIX, datetime.error);
                 return null;
             }
-            // A variable that just BECAME a datetime moves into batch "time"
-            // unless the patch names a batch itself.
-            if (def.type !== 'datetime' && safePatch.batch === undefined) newDef.batch = TIME_BATCH;
         }
 
         // Re-validate and re-derive dependencies only when the expression
@@ -638,7 +607,7 @@ export function listVariables(extensionId, instanceId, namespace, presetName) {
 // ---------------------------------------------------------------------------
 //
 // None of these signatures carries a namespace, and validateCallerIdentity()
-// needs one - so, like assignBatch()/declareCapabilities(), the caller is
+// needs one - so, like declareCapabilities()/notify(), the caller is
 // identified through resolveCallerRecord(): the instance id must match and the
 // extension must already own a namespace. Calendar data is not namespaced, so
 // nothing further is checked. Identity failures throw; so do formatting

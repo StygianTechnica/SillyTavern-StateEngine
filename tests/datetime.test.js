@@ -7,7 +7,7 @@ import settings from './harness/settings.js';
 import ensureInstanceId from './harness/instance.js';
 import { registerNamespaces } from './harness/namespaces.js';
 import { stateEngine } from '../src/api/index.js';
-import { blankDefinition, getDefaultValue, TIME_BATCH } from '../src/core/variable-schema.js';
+import { blankDefinition, getDefaultValue } from '../src/core/variable-schema.js';
 import { validateValueStrict, coerceValue } from '../src/core/variable-validation.js';
 import {
     getCalendar, toStructured, fromStructured, incrementScalar,
@@ -15,7 +15,7 @@ import {
     normalizeForDatetimeMode,
 } from '../src/core/calendar-engine.js';
 import { runDeterministicIncrements } from '../src/core/deterministic-engine.js';
-import { runPromptedStateUpdate, selectBatchVariables } from '../src/core/prompted-engine.js';
+import { runPromptedStateUpdate } from '../src/core/prompted-engine.js';
 import { callBackgroundLLM } from '../src/core/background-llm.js';
 import { getVar } from '../src/core/chat-state.js';
 import { formatValueForDisplay, describeConstraint } from '../src/ui/formatting-utils.js';
@@ -292,7 +292,7 @@ describe('datetime variables', () => {
             create('clock', { defaultValue: 100 });
             const ref = { namespace: 'pp', presetName: 'Demo', variableName: 'clock' };
             const updated = stateEngine.updateVariable('pp', instanceId, ref, { label: 'Clock' });
-            expect(updated).toMatchObject({ label: 'Clock', defaultValue: 100, calendar: 'gregorian', batch: 'time' });
+            expect(updated).toMatchObject({ label: 'Clock', defaultValue: 100, calendar: 'gregorian' });
         });
 
         it('converts a stored value when a variable becomes a datetime (real chat-state)', () => {
@@ -698,23 +698,17 @@ describe('datetime variables', () => {
                 await vi.waitFor(() => expect(stored('scene')).toBe(ts(2026, 2, 28, 9)));
             });
 
-            it('is part of the main prompt through batch "time", but not once moved to another batch', async () => {
+            // Automatic prompt chunking (requirements spec 1.20, rewritten
+            // 2026-09-22): a datetime variable participates in the main
+            // prompted update exactly like every other prompted variable -
+            // there is no separate "batch" a caller could move it out of any
+            // more (that manual-scoping system never matched what was
+            // actually asked for; see the requirements spec entry).
+            it('is part of the main prompt, with no way to exclude it via any manual scoping', async () => {
                 promptedClock();
-                expect(live('clock').batch).toBe('time');
                 callBackgroundLLM.mockResolvedValue('{"pp__clock":"advance 1 hour"}');
                 await runAi();
                 expect(systemPrompt()).toContain('"pp__clock"');
-
-                callBackgroundLLM.mockClear();
-                stateEngine.assignBatch('pp', instanceId, 'clock', 'extra');
-                await runAi();
-                expect(callBackgroundLLM).not.toHaveBeenCalled();
-            });
-
-            it('selectBatchVariables takes one batch name or a list', () => {
-                const defs = { 1: { name: 'a' }, 2: { name: 'b', batch: 'time' }, 3: { name: 'c', batch: 'x' } };
-                expect(selectBatchVariables(defs).map((d) => d.name)).toEqual(['a']);
-                expect(selectBatchVariables(defs, ['core', TIME_BATCH]).map((d) => d.name)).toEqual(['a', 'b']);
             });
 
             it('resolveInstruction understands natural language and refuses the rest', () => {
@@ -1102,40 +1096,6 @@ describe('datetime variables', () => {
                 await runAi()();
                 await vi.waitFor(() => expect(stored('clock')).toBe(ts(2026, 9, 18, 15)));
             });
-        });
-    });
-
-    describe('batch', () => {
-        it('datetime variables belong to batch "time"', () => {
-            const def = create('clock');
-            expect(TIME_BATCH).toBe('time');
-            expect(def.batch).toBe('time');
-            expect(live('clock').batch).toBe('time');
-            expect(stateEngine.getBatches('chat-1')).toEqual({ time: ['pp__clock'] });
-        });
-
-        it('a caller-chosen batch wins', () => {
-            expect(create('clock', { batch: 'core' }).batch).toBe('core');
-            expect(create('other', { batch: 'story' }).batch).toBe('story');
-        });
-
-        it('other types are unaffected (still "core")', () => {
-            const n = stateEngine.createVariable('pp', instanceId, { namespace: 'pp', presetName: 'Demo', name: 'n', type: 'number' });
-            expect(n.batch).toBe('core');
-        });
-
-        it('a variable that becomes a datetime moves to "time" unless the patch names a batch', () => {
-            const ref = (variableName) => ({ namespace: 'pp', presetName: 'Demo', variableName });
-            stateEngine.createVariable('pp', instanceId, { namespace: 'pp', presetName: 'Demo', name: 'a', type: 'number' });
-            stateEngine.createVariable('pp', instanceId, { namespace: 'pp', presetName: 'Demo', name: 'b', type: 'number' });
-
-            expect(stateEngine.updateVariable('pp', instanceId, ref('a'), { type: 'datetime' }).batch).toBe('time');
-            expect(stateEngine.updateVariable('pp', instanceId, ref('b'), { type: 'datetime', batch: 'story' }).batch).toBe('story');
-        });
-
-        it('batchPrompt lists the datetime by its stored scalar', () => {
-            create('clock', { defaultValue: 86400 });
-            expect(stateEngine.batchPrompt('time', 'chat-1')).toBe('### TIME\npp__clock = 86400');
         });
     });
 

@@ -20,8 +20,9 @@ const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // A deep copy of a stored preset, or null when there is no such preset.
 //
 // Independent presets (requirements spec 1.29): independentPreset,
-// independentConfig (model/batch/prompt/schedule/trigger settings - request
-// Section 9's own list) and independentConfig.context (if any) are plain
+// independentConfig (model/prompt/schedule/trigger settings - request
+// Section 9's own list, minus "batch", removed 1.20 rewrite 2026-09-22) and
+// independentConfig.context (if any) are plain
 // preset fields, so they come along with everything else in the clone below -
 // no special-casing needed to include them. TWO things are deliberately
 // dropped again right after cloning:
@@ -29,7 +30,7 @@ const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 //     history for what happened HERE, in THIS install's chats - re-importing
 //     it into another install (or re-importing the same preset here) would
 //     misrepresent a preset that has never actually run there as if it had.
-//     Not in the request's own export list either (name/batch/prompt/model/
+//     Not in the request's own export list either (name/prompt/model/
 //     triggers/schedule/context - no "status").
 //   - a non-JSON-serializable independentConfig.context: context is `any`,
 //     extension-owned, and never interpreted (request Section 3.A) - but

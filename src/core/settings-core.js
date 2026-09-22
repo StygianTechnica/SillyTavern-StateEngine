@@ -385,6 +385,17 @@ export const DEFAULT_SETTINGS = Object.freeze({
     // Optional per-message character trim applied only to the prompt copy of
     // each message, never to the stored chat. null means no trimming.
     maxMessageLength: null,
+    // Automatic prompt chunking (requirements spec 1.20, rewritten
+    // 2026-09-22): the character budget for ONE prompted-update LLM call's
+    // variable list. null means "not yet computed" - getSettings() backfills
+    // it from SillyTavern's configured context size, the same convention
+    // maxPromptHistoryMessages above already uses (see
+    // computeDefaultMaxPromptedVariableChars). When the full variable list
+    // for a chat (or, for an independent preset, that preset's own variables)
+    // would exceed this, it is automatically split into several sequential
+    // calls (src/core/prompt-chunking.js) instead of one oversized one - no
+    // per-variable configuration needed.
+    maxPromptedVariableChars: null,
     showTrackerPanel: false,
     trackerPanelPos: { top: 100, left: 100 },
     // null width/height means "use the CSS default" - only set once the
@@ -437,6 +448,20 @@ export function computeDefaultMaxPromptHistoryMessages(context) {
     return Math.max(20, Math.min(100, Math.round(maxContext / 100)));
 }
 
+// Same reasoning as computeDefaultMaxPromptHistoryMessages above, denominated
+// in characters instead of messages: context.maxContext is SillyTavern's
+// configured context size in tokens, converted with the same rough
+// ~4-characters-per-token heuristic prose text is usually estimated with.
+// Only a THIRD of the context is budgeted to the variable list itself - the
+// chat history section, the header/rules text, and the model's own response
+// all share the same context window - clamped to a sane range so a tiny or
+// huge context size still yields a usable default.
+export function computeDefaultMaxPromptedVariableChars(context) {
+    const maxContext = Number(context?.maxContext);
+    if (!Number.isFinite(maxContext) || maxContext <= 0) return 6000;
+    return Math.max(2000, Math.min(20000, Math.round((maxContext * 4) / 3)));
+}
+
 export function getSettings() {
     const context = SillyTavern.getContext();
     if (!context.extensionSettings[MODULE_NAME]) {
@@ -454,6 +479,9 @@ export function getSettings() {
         settings.maxPromptHistoryMessages = computeDefaultMaxPromptHistoryMessages(context);
     }
     if (settings.maxMessageLength === undefined) settings.maxMessageLength = null;
+    if (settings.maxPromptedVariableChars === undefined || settings.maxPromptedVariableChars === null) {
+        settings.maxPromptedVariableChars = computeDefaultMaxPromptedVariableChars(context);
+    }
     if (!settings.variableStore || typeof settings.variableStore !== 'object') settings.variableStore = { chats: {} };
     if (!settings.variableStore.chats || typeof settings.variableStore.chats !== 'object') settings.variableStore.chats = {};
     if (settings.showTrackerPanel === undefined) settings.showTrackerPanel = false;

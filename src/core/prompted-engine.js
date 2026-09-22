@@ -2,7 +2,7 @@
 
 import { LOG_PREFIX, DEFAULT_CALENDAR_ID, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED_VARIABLE_RULES, getSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
-import { DEFAULT_BATCH, TIME_BATCH, batchOf, getDefaultValue } from './variable-schema.js';
+import { getDefaultValue } from './variable-schema.js';
 import { isImageType } from './image-variables.js';
 import { format, resolveInstruction, toScalar } from './calendar-engine.js';
 import { getVar, setVar, applyIncrement, loadChatState } from './chat-state.js';
@@ -11,6 +11,7 @@ import { callBackgroundLLM } from './background-llm.js';
 import { extractJsonObject, describeConstraint, buildRecentMessagesSection } from '../ui/formatting-utils.js';
 import { setStatus } from '../ui/settings-panel-ui.js';
 import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
+import { chunkPromptUnits } from './prompt-chunking.js';
 
 export function shouldSkipPromptedRefresh(def) {
     return !!(def && def.skipPromptedRefresh);
@@ -24,18 +25,60 @@ export function isDoneFlag(chatId, def) {
     return def?.type === 'boolean' && def?.flagMode === true && getVar(chatId, def.name)?.value === true;
 }
 
-// Variable batching (requirements spec 1.20): the definitions, out of
-// `variables` (the { id: def } map getAllVariablesFromPresets() returns),
-// that belong to `batchName`. The main prompted update below only ever asks
-// the model about batch "core" (plus "time", where datetime variables live -
-// spec 1.21); a variable assigned to any other batch is kept out of this
-// prompt, which is what stops a large preset from bloating it. A definition
-// with no `batch` field counts as "core", so every pre-batching variable is
-// included exactly as before. `batchName` is one batch name or an array of
-// them.
-export function selectBatchVariables(variables, batchName = DEFAULT_BATCH) {
-    const wanted = Array.isArray(batchName) ? batchName : [batchName];
-    return Object.values(variables || {}).filter((def) => wanted.includes(batchOf(def)));
+// Classifies every prompted/incrementable variable out of `variables` (the
+// { id: def } map getAllVariablesFromPresets() returns) into updateVars
+// (the model writes a value directly) and incrementVars (the model answers
+// true/false, and a true answer runs the configured increment). Deterministic
+// increments (behaviors.increment with behaviors.prompted !== true) are
+// deliberately excluded - deterministic-engine.js owns those exclusively.
+//
+// Requirements spec 1.20 (rewritten 2026-09-22): this used to also filter by
+// a manually-assigned "batch" name, which the request behind that field's
+// removal called out as never having matched what was actually asked for -
+// automatic chunking BY SIZE (below), not manual per-variable scoping. Every
+// prompted/incrementable variable across the given presets is classified
+// here; chunkPromptedVariables() is what keeps an oversized set from
+// overflowing a single LLM call, with no per-variable configuration needed.
+export function classifyPromptedVariables(chatId, variables) {
+    const updateVars = [];
+    const incrementVars = [];
+
+    for (const def of Object.values(variables || {})) {
+        if (!def?.name) continue;
+
+        // Arrays follow the exact same classification every other type
+        // does - the LLM is never asked to perform an increment-style
+        // operation directly. A prompted array with increment ALSO
+        // checked is isPromptedIncrement: the model only ever answers
+        // true/false (below), and a true answer runs the CONFIGURED
+        // increment.operation/operand through applyIncrement, exactly
+        // like every other incrementable type already works. Arrays
+        // never see or produce an operation object themselves.
+        // An image variable's VALUE is never asked of the LLM (image.md rules:
+        // references are for UI and extensions, not narrative logic - the model
+        // would only invent URLs). A prompted INCREMENT on an image list (a
+        // true/false "rotate now?") is still allowed: it is explicit rotation.
+        const isPromptedUpdate =
+            def.behaviors?.prompted === true &&
+            def.behaviors?.increment !== true &&
+            !isImageType(def) &&
+            !isDoneFlag(chatId, def) &&
+            !shouldSkipPromptedRefresh(def);
+
+        const isPromptedIncrement =
+            def.behaviors?.prompted === true &&
+            def.behaviors?.increment === true &&
+            !isDoneFlag(chatId, def);
+
+        if (isPromptedUpdate) {
+            updateVars.push(def);
+        } else if (isPromptedIncrement) {
+            incrementVars.push(def);
+        }
+        // Deterministic increments and everything else are ignored here.
+    }
+
+    return { updateVars, incrementVars };
 }
 
 // A datetime variable's value as the model should see it: calendarEngine.format()
@@ -50,6 +93,224 @@ function valueForPrompt(def, value) {
     } catch {
         return value;
     }
+}
+
+function updateVarLine(chatId, def) {
+    const current = valueForPrompt(def, getVar(chatId, def.name)?.value ?? (def.type === 'datetime' ? getDefaultValue(def) : def.defaultValue));
+    const instructions = (def.prompted?.instructions || def.description || '').trim();
+    return `- "${def.name}" [${describeConstraint(def)}] currently ${JSON.stringify(current)}.${instructions ? ` ${instructions}` : ''}`;
+}
+
+function incrementVarLine(chatId, def) {
+    const instructions = (def.prompted?.instructions || def.description || '').trim();
+    return `- "${def.name}"[true or false]: ${instructions}`;
+}
+
+// Automatic prompt chunking (requirements spec 1.20, rewritten 2026-09-22):
+// turns a classified updateVars/incrementVars set into one or more size-
+// bounded chunks (src/core/prompt-chunking.js), each still an
+// { updateVars, incrementVars } pair in the SAME shape the rest of this file
+// already works with - a caller with everything fitting in one chunk gets
+// exactly ONE chunk back, containing every variable, unchanged from before
+// chunking existed.
+export function chunkPromptedVariables(chatId, updateVars, incrementVars, maxChars) {
+    const units = [
+        ...updateVars.map((def) => { const line = updateVarLine(chatId, def); return { def, kind: 'update', line, size: line.length }; }),
+        ...incrementVars.map((def) => { const line = incrementVarLine(chatId, def); return { def, kind: 'increment', line, size: line.length }; }),
+    ];
+    const chunks = chunkPromptUnits(units, maxChars);
+    return chunks.map((chunk) => ({
+        updateVars: chunk.filter((u) => u.kind === 'update').map((u) => u.def),
+        updateVarLines: chunk.filter((u) => u.kind === 'update').map((u) => u.line).join('\n'),
+        incrementVars: chunk.filter((u) => u.kind === 'increment').map((u) => u.def),
+        incrementVarLines: chunk.filter((u) => u.kind === 'increment').map((u) => u.line).join('\n'),
+    }));
+}
+
+// Applies one parsed LLM response against one chunk's updateVars/incrementVars,
+// writing through setVar()/applyIncrement() exactly as a single, unchunked
+// update always has. Returns { updatedCount, incrementedCount }. Never throws -
+// every variable's write is isolated (a malformed def, an unexpected value
+// shape, anything) so one bad entry can never prevent every other variable in
+// this same response from being written.
+function applyPromptedResponse(chatId, updateVars, incrementVars, parsed) {
+    let updatedCount = 0;
+    for (const def of updateVars) {
+        try {
+            if (!Object.prototype.hasOwnProperty.call(parsed, def.name)) continue;
+
+            const rawValue = parsed[def.name];
+
+            if (def.type === 'array' && !Array.isArray(rawValue)) {
+                // Prompted arrays only ever accept a full array
+                // replacement. Operation-style updates
+                // (push/pop/toggle/etc) are never something the
+                // model is asked to perform - that's
+                // applyIncrement's job exclusively, triggered
+                // either deterministically or via the boolean
+                // incrementVars path below. Anything else here
+                // means the model didn't follow the required
+                // shape; skip rather than write garbage.
+                continue;
+            }
+
+            if (def.type === 'datetime') {
+                // The model answers a datetime variable in
+                // words ("advance 3 hours") or with a date
+                // ("2026-09-18 22:00"), never raw seconds
+                // - calendar-engine turns either into the
+                // new scalar (incrementScalar/fromStructured
+                // underneath). resolveInstruction() dispatches
+                // to the variable's own calendar, so its
+                // nlRules ("advance 1 season", "next cycle",
+                // "move to Stormfall 17") apply here without
+                // any calendar-specific code in this file. An
+                // answer it can't understand is skipped, not
+                // written.
+                // Semantic time of day (requirements spec 1.35): when
+                // this variable opts in (timeSemanticMode ===
+                // 'semanticTimeOfDay'), the model's own answer here
+                // ("the next morning") is interpreted into a precise
+                // target time ahead of the ordinary duration/verb
+                // grammar. The model is never told about this in the
+                // prompt - describeConstraint() (formatting-utils.js)
+                // is unchanged - the request behind this feature is
+                // explicit that the engine alone does the
+                // interpretation, so a semantic phrase works simply
+                // because it happens to also read as natural language,
+                // the same way "advance 3 hours" already does.
+                // Datetime mode (requirements spec 1.36): a
+                // dateOnly variable "ignores semantic time of
+                // day phrases" outright - checkedDatetime()
+                // (variable-api.js) already forces
+                // timeSemanticMode to 'none' for it at save
+                // time, but that path is bypassed by the
+                // manager-modal's own inline editor (same
+                // reason deltaSource is re-checked there too),
+                // so it is re-gated here as well, the one
+                // place that actually turns semantic parsing
+                // on. The resulting scalar - from ANY path
+                // (semantic, duration, absolute date) - is
+                // then normalized for dateOnly/timeOnly by
+                // setVar() below, the single choke point
+                // every write already goes through.
+                const calendarId = def.calendar || DEFAULT_CALENDAR_ID;
+                const stored = getVar(chatId, def.name)?.value ?? getDefaultValue(def);
+                const semanticTimeOfDay = def.datetimeMode !== 'dateOnly' && def.timeSemanticMode === 'semanticTimeOfDay';
+                const next = resolveInstruction(calendarId, toScalar(calendarId, stored) ?? 0, rawValue, { semanticTimeOfDay });
+                if (next === null) {
+                    console.warn(LOG_PREFIX, `prompted datetime update skipped for "${def.name}": could not understand ${JSON.stringify(rawValue)}`);
+                    continue;
+                }
+                setVar(chatId, def.name, next, def);
+                recalculateDependents(chatId, def.name);
+                updatedCount++;
+                continue;
+            }
+
+            setVar(chatId, def.name, rawValue, def);
+            recalculateDependents(chatId, def.name);
+            updatedCount++;
+        } catch (err) {
+            console.warn(LOG_PREFIX, `prompted update failed for variable "${def.name}" (gracefully handled)`, err);
+        }
+    }
+
+    let incrementedCount = 0;
+    for (const def of incrementVars) {
+        try {
+            if (parsed[def.name] === true) {
+                applyIncrement(chatId, def.name, def.increment.delta, def);
+                recalculateDependents(chatId, def.name);
+                incrementedCount++;
+            }
+        } catch (err) {
+            console.warn(LOG_PREFIX, `prompted increment failed for variable "${def.name}" (gracefully handled)`, err);
+        }
+    }
+
+    return { updatedCount, incrementedCount };
+}
+
+// Builds and sends ONE chunk's LLM call, applies its response, and returns
+// { updatedCount, incrementedCount }. Throws on a background-LLM rejection or
+// a response that doesn't parse as JSON (both are logged and turned into a
+// status message by the caller - this function's own job is just the one
+// call/parse/apply cycle, so it can be awaited per-chunk in a sequential
+// loop without duplicating that error handling at every call site).
+async function runPromptedChunk(context, settings, contextSection, chunk) {
+    const chatId = context.chatId;
+    const { updateVars, updateVarLines, incrementVars, incrementVarLines } = chunk;
+
+    const promptSections = [
+        settings.promptedHeader || DEFAULT_PROMPTED_HEADER,
+        settings.promptedRules || DEFAULT_UNIFIED_VARIABLE_RULES,
+        '',
+        contextSection,
+    ];
+    if (updateVarLines) promptSections.push('', 'Update variables:', updateVarLines);
+    if (incrementVarLines) promptSections.push('', 'Boolean-conditional variables (include all in JSON output):', incrementVarLines);
+
+    const messages = [
+        { role: 'system', content: promptSections.join('\n') },
+        { role: 'user', content: 'Output the JSON object now. JSON only, no other text.' },
+    ];
+    const maxTokens = Number(settings.responseLength) || 300;
+
+    const raw = await callBackgroundLLM(context, settings, messages, maxTokens);
+    const parsed = extractJsonObject(raw);
+    if (!parsed) {
+        console.warn(LOG_PREFIX, 'could not parse a JSON object from the model response:', raw);
+        throw new Error('response was not valid JSON');
+    }
+    return applyPromptedResponse(chatId, updateVars, incrementVars, parsed);
+}
+
+// Runs every chunk SEQUENTIALLY (never in parallel - one chunk's LLM call is
+// awaited before the next one starts, avoiding several concurrent background
+// calls per message and keeping a predictable order), each chunk isolated
+// from the others: a chunk that fails (a network error, an unparseable
+// response) is logged and simply contributes nothing to the totals - it
+// never stops the remaining chunks from still running. Sets one combined
+// final status message covering every chunk's variables, and an interim
+// "part N of M" status between chunks only when there actually IS more than
+// one (a single-chunk run - the overwhelming common case - shows exactly the
+// same status text it always has).
+async function runPromptedChunksSequentially(context, settings, contextSection, chunks) {
+    let totalUpdated = 0;
+    let totalIncremented = 0;
+    let totalUpdateVars = 0;
+    let totalIncrementVars = 0;
+
+    for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        totalUpdateVars += chunk.updateVars.length;
+        totalIncrementVars += chunk.incrementVars.length;
+        if (chunks.length > 1) setStatus(`Updating state (part ${i + 1} of ${chunks.length})…`);
+
+        try {
+            const { updatedCount, incrementedCount } = await runPromptedChunk(context, settings, contextSection, chunk);
+            totalUpdated += updatedCount;
+            totalIncremented += incrementedCount;
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine background LLM failed gracefully', err);
+            if (chunks.length === 1) {
+                // Preserve the exact single-chunk status text from before
+                // chunking existed - a parse failure or LLM rejection here
+                // is ALL that happened, so this is the only status message
+                // for the whole run, not a "0 of N" summary.
+                setStatus(
+                    err?.message === 'response was not valid JSON'
+                        ? 'Update failed — response was not valid JSON. See console.'
+                        : 'Update failed — see browser console for details.',
+                    true,
+                );
+                return;
+            }
+        }
+    }
+
+    setStatus(`State updated (${totalUpdated}/${totalUpdateVars} variables, ${totalIncremented}/${totalIncrementVars} incremented).`);
 }
 
 // Fires the background "prompted variable" LLM update and returns``
@@ -78,63 +339,9 @@ export async function runPromptedStateUpdate(triggerType) {
             });
         }
 
-        // Collect variables from presets that should update, and classify them
+        // Collect variables from presets that should update, and classify them.
         const variables = getAllVariablesFromPresets(presetsToUpdate);
-        const updateVars = [];
-        const incrementVars = [];
-
-        for (const def of selectBatchVariables(variables, [DEFAULT_BATCH, TIME_BATCH])) {
-            if (!def?.name) continue;
-
-            // Arrays follow the exact same classification every other type
-            // does - the LLM is never asked to perform an increment-style
-            // operation directly. A prompted array with increment ALSO
-            // checked is isPromptedIncrement: the model only ever answers
-            // true/false (below), and a true answer runs the CONFIGURED
-            // increment.operation/operand through applyIncrement, exactly
-            // like every other incrementable type already works. Arrays
-            // never see or produce an operation object themselves.
-            // An image variable's VALUE is never asked of the LLM (image.md rules:
-            // references are for UI and extensions, not narrative logic - the model
-            // would only invent URLs). A prompted INCREMENT on an image list (a
-            // true/false "rotate now?") is still allowed: it is explicit rotation.
-            const isPromptedUpdate =
-                def.behaviors?.prompted === true &&
-                def.behaviors?.increment !== true &&
-                !isImageType(def) &&
-                !isDoneFlag(chatId, def) &&
-                !shouldSkipPromptedRefresh(def);
-
-            const isPromptedIncrement =
-                def.behaviors?.prompted === true &&
-                def.behaviors?.increment === true &&
-                !isDoneFlag(chatId, def);
-
-            const isDeterministicIncrement =
-                def.behaviors?.increment === true &&
-                def.behaviors?.prompted !== true;
-
-            if (isPromptedUpdate) {
-                // Normal prompted update variable
-                updateVars.push(def);
-                continue;
-            }
-
-            if (isPromptedIncrement) {
-                // Prompted increment variable (LLM returns boolean)
-                incrementVars.push(def);
-                continue;
-            }
-
-            if (isDeterministicIncrement) {
-                // Deterministic increments are NOT part of prompted updates.
-                // They are handled exclusively by deterministic-engine.js.
-                continue;
-            }
-
-            // All other variable types are ignored by prompted updates
-        }
-
+        const { updateVars, incrementVars } = classifyPromptedVariables(chatId, variables);
 
         if (updateVars.length === 0 && incrementVars.length === 0) return;
         if (!Array.isArray(context.chat)) return;
@@ -160,176 +367,15 @@ export async function runPromptedStateUpdate(triggerType) {
             // prompt).
             const contextSection = buildRecentMessagesSection(recent, { name1: context.name1, name2: context.name2, maxMessageLength });
 
-            const updateVarLines = updateVars
-                .map((def) => {
-                    const current = valueForPrompt(def, getVar(chatId, def.name)?.value ?? (def.type === 'datetime' ? getDefaultValue(def) : def.defaultValue));
-                    const instructions = (def.prompted?.instructions || def.description || '').trim();
-                    return `- "${def.name}" [${describeConstraint(def)}] currently ${JSON.stringify(current)}.${instructions ? ` ${instructions}` : ''}`;
-                })
-                .join('\n');
+            const maxChars = Number(settings.maxPromptedVariableChars) || Infinity;
+            const chunks = chunkPromptedVariables(chatId, updateVars, incrementVars, maxChars);
 
-            const incrementVarLines = incrementVars
-                .map((def) => {
-                    const current = getVar(chatId, def.name)?.value ?? def.defaultValue;
-                    const instructions = (def.prompted?.instructions || def.description || '').trim();
-                    //return `- "${def.name}" (${def.type}, current: ${current}): ${instructions}`;
-                    return `- "${def.name}"[true or false]: ${instructions}`;
-                })
-                .join('\n');
-
-            const varLines = [updateVarLines, incrementVarLines].filter(Boolean).join('\n');
-            if (!varLines.trim()) {
-                refreshPanelIfOpen();
-                return;
-            }
-
-            const promptSections = [
-                settings.promptedHeader || DEFAULT_PROMPTED_HEADER,
-                settings.promptedRules || DEFAULT_UNIFIED_VARIABLE_RULES,
-                '',
-                contextSection,
-            ];
-
-            if (updateVarLines) {
-                promptSections.push('', 'Update variables:', updateVarLines);
-            }
-            if (incrementVarLines) {
-                promptSections.push('', 'Boolean-conditional variables (include all in JSON output):', incrementVarLines);
-            }
-
-            const systemPrompt = promptSections.join('\n');
-
-            const messages = [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: 'Output the JSON object now. JSON only, no other text.' },
-            ];
-
-            const maxTokens = Number(settings.responseLength) || 300;
-
-            // Fire-and-forget: do NOT await callBackgroundLLM. The chat LLM
-            // pipeline must never wait on this. All follow-up work (parsing
-            // the response, writing variables) happens in the .then/.catch
-            // below, on its own time, after this function has already
-            // returned to its caller.
-            callBackgroundLLM(context, settings, messages, maxTokens)
-                .then((raw) => {
-                    try {
-                        const parsed = extractJsonObject(raw);
-                        if (!parsed) {
-                            console.warn(LOG_PREFIX, 'could not parse a JSON object from the model response:', raw);
-                            setStatus('Update failed — response was not valid JSON. See console.', true);
-                            return;
-                        }
-
-                        let updatedCount = 0;
-                        for (const def of updateVars) {
-                            // Each variable's write is isolated - one variable
-                            // throwing (a malformed def, an unexpected value
-                            // shape, anything) must never prevent every other
-                            // variable in this same response from being
-                            // written. Previously this whole loop shared one
-                            // try/catch (around the entire .then() body), so a
-                            // single bad entry silently dropped every update
-                            // that would have been processed after it.
-                            try {
-                                if (!Object.prototype.hasOwnProperty.call(parsed, def.name)) continue;
-
-                                const rawValue = parsed[def.name];
-
-                                if (def.type === 'array' && !Array.isArray(rawValue)) {
-                                    // Prompted arrays only ever accept a full array
-                                    // replacement. Operation-style updates
-                                    // (push/pop/toggle/etc) are never something the
-                                    // model is asked to perform - that's
-                                    // applyIncrement's job exclusively, triggered
-                                    // either deterministically or via the boolean
-                                    // incrementVars path below. Anything else here
-                                    // means the model didn't follow the required
-                                    // shape; skip rather than write garbage.
-                                    continue;
-                                }
-
-                                if (def.type === 'datetime') {
-                                    // The model answers a datetime variable in
-                                    // words ("advance 3 hours") or with a date
-                                    // ("2026-09-18 22:00"), never raw seconds
-                                    // - calendar-engine turns either into the
-                                    // new scalar (incrementScalar/fromStructured
-                                    // underneath). resolveInstruction() dispatches
-                                    // to the variable's own calendar, so its
-                                    // nlRules ("advance 1 season", "next cycle",
-                                    // "move to Stormfall 17") apply here without
-                                    // any calendar-specific code in this file. An
-                                    // answer it can't understand is skipped, not
-                                    // written.
-                                    // Semantic time of day (requirements spec 1.35): when
-                                    // this variable opts in (timeSemanticMode ===
-                                    // 'semanticTimeOfDay'), the model's own answer here
-                                    // ("the next morning") is interpreted into a precise
-                                    // target time ahead of the ordinary duration/verb
-                                    // grammar. The model is never told about this in the
-                                    // prompt - describeConstraint() (formatting-utils.js)
-                                    // is unchanged - the request behind this feature is
-                                    // explicit that the engine alone does the
-                                    // interpretation, so a semantic phrase works simply
-                                    // because it happens to also read as natural language,
-                                    // the same way "advance 3 hours" already does.
-                                    // Datetime mode (requirements spec 1.36): a
-                                    // dateOnly variable "ignores semantic time of
-                                    // day phrases" outright - checkedDatetime()
-                                    // (variable-api.js) already forces
-                                    // timeSemanticMode to 'none' for it at save
-                                    // time, but that path is bypassed by the
-                                    // manager-modal's own inline editor (same
-                                    // reason deltaSource is re-checked there too),
-                                    // so it is re-gated here as well, the one
-                                    // place that actually turns semantic parsing
-                                    // on. The resulting scalar - from ANY path
-                                    // (semantic, duration, absolute date) - is
-                                    // then normalized for dateOnly/timeOnly by
-                                    // setVar() below, the single choke point
-                                    // every write already goes through.
-                                    const calendarId = def.calendar || DEFAULT_CALENDAR_ID;
-                                    const stored = getVar(chatId, def.name)?.value ?? getDefaultValue(def);
-                                    const semanticTimeOfDay = def.datetimeMode !== 'dateOnly' && def.timeSemanticMode === 'semanticTimeOfDay';
-                                    const next = resolveInstruction(calendarId, toScalar(calendarId, stored) ?? 0, rawValue, { semanticTimeOfDay });
-                                    if (next === null) {
-                                        console.warn(LOG_PREFIX, `prompted datetime update skipped for "${def.name}": could not understand ${JSON.stringify(rawValue)}`);
-                                        continue;
-                                    }
-                                    setVar(chatId, def.name, next, def);
-                                    recalculateDependents(chatId, def.name);
-                                    updatedCount++;
-                                    continue;
-                                }
-
-                                setVar(chatId, def.name, rawValue, def);
-                                recalculateDependents(chatId, def.name);
-                                updatedCount++;
-                            } catch (err) {
-                                console.warn(LOG_PREFIX, `prompted update failed for variable "${def.name}" (gracefully handled)`, err);
-                            }
-                        }
-
-                        let incrementedCount = 0;
-                        for (const def of incrementVars) {
-                            try {
-                                if (parsed[def.name] === true) {
-                                    applyIncrement(chatId, def.name, def.increment.delta, def);
-                                    recalculateDependents(chatId, def.name);
-                                    incrementedCount++;
-                                }
-                            } catch (err) {
-                                console.warn(LOG_PREFIX, `prompted increment failed for variable "${def.name}" (gracefully handled)`, err);
-                            }
-                        }
-
-                        setStatus(`State updated (${updatedCount}/${updateVars.length} variables, ${incrementedCount}/${incrementVars.length} incremented).`);
-                    } catch (err) {
-                        console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
-                        setStatus('Update failed — see browser console for details.', true);
-                    }
-                })
+            // Fire-and-forget: do NOT await this. The chat LLM pipeline must
+            // never wait on this. Every chunk's LLM call, parsing, and
+            // variable writes happen inside runPromptedChunksSequentially(),
+            // on its own time, after this function has already returned to
+            // its caller.
+            runPromptedChunksSequentially(context, settings, contextSection, chunks)
                 .catch((err) => {
                     console.warn(LOG_PREFIX, 'State Engine background LLM failed gracefully', err);
                     setStatus('Update failed — see browser console for details.', true);

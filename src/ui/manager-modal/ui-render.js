@@ -50,7 +50,7 @@ export function renderPresetsTab(managerApi, managerCurrentPresetId, presetsSubt
         .sort(([, a], [, b]) => (a.name || '').localeCompare(b.name || ''))
         .map(([presetId, preset]) => {
             const status = managerApi.getIndependentPresetStatus(presetId) || {
-                enabled: true, batch: 'core', contextMode: 'chat-history', lastRunAt: null, lastOutcome: 'never-run', lastError: null, changedVariables: [],
+                enabled: true, contextMode: 'chat-history', lastRunAt: null, lastOutcome: 'never-run', lastError: null, changedVariables: [],
             };
             return uiTemplates.buildIndependentPresetRow(presetId, preset, currentChatId, status, connectionProfiles, managerApi.listCalendars());
         })

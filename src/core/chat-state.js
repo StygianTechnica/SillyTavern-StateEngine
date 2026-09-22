@@ -241,18 +241,6 @@ export function applyArrayOperation(currentArray, operation, value, def) {
     }
 }
 
-// Batch membership (def.batch, variable-schema.js) is snapshotted into
-// entry.def with everything else. A caller that hands over a definition with
-// NO `batch` field - a legacy definition, or the minimal { name, type } stand-
-// in applyIncrement() falls back to - would otherwise replace the snapshot
-// and silently drop the batch the previous snapshot recorded. This carries
-// the previous batch forward in that one case; a def that has its own batch
-// (the normal case) is stored exactly as before, same object, no copy.
-function keepSnapshotBatch(def, previousDef) {
-    if (!def || def.batch !== undefined || typeof previousDef?.batch !== 'string') return def;
-    return { ...def, batch: previousDef.batch };
-}
-
 function defaultChatState(characterAvatar, groupId) {
     return {
         variables: {},
@@ -366,7 +354,7 @@ export function setVar(chatId, varName, value, def, { manual = false } = {}) {
         // 1. Update the isolated store: the value, plus a snapshot of the
         // canonical schema (def) that produced it.
         const existing = state.variables[varName] || {};
-        const effectiveDef = keepSnapshotBatch(def ?? existing.def ?? null, existing.def);
+        const effectiveDef = def ?? existing.def ?? null;
 
         if (blockedFlagReset(effectiveDef, existing.value, value, manual)) {
             console.warn(LOG_PREFIX, `setVar: "${varName}" is a flag-mode boolean already true - refusing to reset it to false (not a manual write)`);
@@ -566,7 +554,7 @@ export function resetValueIfTypeChanged(chatId, def) {
             : getDefaultValue(def);
         state.variables[def.name] = {
             value: next,
-            def: keepSnapshotBatch(def, entry.def),
+            def,
         };
         saveChatState(chatId, state);
 

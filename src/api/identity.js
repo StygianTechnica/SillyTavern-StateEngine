@@ -57,7 +57,7 @@ export function validateCallerIdentity(extensionId, instanceId, targetNamespace)
 }
 
 // For calls whose signature carries no namespace (declareCapabilities,
-// assignBatch, ...): the target is the caller's OWN namespace record. Instance
+// declareCapabilities, notify, ...): the target is the caller's OWN namespace record. Instance
 // first (a wrong instance never reveals whether an extension exists), then
 // the record, then the real ownership check - trivially satisfied for a
 // record found by id, but it keeps every write on the same identity path.

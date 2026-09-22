@@ -804,7 +804,7 @@ export function buildIndependentPresetRow(presetId, preset, currentChatId, statu
                                 ${preset.description ? `<span class="se-manager-preset-description-inline">${escapeHtml(preset.description)}</span>` : ''}
                             </div>
                             <small class="se-manager-preset-meta">
-                                ${enabled ? 'Enabled' : 'Disabled'} • ${escapeHtml(CONTEXT_MODE_LABEL[status.contextMode] || status.contextMode)} • batch "${escapeHtml(status.batch)}" • ${escapeHtml(OUTCOME_LABEL[status.lastOutcome] || status.lastOutcome)} • last run ${relativeTime(status.lastRunAt)}
+                                ${enabled ? 'Enabled' : 'Disabled'} • ${escapeHtml(CONTEXT_MODE_LABEL[status.contextMode] || status.contextMode)} • ${escapeHtml(OUTCOME_LABEL[status.lastOutcome] || status.lastOutcome)} • last run ${relativeTime(status.lastRunAt)}
                             </small>
                         </div>
                         <div class="se-row-actions">
@@ -841,10 +841,6 @@ export function buildIndependentPresetRow(presetId, preset, currentChatId, statu
                                     <option value="">Use currently active connection</option>
                                     ${profileOptions}
                                 </select>
-                            </div>
-                            <div>
-                                <label class="se-manager-label">Batch</label>
-                                <input type="text" class="text_pole se-indy-field" data-preset-id="${presetId}" data-field="batch" value="${escapeHtml(config.batch ?? '')}" placeholder="core" />
                             </div>
                             <div>
                                 <label class="se-manager-label">Temperature</label>
@@ -956,8 +952,9 @@ export function buildIndependentPresetsTabContainer(rows) {
             </div>
             <div class="se-empty" style="margin-bottom: 10px;">
                 Independent presets run their own prompted update outside the normal chat flow - on their own
-                model, prompt and variable batch. Use the Presets tab's regular Import/Export to share one; cloning
-                and export work the same as for a regular preset.
+                model and prompt, always operating on every prompted variable in the preset itself (automatically
+                split into several calls if too large for one). Use the Presets tab's regular Import/Export to
+                share one; cloning and export work the same as for a regular preset.
             </div>
             <div class="se-manager-preset-list">
                 ${rows || '<div class="se-empty">No independent presets yet. Click New to create one.</div>'}

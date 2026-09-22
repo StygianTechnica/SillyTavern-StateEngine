@@ -293,10 +293,9 @@ export function wireEvents(managerApi, managerState) {
             // only merges fields that are PRESENT (pickConfigFields skips `undefined` so a
             // patch can touch just one field at a time), so `undefined` here would be
             // silently dropped and leave the old override in place. `null` IS stored, and
-            // every read site (runIndependentPreset's `config.temperature ?? ...`,
-            // getIndependentPresetStatus's `config.batch || ...`) already treats a stored
-            // `null` the same as "not set" - falls back to the global/default, exactly
-            // what clearing the box should do.
+            // every read site (runIndependentPreset's `config.temperature ?? ...`)
+            // already treats a stored `null` the same as "not set" - falls back to
+            // the global/default, exactly what clearing the box should do.
             value = raw === '' ? null : Number(raw);
             if (value !== null && Number.isNaN(value)) return;
         } else {
@@ -569,13 +568,7 @@ export function wireEvents(managerApi, managerState) {
         }
 
         // ⭐ FIX: Save or update the variable in the preset
-        // Batch membership (requirements spec 1.20) has no field in this
-        // editor, so `newVariable` above just took blankDefinition()'s
-        // default ("core") - saving an edit would silently pull a variable
-        // that was assigned to another batch (via the API) back into the
-        // main prompt. Carry the stored batch over instead.
         const previousDef = preset.variables[newVariable.id];
-        if (typeof previousDef?.batch === 'string' && previousDef.batch) newVariable.batch = previousDef.batch;
 
         // Object arrays are created through the API only (see protectObjectArray).
         variableSchema.protectObjectArray(newVariable, previousDef);
@@ -588,13 +581,6 @@ export function wireEvents(managerApi, managerState) {
         // stored one is carried over.
         if (values.calendar === undefined && typeof previousDef?.calendar === 'string' && previousDef.calendar) newVariable.calendar = previousDef.calendar;
         if (typeof previousDef?.unit === 'string' && previousDef.unit) newVariable.unit = previousDef.unit;
-
-        // A variable that has just become a datetime lands in batch "time",
-        // as one created through the API does (variable-api.js) - but only
-        // when it was never assigned anywhere else.
-        if (newVariable.type === 'datetime' && previousDef?.type !== 'datetime' && (!previousDef?.batch || previousDef.batch === 'core')) {
-            newVariable.batch = 'time';
-        }
 
         // Datetime mode (requirements spec 1.36): a dateOnly variable
         // "ignores semantic time of day phrases" outright, same reason

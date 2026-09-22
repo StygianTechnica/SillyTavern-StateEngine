@@ -2,7 +2,7 @@
 //
 // Independent Presets in the manager modal (requirements spec 1.29): the Presets
 // tab's two subtabs, the independent-preset editor (enabled toggle, model,
-// temperature, max tokens, history limit, batch, prompt, context indicator,
+// temperature, max tokens, history limit, prompt, context indicator,
 // status), Run Now, and create/rename/delete/clone/export - all driven through
 // the manager modal exactly as a user would click through it.
 //
@@ -144,7 +144,6 @@ describe('create / rename / delete', () => {
         expect(row('Watcher').length).toBe(1);
         expect(row('Watcher').text()).toContain('Enabled');
         expect(row('Watcher').text()).toContain('Chat history (default)');
-        expect(row('Watcher').text()).toContain('batch "core"');
     });
 
     it('cancelling the name prompt creates nothing', () => {
@@ -183,7 +182,7 @@ describe('create / rename / delete', () => {
 
 describe('clone and export reuse the regular-preset buttons - no independent-specific code needed', () => {
     it('clone carries independentPreset/independentConfig, but not run history', async () => {
-        const created = asBuiltin((e, i) => stateEngine.createIndependentPreset(e, i, { namespace: BUILTIN, name: 'Source', batch: 'extra', temperature: 0.4 }));
+        const created = asBuiltin((e, i) => stateEngine.createIndependentPreset(e, i, { namespace: BUILTIN, name: 'Source', temperature: 0.4 }));
         stateEngine.createVariable(BUILTIN, ensureInstanceId(), {
             namespace: BUILTIN, presetName: 'Source', name: 'mood', type: 'string', defaultValue: 'calm',
             behaviors: { prompted: true, increment: false }, prompted: { instructions: 'infer' },
@@ -198,7 +197,7 @@ describe('clone and export reuse the regular-preset buttons - no independent-spe
 
         const cloned = Object.values(getSettings().presets).find((p) => p.name === 'Cloned');
         expect(cloned.independentPreset).toBe(true);
-        expect(cloned.independentConfig).toMatchObject({ batch: 'extra', temperature: 0.4 });
+        expect(cloned.independentConfig).toMatchObject({ temperature: 0.4 });
         expect(cloned.independentStatus).toBeUndefined();
         expect(row('Cloned').length).toBe(1);
     });
@@ -214,12 +213,15 @@ describe('the editor fields', () => {
 
     const field = (name) => row('Editable').find(`.se-indy-field[data-field="${name}"]`);
 
-    it('editing temperature, max tokens, history limit and batch saves through updateIndependentPreset', () => {
+    it('editing temperature, max tokens and history limit saves through updateIndependentPreset', () => {
         field('temperature').val('0.7').trigger('change');
         field('maxTokens').val('222').trigger('change');
         field('historyLimit').val('3').trigger('change');
-        field('batch').val('extra').trigger('change');
-        expect(findPresetById(presetId).independentConfig).toMatchObject({ temperature: 0.7, maxTokens: 222, historyLimit: 3, batch: 'extra' });
+        expect(findPresetById(presetId).independentConfig).toMatchObject({ temperature: 0.7, maxTokens: 222, historyLimit: 3 });
+    });
+
+    it('there is no "batch" field any more (requirements spec 1.20, rewritten 2026-09-22)', () => {
+        expect(field('batch').length).toBe(0);
     });
 
     it('clearing a number field stores null (clears the override), not left untouched', () => {

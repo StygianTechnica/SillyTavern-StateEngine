@@ -8,20 +8,23 @@
 // project instructions to keep working behavior working. Instead it reuses
 // everything from prompted-engine.js's flow that was already exported and
 // safe to call from outside (callBackgroundLLM, extractJsonObject,
-// describeConstraint, shouldSkipPromptedRefresh, selectBatchVariables,
-// isDoneFlag, setVar/applyIncrement, recalculateDependents), and
-// re-implements the small prompted/increment classification logic locally
-// rather than extracting it out of prompted-engine.js. That local
-// duplication is deliberate, not an oversight — see this pass's
-// implementation report (Part 8). Transcript-building (turning a chat slice
-// into "Recent conversation"/"Most recent roleplay message" text) is the
-// one exception, shared via formatting-utils.js's buildRecentMessagesSection()
-// (2026-09-22) rather than duplicated - a pure, read-only piece of prompt
-// TEXT assembly, not classification or a write path, so extracting it does
-// not touch anything the "don't modify prompted-engine.js" rule is actually
-// protecting; keeping it duplicated would have meant both call sites'
-// "Most recent roleplay message" fix drifting apart instead of being fixed,
-// and tested, once.
+// describeConstraint, shouldSkipPromptedRefresh, isDoneFlag, setVar/
+// applyIncrement, recalculateDependents), and re-implements the small
+// prompted/increment classification logic (and its own variable-line
+// rendering) locally rather than extracting it out of prompted-engine.js.
+// That local duplication is deliberate, not an oversight — see this pass's
+// implementation report (Part 8). Two exceptions, both pure, read-only text/
+// data assembly rather than classification or a write path, so sharing them
+// never touches anything the "don't modify prompted-engine.js" rule is
+// actually protecting: transcript-building (turning a chat slice into
+// "Recent conversation"/"Most recent roleplay message" text), shared via
+// formatting-utils.js's buildRecentMessagesSection() (2026-09-22); and the
+// automatic prompt-CHUNKING primitive (requirements spec 1.20, rewritten
+// 2026-09-22, replacing the earlier named-batch system), shared via
+// src/core/prompt-chunking.js's chunkPromptUnits() - a pure size-packing
+// function with no opinion on how a variable's line is rendered, so each
+// file still builds its OWN units from its OWN (deliberately separate) line
+// format before handing them to it.
 //
 // Concurrency: independentRunInProgress below guards against two
 // independent-preset runs overlapping each other. It does NOT guard
@@ -33,9 +36,12 @@
 //
 // 2026-09-21 (requirements spec 1.29): "independent preset" is formalized
 // with a first-class CRUD surface (create/update/delete/list/toggle),
-// per-preset enabled/disabled, per-preset variable BATCH selection, the
-// three independent-CONTEXT modes (extension-provided / chat-history
-// default / explicit-empty), and per-preset run status. All of it lives on
+// per-preset enabled/disabled, the three independent-CONTEXT modes
+// (extension-provided / chat-history default / explicit-empty), and
+// per-preset run status. An independent preset's own run operates on EVERY
+// prompted/incrementable variable IN THAT PRESET (requirements spec 1.20,
+// rewritten 2026-09-22 - there is no separate "which batch" selection any
+// more; a preset's own membership already scopes it). All of it lives on
 // the SAME preset object as plain fields (preset.independentPreset,
 // preset.independentConfig, preset.independentStatus) - not a parallel
 // storage system - because a preset already has everything (variables,
@@ -47,19 +53,19 @@ import { LOG_PREFIX, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED_VARIABLE_RULES, ge
 import { validateNamespace } from './namespace-manager.js';
 import { validateCallerIdentity } from './identity.js';
 import { findPresetEntry, createPreset, updatePreset, deletePreset, listPresets } from './preset-api.js';
-import { DEFAULT_BATCH } from '../core/variable-schema.js';
 import { getVar, setVar, applyIncrement } from '../core/chat-state.js';
 import { recalculateDependents } from '../core/calculated-engine.js';
 import { callBackgroundLLM } from '../core/background-llm.js';
 import { extractJsonObject, describeConstraint, buildRecentMessagesSection } from '../ui/formatting-utils.js';
-import { shouldSkipPromptedRefresh, isDoneFlag, selectBatchVariables } from '../core/prompted-engine.js';
+import { shouldSkipPromptedRefresh, isDoneFlag } from '../core/prompted-engine.js';
 import { parseScheduleTarget, scheduleAfterRun } from '../core/schedule-engine.js';
+import { chunkPromptUnits } from '../core/prompt-chunking.js';
 
 // Config fields configureIndependentPreset()/createIndependentPreset()/
 // updateIndependentPreset() accept. `context` is deliberately NOT among them
 // - see updateIndependentPresetContext() below for why it needs its own,
 // narrower entry point.
-const CONFIG_FIELDS = ['connectionProfileId', 'temperature', 'maxTokens', 'promptedHeader', 'promptedRules', 'batch', 'enabled', 'historyLimit'];
+const CONFIG_FIELDS = ['connectionProfileId', 'temperature', 'maxTokens', 'promptedHeader', 'promptedRules', 'enabled', 'historyLimit'];
 
 function pickConfigFields(source) {
     const out = {};
@@ -73,11 +79,14 @@ function pickConfigFields(source) {
 // existing global stateEngineProfileId/stateEngineTemperature/
 // stateEngineMaxTokens override mechanism (src/core/background-llm.js) but
 // scoped per-preset: connectionProfileId, temperature, maxTokens,
-// promptedHeader, promptedRules, batch (1.29: which variable batch this
-// preset's independent run operates on, DEFAULT_BATCH "core" if unset),
+// promptedHeader, promptedRules,
 // enabled (1.29: false suspends every execution path - see runIndependentPreset).
 // `context` is never accepted here - only updateIndependentPresetContext()
-// may set it. Kept as the one low-level primitive every higher-level
+// may set it. There is no "which variable batch" field any more
+// (requirements spec 1.20, rewritten 2026-09-22) - a run always operates on
+// every prompted/incrementable variable in the preset itself, automatically
+// chunked if it's too large for one LLM call (runIndependentPresetInternal,
+// below). Kept as the one low-level primitive every higher-level
 // function below (create/update) composes on top of, unchanged from before
 // this pass, so nothing that already calls it directly breaks.
 export function configureIndependentPreset(extensionId, instanceId, namespace, name, config) {
@@ -132,7 +141,7 @@ function requireIndependentPreset(namespace, name, fnName) {
 }
 
 // def: { namespace, name, description?, connectionProfileId?, temperature?,
-// maxTokens?, promptedHeader?, promptedRules?, batch?, enabled? }. One atomic
+// maxTokens?, promptedHeader?, promptedRules?, enabled? }. One atomic
 // operation from the caller's view: if the underlying createPreset() call
 // fails (bad namespace, name already taken, ...) nothing else runs. Returns
 // the created preset (with its id and independentPreset/independentConfig
@@ -357,7 +366,7 @@ function recordStatus(preset, patch) {
     persistSettings();
 }
 
-// -> { enabled, batch, contextMode, lastRunAt, lastOutcome, lastError,
+// -> { enabled, contextMode, lastRunAt, lastOutcome, lastError,
 // changedVariables } or null when namespace.name is not an independent
 // preset. lastRunAt is null and lastOutcome is 'never-run' before the first run.
 export function getIndependentPresetStatus(namespace, name) {
@@ -369,7 +378,6 @@ export function getIndependentPresetStatus(namespace, name) {
         const status = preset.independentStatus || {};
         return {
             enabled: config.enabled !== false,
-            batch: config.batch || DEFAULT_BATCH,
             contextMode: independentContextMode(config).mode,
             lastRunAt: status.lastRunAt ?? null,
             lastOutcome: status.lastOutcome ?? 'never-run',
@@ -461,14 +469,14 @@ async function runIndependentPresetInternal(chatId, presetRef) {
 
         const context = SillyTavern.getContext();
 
-        // 1.29: which variable batch this preset operates on (request Section 5;
-        // DEFAULT_BATCH "core" when unset, same default every other variable
-        // gets). Previously this used EVERY prompted/incrementable variable in
-        // the preset with no batch filtering at all - a real gap against the
-        // spec, fixed here using the exact same selectBatchVariables()
-        // prompted-engine.js's own main loop uses.
-        const batch = config.batch || DEFAULT_BATCH;
-        const variables = selectBatchVariables(preset.variables || {}, batch);
+        // 1.20 (rewritten 2026-09-22): an independent preset's run operates
+        // on EVERY prompted/incrementable variable in the preset itself -
+        // there is no "which batch" selection any more (a preset's own
+        // membership already scopes it; see this file's own header
+        // comment). An oversized set is automatically split into several
+        // sequential calls below (chunkPromptUnits, prompt-chunking.js)
+        // instead of needing to be manually scoped down.
+        const variables = Object.values(preset.variables || {});
         const updateVars = [];
         const incrementVars = [];
         for (const def of variables) {
@@ -515,44 +523,34 @@ async function runIndependentPresetInternal(chatId, presetRef) {
             contextSection = ''; // empty mode: purely variables, no context section at all
         }
 
-        const updateVarLines = updateVars
-            .map((def) => {
+        // 1.20 (rewritten 2026-09-22): the same automatic size-based
+        // chunking prompted-engine.js's main update uses, built from this
+        // file's OWN line format (deliberately unchanged, and deliberately
+        // NOT shared with prompted-engine.js's own line-building - see this
+        // file's own header comment on why classification/write logic here
+        // stays a local, independent copy). `unit.size` is the rendered
+        // line's character length, matching maxPromptedVariableChars'
+        // own units.
+        const units = [
+            ...updateVars.map((def) => {
                 const current = getVar(chatId, def.name)?.value ?? def.defaultValue;
                 const instructions = (def.prompted?.instructions || def.description || '').trim();
-                return `- "${def.name}" [${describeConstraint(def)}] currently ${JSON.stringify(current)}.${instructions ? ` ${instructions}` : ''}`;
-            })
-            .join('\n');
-
-        const incrementVarLines = incrementVars
-            .map((def) => {
+                const line = `- "${def.name}" [${describeConstraint(def)}] currently ${JSON.stringify(current)}.${instructions ? ` ${instructions}` : ''}`;
+                return { def, kind: 'update', line, size: line.length };
+            }),
+            ...incrementVars.map((def) => {
                 const instructions = (def.prompted?.instructions || def.description || '').trim();
-                return `- "${def.name}"[true or false]: ${instructions}`;
-            })
-            .join('\n');
-
-        const varLines = [updateVarLines, incrementVarLines].filter(Boolean).join('\n');
-        if (!varLines.trim()) {
-            recordStatus(preset, { lastOutcome: 'skipped-nothing-to-update', changedVariables: [] });
-            return false;
-        }
-
-        // 1.29: no WI, fantasy-calendar/image-variable metadata, other presets,
-        // or SillyTavern's own chat system messages are ever added here (request
-        // Section 6) - the prompt is built ONLY from the header/rules text, the
-        // context section above, and this preset's own variable lines.
-        const promptSections = [
-            config.promptedHeader || settings.promptedHeader || DEFAULT_PROMPTED_HEADER,
-            config.promptedRules || settings.promptedRules || DEFAULT_UNIFIED_VARIABLE_RULES,
-            '',
-            contextSection,
+                const line = `- "${def.name}"[true or false]: ${instructions}`;
+                return { def, kind: 'increment', line, size: line.length };
+            }),
         ];
-        if (updateVarLines) promptSections.push('', 'Update variables:', updateVarLines);
-        if (incrementVarLines) promptSections.push('', 'Boolean-conditional variables (include all in JSON output):', incrementVarLines);
-
-        const messages = [
-            { role: 'system', content: promptSections.filter((s) => s !== '').join('\n') },
-            { role: 'user', content: 'Output the JSON object now. JSON only, no other text.' },
-        ];
+        const maxChars = Number(settings.maxPromptedVariableChars) || Infinity;
+        const chunks = chunkPromptUnits(units, maxChars).map((chunk) => ({
+            updateVars: chunk.filter((u) => u.kind === 'update').map((u) => u.def),
+            updateVarLines: chunk.filter((u) => u.kind === 'update').map((u) => u.line).join('\n'),
+            incrementVars: chunk.filter((u) => u.kind === 'increment').map((u) => u.def),
+            incrementVarLines: chunk.filter((u) => u.kind === 'increment').map((u) => u.line).join('\n'),
+        }));
 
         const maxTokens = Number(config.maxTokens ?? settings.responseLength) || 300;
 
@@ -570,45 +568,91 @@ async function runIndependentPresetInternal(chatId, presetRef) {
 
         independentRunInProgress = true;
         try {
-            const raw = await callBackgroundLLM(context, effectiveSettings, messages, maxTokens);
-            const parsed = extractJsonObject(raw);
-            if (!parsed) {
-                console.warn(LOG_PREFIX, 'runIndependentPreset: could not parse a JSON object from the model response:', raw);
-                recordStatus(preset, { lastOutcome: 'skipped-parse-error', lastError: 'response was not valid JSON', changedVariables: [] });
-                return false;
-            }
-
+            // Every chunk is run SEQUENTIALLY - one chunk's LLM call is
+            // awaited before the next one starts (never in parallel), each
+            // isolated from the others: a chunk that fails to parse or call
+            // the LLM is logged and simply contributes nothing, but never
+            // stops the remaining chunks from still running. A single-chunk
+            // run (the overwhelming common case) behaves exactly as it
+            // always has - one call, one outcome.
             const changed = [];
             let updatedCount = 0;
-            for (const def of updateVars) {
-                try {
-                    if (!Object.prototype.hasOwnProperty.call(parsed, def.name)) continue;
-                    const rawValue = parsed[def.name];
-                    if (def.type === 'array' && !Array.isArray(rawValue)) continue;
-                    setVar(chatId, def.name, rawValue, def);
-                    recalculateDependents(chatId, def.name);
-                    updatedCount++;
-                    changed.push(def.name);
-                } catch (err) {
-                    console.warn(LOG_PREFIX, `runIndependentPreset: update failed for variable "${def.name}" (gracefully handled)`, err);
-                }
-            }
-
             let incrementedCount = 0;
-            for (const def of incrementVars) {
+            let anyParseError = false;
+            let lastParseError = null;
+
+            for (const chunk of chunks) {
+                // 1.29: no WI, fantasy-calendar/image-variable metadata, other
+                // presets, or SillyTavern's own chat system messages are ever
+                // added here (request Section 6) - the prompt is built ONLY
+                // from the header/rules text, the context section above, and
+                // this chunk's own variable lines.
+                const promptSections = [
+                    config.promptedHeader || settings.promptedHeader || DEFAULT_PROMPTED_HEADER,
+                    config.promptedRules || settings.promptedRules || DEFAULT_UNIFIED_VARIABLE_RULES,
+                    '',
+                    contextSection,
+                ];
+                if (chunk.updateVarLines) promptSections.push('', 'Update variables:', chunk.updateVarLines);
+                if (chunk.incrementVarLines) promptSections.push('', 'Boolean-conditional variables (include all in JSON output):', chunk.incrementVarLines);
+
+                const messages = [
+                    { role: 'system', content: promptSections.filter((s) => s !== '').join('\n') },
+                    { role: 'user', content: 'Output the JSON object now. JSON only, no other text.' },
+                ];
+
+                let parsed;
                 try {
-                    if (parsed[def.name] === true) {
-                        applyIncrement(chatId, def.name, def.increment.delta, def);
-                        recalculateDependents(chatId, def.name);
-                        incrementedCount++;
-                        changed.push(def.name);
+                    const raw = await callBackgroundLLM(context, effectiveSettings, messages, maxTokens);
+                    parsed = extractJsonObject(raw);
+                    if (!parsed) {
+                        console.warn(LOG_PREFIX, 'runIndependentPreset: could not parse a JSON object from the model response:', raw);
+                        anyParseError = true;
+                        lastParseError = 'response was not valid JSON';
+                        continue;
                     }
                 } catch (err) {
-                    console.warn(LOG_PREFIX, `runIndependentPreset: increment failed for variable "${def.name}" (gracefully handled)`, err);
+                    console.warn(LOG_PREFIX, 'runIndependentPreset: background LLM call failed (gracefully handled)', err);
+                    anyParseError = true;
+                    lastParseError = err?.message || String(err);
+                    continue;
+                }
+
+                for (const def of chunk.updateVars) {
+                    try {
+                        if (!Object.prototype.hasOwnProperty.call(parsed, def.name)) continue;
+                        const rawValue = parsed[def.name];
+                        if (def.type === 'array' && !Array.isArray(rawValue)) continue;
+                        setVar(chatId, def.name, rawValue, def);
+                        recalculateDependents(chatId, def.name);
+                        updatedCount++;
+                        changed.push(def.name);
+                    } catch (err) {
+                        console.warn(LOG_PREFIX, `runIndependentPreset: update failed for variable "${def.name}" (gracefully handled)`, err);
+                    }
+                }
+
+                for (const def of chunk.incrementVars) {
+                    try {
+                        if (parsed[def.name] === true) {
+                            applyIncrement(chatId, def.name, def.increment.delta, def);
+                            recalculateDependents(chatId, def.name);
+                            incrementedCount++;
+                            changed.push(def.name);
+                        }
+                    } catch (err) {
+                        console.warn(LOG_PREFIX, `runIndependentPreset: increment failed for variable "${def.name}" (gracefully handled)`, err);
+                    }
                 }
             }
 
             const didWrite = updatedCount > 0 || incrementedCount > 0;
+            if (!didWrite && anyParseError) {
+                // Every chunk that ran failed to produce anything - the exact
+                // single-chunk-failure outcome this status has always reported.
+                recordStatus(preset, { lastOutcome: 'skipped-parse-error', lastError: lastParseError, changedVariables: [] });
+                return false;
+            }
             recordStatus(preset, { lastOutcome: didWrite ? 'updated' : 'no-op', lastError: null, changedVariables: changed });
             return didWrite;
         } finally {
