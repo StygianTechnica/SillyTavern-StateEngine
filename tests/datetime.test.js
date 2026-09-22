@@ -182,6 +182,38 @@ describe('datetime variables', () => {
             expect(formatScalar('gregorian', 'garbage')).toBeNull();
             expect(formatScalar('nope', 0)).toBeNull();
         });
+
+        // A real report (2026-09-22): entering a date like "2026-09-22" (or
+        // with a time, "2026-09-22 00:00:00") into the manager modal's
+        // default-value box was refused as "not a date-time", with no hint
+        // why - the "-" the user typed/pasted had silently become a
+        // visually-identical Unicode lookalike (a non-breaking hyphen, in
+        // the reported case), which ISO_DATETIME never matched. Root-caused
+        // by reproducing the exact input, not assumed. Fixed in toScalar()
+        // (the one root every real caller already goes through - the
+        // manager modal, prompted LLM answers, deltaSource jumps, World
+        // Info conditions, tracker editing - see its own comment for the
+        // full character list) rather than in parseDateTime() itself, which
+        // stays a strict ISO matcher on purpose.
+        it('toScalar normalizes Unicode dash lookalikes to a plain hyphen before parsing', () => {
+            const lookalikes = ['‐', '‑', '‒', '–', '—', '―', '−'];
+            for (const dash of lookalikes) {
+                const dateOnly = `2026${dash}09${dash}22`;
+                const withTime = `2026${dash}09${dash}22 00:00:00`;
+                expect(toScalar('gregorian', dateOnly), JSON.stringify(dash)).toBe(ts(2026, 9, 22));
+                expect(toScalar('gregorian', withTime), JSON.stringify(dash)).toBe(ts(2026, 9, 22));
+            }
+            // A negative number using the Unicode minus sign (U+2212) also
+            // now parses, incidentally, from the same normalization.
+            expect(toScalar('gregorian', '−90.5')).toBe(-90.5);
+            // Midnight (00:00:00) is an entirely ordinary moment - nothing
+            // about the all-zero time was ever special-cased or rejected.
+            expect(toScalar('gregorian', '2026-09-22 00:00:00')).toBe(ts(2026, 9, 22));
+            // parseDateTime() itself is deliberately NOT changed - it stays
+            // a strict ISO matcher; only toScalar (the forgiving entry point
+            // every real caller uses) normalizes first.
+            expect(parseDateTime('gregorian', '2026‑09‑22')).toBeNull();
+        });
     });
 
     describe('creation', () => {

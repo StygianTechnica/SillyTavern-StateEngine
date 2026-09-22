@@ -194,6 +194,21 @@ export function fromStructured(calendarId, structured) {
 const ISO_DATETIME = /^(-?\d{1,6})-(\d{1,2})-(\d{1,2})(?:[T ]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?\s*Z?$/i;
 const PLAIN_NUMBER = /^[+-]?\d+(?:\.\d+)?$/;
 
+// Unicode characters that read as, and are frequently substituted for, a
+// plain ASCII hyphen-minus by autocorrect/smart-typography/IME software
+// (Windows AutoCorrect, Word, some mobile keyboards): hyphen, non-breaking
+// hyphen, figure dash, en dash, em dash, horizontal bar, minus sign. Visually
+// indistinguishable from "-" in most fonts, so a user has no way to notice
+// before saving - confirmed root cause of a real report (2026-09-22): typing
+// a date like "2026-09-22" produced a non-breaking hyphen that silently
+// failed ISO_DATETIME (which only ever matched literal "-"), rejected as
+// "not a date-time" with no hint why. Normalized once here, at the single
+// root every date-parsing path in this codebase already funnels through
+// (toScalar - the manager modal, prompted LLM answers, deltaSource jumps,
+// World Info conditions, tracker editing, ...), rather than patched
+// per-caller.
+const DASH_LOOKALIKES = /[‐-―−]/g;
+
 // "2026-09-18", "2026-09-18 22:00", "2026-09-18T22:00:05" -> scalar, or null
 // when the text is not that shape or names a date that does not exist.
 export function parseDateTime(calendarId, text) {
@@ -220,7 +235,7 @@ export function parseDateTime(calendarId, text) {
 export function toScalar(calendarId, raw) {
     if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
     if (typeof raw !== 'string') return null;
-    const text = raw.trim();
+    const text = raw.trim().replace(DASH_LOOKALIKES, '-');
     if (PLAIN_NUMBER.test(text)) return Number(text);
     const iso = parseDateTime(calendarId, text);
     if (iso !== null) return iso;

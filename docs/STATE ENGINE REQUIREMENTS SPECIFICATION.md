@@ -1252,6 +1252,32 @@ Fantasy calendars (bones only in 1.21, implemented in 1.22):
   calendar CRUD API. A leapYearRule the engine does not implement is still
   refused (throws), never converted with the wrong rules.
 
+BUG FIX (2026-09-22): a real report - typing a date like "2026-09-22" (or
+with a time) into the manager modal's default-value box was refused as "not
+a date-time," with no visible reason. Root-caused by reproducing the exact
+input, not assumed: the "-" had silently become a Unicode lookalike (a
+non-breaking hyphen, U+2011, in the reported case - almost certainly
+autocorrect/smart-typography somewhere upstream of the keystroke reaching
+the browser) that ISO_DATETIME (calendar-engine.js) only ever matched as a
+literal ASCII hyphen. Visually indistinguishable from "-" in essentially
+every font, so a user has no way to notice before saving. Fixed in
+toScalar() - the one root every real caller of date/time text already goes
+through (the manager modal, prompted LLM answers, deltaSource jumps - 1.31,
+World Info conditions, tracker editing) - by normalizing seven Unicode
+dash/minus lookalikes (hyphen, non-breaking hyphen, figure dash, en dash,
+em dash, horizontal bar, minus sign) to a plain "-" before parsing, rather
+than patched separately in each caller. parseDateTime() itself is
+deliberately left unchanged (still a strict ISO matcher); only toScalar,
+the forgiving public entry point, normalizes. Confirmed while investigating:
+a bare date with no time ("2026-09-22") already worked and always had -
+the time portion of ISO_DATETIME was already optional; the user's separate
+question ("does it have to be 00:00:01?") no - midnight (00:00:00) was
+never special-cased or rejected either; the dash was the only actual cause.
+Test: tests/datetime.test.js's "toScalar normalizes Unicode dash
+lookalikes" - all seven lookalikes, date-only and date+time, the incidental
+minus-sign benefit, and that parseDateTime itself is unaffected. Verified
+by mutation testing (removing the normalization call) before calling it done.
+
 1.21.5 Calendar Formatting (2026-09-18)
 
 - Datetime variables store scalar seconds. That does not change.
