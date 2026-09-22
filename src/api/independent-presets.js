@@ -50,7 +50,7 @@ import { shouldSkipPromptedRefresh, isDoneFlag, selectBatchVariables } from '../
 // updateIndependentPreset() accept. `context` is deliberately NOT among them
 // - see updateIndependentPresetContext() below for why it needs its own,
 // narrower entry point.
-const CONFIG_FIELDS = ['connectionProfileId', 'temperature', 'maxTokens', 'promptedHeader', 'promptedRules', 'batch', 'enabled'];
+const CONFIG_FIELDS = ['connectionProfileId', 'temperature', 'maxTokens', 'promptedHeader', 'promptedRules', 'batch', 'enabled', 'historyLimit'];
 
 function pickConfigFields(source) {
     const out = {};
@@ -420,7 +420,10 @@ async function runIndependentPresetInternal(chatId, presetRef) {
         let contextSection;
         if (contextMode === 'chat-history') {
             if (!Array.isArray(context.chat)) return false;
-            const userRequestedCount = Math.max(1, Number(settings.contextMessageCount) || 10);
+            // 1.29: request Section 7's per-preset "history limit" - overrides the
+            // global contextMessageCount when set, still capped by
+            // maxPromptHistoryMessages exactly like the global one always was.
+            const userRequestedCount = Math.max(1, Number(config.historyLimit) || Number(settings.contextMessageCount) || 10);
             const historyCap = Math.max(1, Number(settings.maxPromptHistoryMessages) || userRequestedCount);
             const count = Math.min(historyCap, userRequestedCount);
             const recent = context.chat.slice(-count);

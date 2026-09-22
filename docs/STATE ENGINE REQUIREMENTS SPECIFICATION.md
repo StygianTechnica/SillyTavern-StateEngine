@@ -1910,13 +1910,49 @@ docs/STATE ENGINE API SPECIFICATION.md Section 13.
   plain fields and round-trip with zero extra code; independentStatus (run
   history) is stripped on both export and import, and a non-JSON-serializable
   context is dropped from an export with a warning rather than failing it.
-- Deferred, not built this pass (reported per the request's own deviation
-  rule rather than rushed): the manager-modal UI (two Presets-tab subtabs and
-  the full per-preset editor - every field it would show already exists and
-  is readable), scheduled execution (needs a new timer subsystem), and
-  event-driven execution (needs hooking every variable write path - chat-state.js,
-  the codebase's most write-sensitive file, deserving its own careful pass).
-  A concrete design sketch for both is in the API spec Section 13.9.
+- Manager modal UI (2026-09-21, second pass, API spec Section 13.9): the
+  Presets tab gained "Regular Presets" / "Independent Presets" subtabs. Each
+  independent-preset row shows its enabled state, context mode, batch and
+  last-run summary; its editor has enabled toggle, model (a live connection-
+  profile picker), temperature, max tokens, a new per-preset history-limit
+  override, batch, a prompt textarea, a READ-ONLY context indicator (context
+  is extension-owned - not something the UI lets a human set), an honest
+  "not available yet" note where triggers/schedule will go, Run Now, and the
+  status block. Clone and Export reuse the regular-preset buttons unchanged -
+  independentPreset/independentConfig already clone/export like any field.
+- Deferred, still not built (reported per the request's own deviation rule
+  rather than rushed): scheduled execution (needs a new timer subsystem) and
+  event-driven execution (needs hooking every variable write path -
+  chat-state.js, the codebase's most write-sensitive file, deserving its own
+  careful pass). A concrete design sketch for both is in the API spec Section 13.10.
+
+1.30 Manager Modal: Fixed Tab Height (2026-09-21)
+
+Pure CSS/layout fix, no business logic or API surface change. Request: switching
+top-level tabs (and the Independent Presets subtabs from 1.29) visibly resized
+and repositioned the modal window, since .se-manager-window only had a
+max-height and otherwise sized itself to whichever tab's content was active.
+Code: src/ui/manager-modal/manager-modal.css.
+
+- .se-manager-window now sets a fixed height: 80vh (90vh at the <=768px
+  responsive breakpoint) alongside the existing max-height of the same value,
+  instead of relying on max-height alone. Every tab and subtab pane renders
+  inside .se-manager-content, which was already flex: 1 with
+  overflow-y: auto, so this was the one place a fixed size needed to be
+  established - no other file needed to change.
+- Effect: the window is now always the same size regardless of which tab or
+  Presets subtab is active - option 1 from the request (consistent height),
+  not option 2 (fixed top position, variable height). Shorter tabs (e.g.
+  Calendars) leave blank space below their content instead of shrinking the
+  window; taller tabs (e.g. Debug, Variable Management with many chats)
+  scroll within .se-manager-content instead of growing it past 80vh, which
+  is unchanged from the prior behavior for those tabs.
+- Not verified with a live screenshot in real SillyTavern: the browser tool
+  in this environment cannot screenshot local/out-of-scope files, and this
+  session's UI verification has relied on jsdom tests throughout, which
+  cannot assert real layout/height. Verified only that the CSS change is
+  syntactically sound and that the existing 1737-test suite (unaffected by
+  a pure CSS change) still passes; she should confirm visually once pulled.
 
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:

@@ -50,6 +50,10 @@ export function clonePreset(presetId, newName) {
     const newPreset = JSON.parse(JSON.stringify(preset));
     newPreset.id = newPresetId;
     newPreset.name = newName;
+    // independentPreset/independentConfig (1.29) clone along with everything
+    // else for free - but independentStatus is run HISTORY, and a clone has
+    // never itself run; same reasoning as preset-export.js's exportPreset().
+    delete newPreset.independentStatus;
 
     // Every cloned variable gets a fresh id and a fresh, globally-unique
     // name. generateUniqueVariableName() is called with no excludeVarId -

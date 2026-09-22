@@ -42,6 +42,13 @@ export function wireEvents(managerApi, managerState) {
     const $overlay = $('#se-manager-overlay');
     if (!$overlay.length) return;
 
+    // 1.29: which Presets-tab subtab is showing ('regular' | 'independent') -
+    // same session-state convention as managerState.currentPresetId (owned by
+    // ui-events.js from here on, independently of manager-modal.js's own
+    // module-level copy - see that file's comment on managerCurrentPresetId
+    // for why the two are allowed to drift once the modal is open).
+    if (managerState.presetsSubtab === undefined) managerState.presetsSubtab = 'regular';
+
     // Close modal
     $overlay.on('click', '#se-manager-close', function () {
         managerState.hideManagerModal();
@@ -67,12 +74,18 @@ export function wireEvents(managerApi, managerState) {
         $(`.se-manager-tab-pane[data-tab="${tab}"]`).addClass('se-manager-tab-active');
 
         // Re-render the tab content
-        if (tab === 'presets') uiRender.renderPresetsTab(managerApi, managerState.currentPresetId);
+        if (tab === 'presets') uiRender.renderPresetsTab(managerApi, managerState.currentPresetId, managerState.presetsSubtab);
         else if (tab === 'variables') managerState.currentPresetId = uiRender.renderVariablesTab(managerApi, managerState.currentPresetId);
         else if (tab === 'calendars') uiRender.renderCalendarsTab(managerApi, calendarEditing);
         else if (tab === 'worldinfo') uiRender.renderWorldInfoTab(managerApi);
         else if (tab === 'varmgmt') uiRender.renderVariableManagementTab(managerApi);
         else if (tab === 'debug') uiRender.renderDebugTab(managerApi);
+    });
+
+    // 1.29: the Presets tab's own "Regular Presets" / "Independent Presets" subtabs.
+    $overlay.on('click', '.se-manager-presets-subtab-btn', function () {
+        managerState.presetsSubtab = $(this).attr('data-presets-subtab');
+        uiRender.renderPresetsTab(managerApi, managerState.currentPresetId, managerState.presetsSubtab);
     });
 
     // Accordion: Toggle preset expansion
@@ -94,7 +107,7 @@ export function wireEvents(managerApi, managerState) {
     $overlay.on('click', '#se-manager-restore-presets', function () {
         if (window.confirm('Restore default presets? This will delete any custom changes to the default presets.')) {
             managerApi.restoreDefaultPresets();
-            uiRender.renderPresetsTab(managerApi, managerState.currentPresetId);
+            uiRender.renderPresetsTab(managerApi, managerState.currentPresetId, managerState.presetsSubtab);
             managerApi.renderVarTable();
             managerApi.setStatus('Restored default presets.');
         }
@@ -104,7 +117,7 @@ export function wireEvents(managerApi, managerState) {
         const name = prompt('New preset name:');
         if (name && name.trim()) {
             managerApi.createPreset(name.trim());
-            uiRender.renderPresetsTab(managerApi, managerState.currentPresetId);
+            uiRender.renderPresetsTab(managerApi, managerState.currentPresetId, managerState.presetsSubtab);
             managerApi.setStatus(`Created preset "${name}".`);
         }
     });
@@ -124,7 +137,7 @@ export function wireEvents(managerApi, managerState) {
         } else {
             managerApi.addPresetToChat(chatId, presetId);
         }
-        uiRender.renderPresetsTab(managerApi, managerState.currentPresetId);
+        uiRender.renderPresetsTab(managerApi, managerState.currentPresetId, managerState.presetsSubtab);
         managerApi.renderVarTable();
         managerApi.renderTrackerPanel();
         managerApi.setStatus(`${managerApi.getPresetsForChat(chatId).includes(presetId) ? 'Activated' : 'Deactivated'} "${preset.name}" for this chat.`);
@@ -139,7 +152,7 @@ export function wireEvents(managerApi, managerState) {
         const newName = prompt('Clone name:', preset.name + ' (copy)');
         if (newName && newName.trim()) {
             presetManager.clonePreset(presetId, newName.trim());
-            uiRender.renderPresetsTab(managerApi, managerState.currentPresetId);
+            uiRender.renderPresetsTab(managerApi, managerState.currentPresetId, managerState.presetsSubtab);
             managerApi.setStatus(`Cloned preset "${preset.name}".`);
         }
     });
@@ -172,7 +185,7 @@ export function wireEvents(managerApi, managerState) {
                 alert('That file is not a State Engine preset (expected an object with a "variables" object).');
                 return;
             }
-            uiRender.renderPresetsTab(managerApi, managerState.currentPresetId);
+            uiRender.renderPresetsTab(managerApi, managerState.currentPresetId, managerState.presetsSubtab);
             const failed = imported.images?.failed?.length || 0;
             managerApi.setStatus(`Imported preset "${managerApi.getSettings().presets[imported.presetId].name}".`
                 + (failed ? ` ${failed} image${failed === 1 ? '' : 's'} could not be restored.` : ''), failed > 0);
@@ -191,7 +204,7 @@ export function wireEvents(managerApi, managerState) {
         const newName = prompt('New name:', preset.name);
         if (newName && newName.trim()) {
             managerApi.renamePreset(presetId, newName.trim());
-            uiRender.renderPresetsTab(managerApi, managerState.currentPresetId);
+            uiRender.renderPresetsTab(managerApi, managerState.currentPresetId, managerState.presetsSubtab);
             managerApi.setStatus(`Renamed to "${newName}".`);
         }
     });
@@ -205,9 +218,113 @@ export function wireEvents(managerApi, managerState) {
         if (window.confirm(`Delete preset "${preset.name}"? This will also delete all variables in this preset.`)) {
             managerApi.deletePreset(presetId);
             if (managerState.currentPresetId === presetId) managerState.currentPresetId = null;
-            uiRender.renderPresetsTab(managerApi, managerState.currentPresetId);
+            uiRender.renderPresetsTab(managerApi, managerState.currentPresetId, managerState.presetsSubtab);
             managerState.currentPresetId = uiRender.renderVariablesTab(managerApi, managerState.currentPresetId);
             managerApi.setStatus(`Deleted "${preset.name}" and all its variables.`);
+        }
+    });
+
+    // ---------------------------------------------------------------------------
+    // 1.29: Independent Presets subtab. Clone (.se-manager-clone-preset) and
+    // Export (.se-manager-export-preset) are handled by the SAME handlers as
+    // regular presets above - an independent preset's independentPreset flag
+    // and independentConfig clone/export exactly like any other preset field
+    // (preset-manager.js's clonePreset / preset-export.js's exportPreset), so
+    // nothing independent-specific was needed for those two.
+    // ---------------------------------------------------------------------------
+
+    $overlay.on('click', '#se-manager-new-independent-preset', function () {
+        const name = prompt('New independent preset name:');
+        if (name && name.trim()) {
+            const presetId = managerApi.createIndependentPreset(name.trim());
+            if (presetId) {
+                managerApi.setStatus(`Created independent preset "${name}".`);
+            }
+            uiRender.renderPresetsTab(managerApi, managerState.currentPresetId, managerState.presetsSubtab);
+        }
+    });
+
+    $overlay.on('click', '.se-indy-rename', function () {
+        const presetId = $(this).attr('data-preset-id');
+        const preset = managerApi.getSettings().presets[presetId];
+        if (!preset) return;
+        const newName = prompt('New name:', preset.name);
+        if (newName && newName.trim()) {
+            managerApi.updateIndependentPreset(presetId, { name: newName.trim() });
+            uiRender.renderPresetsTab(managerApi, managerState.currentPresetId, managerState.presetsSubtab);
+            managerApi.setStatus(`Renamed to "${newName}".`);
+        }
+    });
+
+    $overlay.on('click', '.se-indy-delete', function () {
+        const presetId = $(this).attr('data-preset-id');
+        const preset = managerApi.getSettings().presets[presetId];
+        if (!preset) return;
+        if (window.confirm(`Delete independent preset "${preset.name}"? This will also delete all variables in this preset.`)) {
+            managerApi.deleteIndependentPreset(presetId);
+            uiRender.renderPresetsTab(managerApi, managerState.currentPresetId, managerState.presetsSubtab);
+            managerApi.setStatus(`Deleted "${preset.name}" and all its variables.`);
+        }
+    });
+
+    $overlay.on('click', '.se-indy-toggle-enabled', function () {
+        const presetId = $(this).attr('data-preset-id');
+        const preset = managerApi.getSettings().presets[presetId];
+        if (!preset) return;
+        const currentlyEnabled = (preset.independentConfig || {}).enabled !== false;
+        const enabled = managerApi.toggleIndependentPreset(presetId, !currentlyEnabled);
+        if (enabled === null || enabled === undefined) return;
+        uiRender.renderPresetsTab(managerApi, managerState.currentPresetId, managerState.presetsSubtab);
+        managerApi.setStatus(`"${preset.name}" ${enabled ? 'enabled' : 'disabled'}.`);
+    });
+
+    // One field, one on-change save, then a re-render (same convention as the
+    // regular preset's description textarea above) - select/number/text alike.
+    $overlay.on('change', '.se-indy-field', function () {
+        const presetId = $(this).attr('data-preset-id');
+        const field = $(this).attr('data-field');
+        const preset = managerApi.getSettings().presets[presetId];
+        if (!preset) return;
+        const raw = $(this).val();
+
+        let value;
+        if (field === 'temperature' || field === 'maxTokens' || field === 'historyLimit') {
+            // An emptied box must send `null`, not `undefined`: configureIndependentPreset
+            // only merges fields that are PRESENT (pickConfigFields skips `undefined` so a
+            // patch can touch just one field at a time), so `undefined` here would be
+            // silently dropped and leave the old override in place. `null` IS stored, and
+            // every read site (runIndependentPreset's `config.temperature ?? ...`,
+            // getIndependentPresetStatus's `config.batch || ...`) already treats a stored
+            // `null` the same as "not set" - falls back to the global/default, exactly
+            // what clearing the box should do.
+            value = raw === '' ? null : Number(raw);
+            if (value !== null && Number.isNaN(value)) return;
+        } else {
+            value = raw;
+        }
+        const patch = { [field]: value };
+        managerApi.updateIndependentPreset(presetId, patch);
+        uiRender.renderPresetsTab(managerApi, managerState.currentPresetId, managerState.presetsSubtab);
+        managerApi.setStatus(`Updated "${preset.name}".`);
+    });
+
+    $overlay.on('click', '.se-indy-run-now', async function () {
+        const presetId = $(this).attr('data-preset-id');
+        const preset = managerApi.getSettings().presets[presetId];
+        if (!preset) return;
+        const chatId = managerApi.getCurrentChatId();
+        const $btn = $(this);
+        $btn.prop('disabled', true).find('i').removeClass('fa-play').addClass('fa-spinner fa-spin');
+        try {
+            const wrote = await managerApi.runIndependentPreset(presetId, chatId);
+            uiRender.renderPresetsTab(managerApi, managerState.currentPresetId, managerState.presetsSubtab);
+            managerApi.renderTrackerPanel();
+            const status = managerApi.getIndependentPresetStatus(presetId);
+            managerApi.setStatus(wrote
+                ? `"${preset.name}" ran and updated ${status?.changedVariables?.length || 0} variable(s).`
+                : `"${preset.name}" ran: ${status ? (status.lastError || 'nothing to update') : 'did not run'}.`, !wrote && !!status?.lastError);
+        } finally {
+            $btn.prop('disabled', false).find('i').removeClass('fa-spinner fa-spin').addClass('fa-play');
         }
     });
 
@@ -507,7 +624,7 @@ export function wireEvents(managerApi, managerState) {
         if (!preset) return;
 
         // Re-render the preset tab to update inline description display
-        uiRender.renderPresetsTab(managerApi, managerState.currentPresetId);
+        uiRender.renderPresetsTab(managerApi, managerState.currentPresetId, managerState.presetsSubtab);
 
         managerApi.setStatus(`Description updated for "${preset.name}".`);
     });

@@ -1680,22 +1680,63 @@ calling on ANY preset since Section 6 (2026-09-10) - already tested, already
 documented - and gating it now would silently break that behavior for no
 benefit. "Cannot modify other presets" is about SCOPE (a run only ever
 touches its OWN preset's variables), not about which presets may be run this
-way. Manual execution (request Section 4.1, a "Run Now" button) and
-extension-triggered execution (4.4) are consequently the same function today;
-there is no manager-modal button yet (13.9).
+way. Manual execution (request Section 4.1) and extension-triggered execution
+(4.4) share this one function; the manager modal's own Run Now button (13.9)
+is simply its most visible caller.
 
-**13.9 Deferred (not built this pass) - request Sections 1, 4.2, 4.3, 7**
+**13.9 Manager modal UI (2026-09-21, built in a second pass)**
 
-Reported per the request's own Section 11 ("follow existing architecture,
-report the deviation, propose the cleanest fix") rather than built at lower
-rigor to check every box:
+The Presets tab (`src/ui/manager-modal/`) gained two subtabs - "Regular
+Presets" (unchanged) and "Independent Presets" - built the same way the
+existing tab already is (`ui-templates.js` strings, `ui-render.js` fetches
+data and calls them, `ui-events.js` wires clicks), reusing every existing
+convention rather than inventing new ones:
 
-- **Manager modal UI** - two Presets-tab subtabs, the full per-preset editor
-  (model/temperature/history/batch/prompt/context indicator/triggers/
-  schedule/Run Now/status), mirroring the existing ~500-line Presets tab's
-  template/render/event structure. Every field this UI would show already
-  exists and is readable today (13.2/13.3/13.4/13.6) - this is a real but
-  bounded, mechanical UI-construction task, not a design question.
+- `manager-api.js` gained `independentPresetAdapters` (create/update/delete/
+  toggle/run/status, `connectionProfiles`), the SAME presetId<->(namespace,
+  name) translation and `callAsBuiltin()` error-to-status-bar convention the
+  regular-preset adapters already use (Section 7).
+- The subtab switch is session state (`managerState.presetsSubtab`), same
+  lifetime and the same accepted drift-once-open behavior as the existing
+  `managerState.currentPresetId` (manager-modal.js's own module-level copy
+  only updates on a fresh build / chat change, exactly as before this pass).
+- **Clone and Export need no independent-specific code at all**: both
+  buttons on an independent-preset row are the SAME `.se-manager-clone-preset`/
+  `.se-manager-export-preset` handlers a regular preset uses - `independentPreset`/
+  `independentConfig` clone and export like any other preset field (13.1/13.7).
+  One small matching fix: `clonePreset()` (`src/ui/manager-modal/preset-manager.js`)
+  now also strips `independentStatus` on clone, for the identical reason
+  `exportPreset()` already did (13.7) - a clone has never itself run.
+- Editor fields: name (rename), description, enabled/disabled toggle, model
+  (a live connection-profile `<select>`, via the new `listConnectionProfiles()`
+  in `connection-profile-ui.js` - refactored out of that file's two existing
+  jQuery-populated dropdowns so all three share one profile-reading function),
+  temperature, max tokens, batch, and a new **history limit** field
+  (`independentConfig.historyLimit`, overriding the global message count in
+  chat-history mode only - a small addition to `runIndependentPreset` itself,
+  covered in 13.10's test count). Clearing a number field stores `null` (not
+  omitting the field) - `pickConfigFields` only merges fields that are
+  PRESENT, so leaving a field out of a patch means "untouched"; every numeric
+  read site already treats a stored `null` the same as "not set" via `??`/`||`,
+  so this reuses existing fallback behavior rather than adding new logic.
+- **Deviation: the context field is a read-only INDICATOR, not an editable
+  control** - "context indicator (extension-provided, chat-history, or
+  empty)" (request Section 7) is read literally as a status display, matching
+  "context is always extension-owned" (Section 8): a human using the manager
+  modal is not the intended source of an extension's context, so there is
+  nothing to edit here.
+- **Deviation: triggers/schedule show an honest "not available yet" note**
+  instead of a non-functional control - per Section 11, a fake dropdown that
+  saves a value nothing reads yet would be worse than admitting the gap.
+- Status (13.6) is shown inline: enabled/context mode/batch/last outcome in
+  the row's own summary line, and last-run time/error/changed-variables in
+  the expanded editor, refreshed after every Run Now click.
+
+**13.10 Deferred (still not built) - request Sections 4.2, 4.3, 7's triggers/schedule fields**
+
+Reported per the request's own Section 11 rather than built at lower rigor to
+check every box:
+
 - **Scheduled execution** (run every N seconds/minutes/hours/days/ticks) -
   needs a new timer subsystem (interval management across the extension's
   lifecycle, persisted schedule config, pause-on-hidden-tab handling,
@@ -1719,12 +1760,15 @@ rigor to check every box:
   pattern - 1.24), with `independentConfig.triggers = [{ variable, batchRule?
   }]` driving which presets subscribe to what.
 
-**13.10 Verification**
+**13.11 Verification**
 
-`tests/api/independent-presets.test.js` (52 tests: the original Section-6
-pipeline tests plus CRUD, all three context modes, batching, enabled/disabled,
-status, export/import, write-path/flag-mode interaction, and compliance
-checks for 13.5); the full suite passes under `npm test`. Every rule above was
-also verified by deliberately breaking it and confirming the suite catches
-the break (mutation testing), the same standard every other pass in this
-document has been held to.
+`tests/api/independent-presets.test.js` (54 tests: the original Section-6
+pipeline tests plus CRUD, all three context modes, batching, the history-limit
+override, enabled/disabled, status, export/import, write-path/flag-mode
+interaction, and compliance checks for 13.5) and `tests/independent-presets-ui.test.js`
+(19 tests: subtabs, create/rename/delete, clone/export reuse, every editor
+field, enabled/disabled, Run Now, and that a regular preset stays unreachable
+through the independent-preset controls); the full suite passes under `npm
+test`. Every rule above was also verified by deliberately breaking it and
+confirming the suite catches the break (mutation testing), the same standard
+every other pass in this document has been held to.

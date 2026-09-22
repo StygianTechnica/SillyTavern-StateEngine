@@ -28,6 +28,11 @@
     position: relative;
     width: 90%;
     max-width: 1000px;
+    /* Fixed (not max-) height: keeps the modal the same size across every tab/subtab
+       so switching tabs never resizes or repositions the window. Shorter tabs just
+       leave blank space below their content; taller tabs scroll within
+       .se-manager-content instead of growing the window. */
+    height: 80vh;
     max-height: 80vh;
     background-color: var(--bg-color, #1a1a1a);
     border: 1px solid var(--border-color, #333);
@@ -568,6 +573,7 @@
 @media (max-width: 768px) {
     .se-manager-window {
         width: 95%;
+        height: 90vh;
         max-height: 90vh;
     }
 
@@ -926,5 +932,75 @@
 }
 
 .se-cal-preview-errors {
+    color: #e57373;
+}
+
+/* ---------------------------------------------------------------------------
+   Independent Presets (1.29) - the Presets tab's two subtabs, and the
+   independent-preset editor's own fields.
+   --------------------------------------------------------------------------- */
+
+.se-manager-presets-subtabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border-color, #333);
+}
+
+.se-manager-presets-subtab-btn {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-color-secondary, #999);
+    padding: 8px 14px;
+    cursor: pointer;
+    font-size: 0.95em;
+}
+
+.se-manager-presets-subtab-btn:hover {
+    color: var(--text-color, #fff);
+}
+
+.se-manager-presets-subtab-btn.se-manager-presets-subtab-active {
+    color: var(--accent-color, #4a9eff);
+    border-bottom-color: var(--accent-color, #4a9eff);
+}
+
+.se-manager-independent-preset-item .se-manager-preset-accordion-body > * {
+    margin-bottom: 12px;
+}
+
+.se-manager-grid2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 16px;
+    margin-bottom: 12px;
+}
+
+.se-empty-inline {
+    opacity: 0.7;
+    font-size: 0.85em;
+}
+
+.se-indy-context-indicator {
+    padding: 6px 10px;
+    background-color: var(--bg-color, #1a1a1a);
+    border: 1px solid var(--border-color, #333);
+    border-radius: 3px;
+    font-size: 0.9em;
+    cursor: help;
+}
+
+.se-indy-status-block {
+    padding: 8px 10px;
+    background-color: var(--bg-color, #1a1a1a);
+    border-radius: 3px;
+    font-size: 0.9em;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.se-indy-status-error {
     color: #e57373;
 }

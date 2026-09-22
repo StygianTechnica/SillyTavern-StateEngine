@@ -645,6 +645,200 @@ export function buildPresetsTabContainer(presetRows) {
     `;
 }
 
+// 1.29: the Presets tab's own two subtabs ("Regular Presets" / "Independent
+// Presets"). A shell around the EXISTING regular-presets markup (unchanged,
+// still `buildPresetsTabContainer` above) and the new independent-presets one
+// (below) - only one pane shows at a time, picked by `activeSubtab`
+// ('regular' | 'independent'). Import stays a single shared button (on the
+// regular pane, unchanged): an imported preset's own independentPreset flag
+// decides which subtab it appears under, so a second Import button would be
+// redundant.
+export function buildPresetsTabShell(activeSubtab, regularPaneHtml, independentPaneHtml) {
+    const isIndependent = activeSubtab === 'independent';
+    return `
+        <div class="se-manager-presets-subtabs">
+            <button type="button" class="se-manager-presets-subtab-btn${isIndependent ? '' : ' se-manager-presets-subtab-active'}" data-presets-subtab="regular">
+                <i class="fa-solid fa-boxes-stacked"></i> Regular Presets
+            </button>
+            <button type="button" class="se-manager-presets-subtab-btn${isIndependent ? ' se-manager-presets-subtab-active' : ''}" data-presets-subtab="independent">
+                <i class="fa-solid fa-robot"></i> Independent Presets
+            </button>
+        </div>
+        <div class="se-manager-presets-subtab-pane" data-presets-subtab="regular" style="display: ${isIndependent ? 'none' : 'block'};">
+            ${regularPaneHtml}
+        </div>
+        <div class="se-manager-presets-subtab-pane" data-presets-subtab="independent" style="display: ${isIndependent ? 'block' : 'none'};">
+            ${independentPaneHtml}
+        </div>
+    `;
+}
+
+const CONTEXT_MODE_LABEL = {
+    'chat-history': 'Chat history (default)',
+    empty: 'Empty (purely variables)',
+    extension: 'Extension-provided',
+};
+
+const OUTCOME_LABEL = {
+    'never-run': 'Never run',
+    updated: 'Updated',
+    'no-op': 'Ran, nothing to write',
+    error: 'Error',
+    'skipped-disabled': 'Skipped (disabled)',
+    'skipped-in-progress': 'Skipped (another run in progress)',
+    'skipped-nothing-to-update': 'Skipped (nothing to update)',
+    'skipped-parse-error': "Skipped (couldn't read the model's answer)",
+};
+
+function relativeTime(ms) {
+    if (!ms) return 'never';
+    const seconds = Math.max(0, Math.round((Date.now() - ms) / 1000));
+    if (seconds < 5) return 'just now';
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.round(hours / 24)}d ago`;
+}
+
+// One row of the Independent Presets list: an accordion item in the same
+// visual style as buildPresetRow, with the fields request Section 7 asks
+// for. `status` is managerApi.getIndependentPresetStatus(presetId)'s result
+// (never null here - every row IS an independent preset); `connectionProfiles`
+// is managerApi.connectionProfiles()'s live list ([{ id, name }]).
+export function buildIndependentPresetRow(presetId, preset, currentChatId, status, connectionProfiles) {
+    const config = preset.independentConfig || {};
+    const enabled = status.enabled;
+    const profileOptions = (connectionProfiles || [])
+        .map((p) => `<option value="${escapeHtml(p.id)}" ${config.connectionProfileId === p.id ? 'selected' : ''}>${escapeHtml(p.name || p.id)}</option>`)
+        .join('');
+    const changedVariables = status.changedVariables.length > 0
+        ? status.changedVariables.map((n) => `<code>${escapeHtml(n)}</code>`).join(', ')
+        : '<span class="se-empty-inline">none</span>';
+
+    return `
+                <div class="se-manager-preset-accordion-item se-manager-independent-preset-item" data-preset-id="${presetId}">
+                    <div class="se-manager-preset-accordion-header" data-preset-id="${presetId}">
+                        <div class="se-manager-preset-accordion-toggle">
+                            <i class="fa-solid fa-chevron-right"></i>
+                        </div>
+                        <div class="se-manager-preset-info">
+                            <div class="se-manager-preset-name">
+                                ${escapeHtml(preset.name)}
+                                ${preset.description ? `<span class="se-manager-preset-description-inline">${escapeHtml(preset.description)}</span>` : ''}
+                            </div>
+                            <small class="se-manager-preset-meta">
+                                ${enabled ? 'Enabled' : 'Disabled'} • ${escapeHtml(CONTEXT_MODE_LABEL[status.contextMode] || status.contextMode)} • batch "${escapeHtml(status.batch)}" • ${escapeHtml(OUTCOME_LABEL[status.lastOutcome] || status.lastOutcome)} • last run ${relativeTime(status.lastRunAt)}
+                            </small>
+                        </div>
+                        <div class="se-row-actions">
+                            <button class="se-manager-action-btn se-indy-toggle-enabled" data-preset-id="${presetId}" title="${enabled ? 'Disable' : 'Enable'}">
+                                <i class="fa-solid ${enabled ? 'fa-toggle-on' : 'fa-toggle-off'}"></i>
+                            </button>
+                            <button class="se-manager-action-btn se-indy-run-now" data-preset-id="${presetId}" title="Run now">
+                                <i class="fa-solid fa-play"></i>
+                            </button>
+                            <button class="se-manager-action-btn se-manager-clone-preset" data-preset-id="${presetId}" title="Clone">
+                                <i class="fa-solid fa-copy"></i>
+                            </button>
+                            <button class="se-manager-action-btn se-manager-export-preset" data-preset-id="${presetId}" title="Export to a JSON file">
+                                <i class="fa-solid fa-file-export"></i>
+                            </button>
+                            <button class="se-manager-action-btn se-indy-rename" data-preset-id="${presetId}" title="Rename">
+                                <i class="fa-solid fa-pen"></i>
+                            </button>
+                            <button class="se-manager-action-btn se-indy-delete" data-preset-id="${presetId}" title="Delete">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="se-manager-preset-accordion-body" style="display: none;">
+                        <div class="se-manager-preset-description-section">
+                            <label class="se-manager-label">Description</label>
+                            <textarea class="se-manager-preset-description-input" data-preset-id="${presetId}" placeholder="Describe what this independent preset does...">${escapeHtml(preset.description || '')}</textarea>
+                        </div>
+
+                        <div class="se-manager-grid2">
+                            <div>
+                                <label class="se-manager-label">Model (connection profile)</label>
+                                <select class="text_pole se-indy-field" data-preset-id="${presetId}" data-field="connectionProfileId">
+                                    <option value="">Use currently active connection</option>
+                                    ${profileOptions}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="se-manager-label">Batch</label>
+                                <input type="text" class="text_pole se-indy-field" data-preset-id="${presetId}" data-field="batch" value="${escapeHtml(config.batch ?? '')}" placeholder="core" />
+                            </div>
+                            <div>
+                                <label class="se-manager-label">Temperature</label>
+                                <input type="number" step="0.05" min="0" max="2" class="text_pole se-indy-field" data-preset-id="${presetId}" data-field="temperature" value="${config.temperature ?? ''}" placeholder="chat default" />
+                            </div>
+                            <div>
+                                <label class="se-manager-label">Max tokens</label>
+                                <input type="number" step="1" min="1" class="text_pole se-indy-field" data-preset-id="${presetId}" data-field="maxTokens" value="${config.maxTokens ?? ''}" placeholder="global default" />
+                            </div>
+                            <div>
+                                <label class="se-manager-label">History limit</label>
+                                <input type="number" step="1" min="1" class="text_pole se-indy-field" data-preset-id="${presetId}" data-field="historyLimit" value="${config.historyLimit ?? ''}" placeholder="global default" />
+                                <small class="se-empty-inline">Chat-history context mode only.</small>
+                            </div>
+                            <div>
+                                <label class="se-manager-label">Context</label>
+                                <div class="se-indy-context-indicator" title="Set only by the extension that owns this preset - not editable here.">
+                                    ${escapeHtml(CONTEXT_MODE_LABEL[status.contextMode] || status.contextMode)}
+                                </div>
+                            </div>
+                        </div>
+
+                        <label class="se-manager-label">Prompt (system instructions)</label>
+                        <textarea class="text_pole se-indy-field" data-preset-id="${presetId}" data-field="promptedHeader" placeholder="Leave blank to use the global default" rows="4">${escapeHtml(config.promptedHeader || '')}</textarea>
+
+                        <div class="se-manager-preset-triggers">
+                            <div class="se-manager-trigger-title">Triggers &amp; schedule</div>
+                            <div class="se-empty">
+                                Not available yet - scheduled and event-driven execution are planned but not built. Today this
+                                preset runs only when you click Run Now, or when an extension calls it directly.
+                            </div>
+                        </div>
+
+                        <div class="se-manager-preset-triggers">
+                            <div class="se-manager-trigger-title">Last run</div>
+                            <div class="se-indy-status-block">
+                                <div>${escapeHtml(OUTCOME_LABEL[status.lastOutcome] || status.lastOutcome)} · ${status.lastRunAt ? escapeHtml(new Date(status.lastRunAt).toLocaleString()) : 'never'}</div>
+                                ${status.lastError ? `<div class="se-indy-status-error">${escapeHtml(status.lastError)}</div>` : ''}
+                                <div>Changed: ${changedVariables}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+}
+
+export function buildIndependentPresetsTabContainer(rows) {
+    return `
+        <div class="se-manager-section">
+            <div class="se-manager-section-header">
+                <h3>Independent Presets</h3>
+                <div class="se-manager-section-buttons">
+                    <button id="se-manager-new-independent-preset" class="menu_button" title="Create a new independent preset">
+                        <i class="fa-solid fa-plus"></i> New
+                    </button>
+                </div>
+            </div>
+            <div class="se-empty" style="margin-bottom: 10px;">
+                Independent presets run their own prompted update outside the normal chat flow - on their own
+                model, prompt and variable batch. Use the Presets tab's regular Import/Export to share one; cloning
+                and export work the same as for a regular preset.
+            </div>
+            <div class="se-manager-preset-list">
+                ${rows || '<div class="se-empty">No independent presets yet. Click New to create one.</div>'}
+            </div>
+        </div>
+    `;
+}
+
 export function buildVariablesTabContainer(presetOptions, variablesList, showActiveOnly) {
     return `
         <div class="se-manager-section">

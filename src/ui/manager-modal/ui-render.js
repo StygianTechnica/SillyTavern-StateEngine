@@ -5,7 +5,10 @@ import * as uiTemplates from './ui-templates.js';
 import { escapeHtml } from './utils.js';
 import { format, fromStructured, variablesUsingCalendar } from '../../core/calendar-engine.js';
 
-export function renderPresetsTab(managerApi, managerCurrentPresetId) {
+// `presetsSubtab` ('regular' | 'independent', default 'regular') - which of
+// the Presets tab's two subtabs (1.29) is showing. Both panes are always
+// built (so switching subtabs is instant, no re-fetch), only one is visible.
+export function renderPresetsTab(managerApi, managerCurrentPresetId, presetsSubtab = 'regular') {
     const settings = managerApi.getSettings();
     const $tab = $('#se-manager-presets-tab');
     if (!$tab.length) return;
@@ -28,7 +31,10 @@ export function renderPresetsTab(managerApi, managerCurrentPresetId) {
         { key: 'pre_generation', label: 'Execute before message generation', icon: 'fa-paper-plane' }
     ];
 
-    const presetRows = Object.entries(allPresets)
+    // 1.29: an independent preset never appears in the Regular Presets list -
+    // the two subtabs are mutually exclusive views of the same settings.presets.
+    const regularEntries = Object.entries(allPresets).filter(([, preset]) => preset?.independentPreset !== true);
+    const presetRows = regularEntries
         .sort(([aId], [bId]) => {
             const aActive = chatPresets.includes(aId) ? 1 : 0;
             const bActive = chatPresets.includes(bId) ? 1 : 0;
@@ -36,10 +42,22 @@ export function renderPresetsTab(managerApi, managerCurrentPresetId) {
         })
         .map(([presetId, preset]) => uiTemplates.buildPresetRow(presetId, preset, chatPresets, TRIGGER_KEYS, currentChatId))
         .join('');
+    const regularHtml = uiTemplates.buildPresetsTabContainer(presetRows);
 
-    const html = uiTemplates.buildPresetsTabContainer(presetRows);
+    const connectionProfiles = managerApi.connectionProfiles ? managerApi.connectionProfiles() : [];
+    const independentRows = Object.entries(allPresets)
+        .filter(([, preset]) => preset?.independentPreset === true)
+        .sort(([, a], [, b]) => (a.name || '').localeCompare(b.name || ''))
+        .map(([presetId, preset]) => {
+            const status = managerApi.getIndependentPresetStatus(presetId) || {
+                enabled: true, batch: 'core', contextMode: 'chat-history', lastRunAt: null, lastOutcome: 'never-run', lastError: null, changedVariables: [],
+            };
+            return uiTemplates.buildIndependentPresetRow(presetId, preset, currentChatId, status, connectionProfiles);
+        })
+        .join('');
+    const independentHtml = uiTemplates.buildIndependentPresetsTabContainer(independentRows);
 
-    $tab.html(html);
+    $tab.html(uiTemplates.buildPresetsTabShell(presetsSubtab, regularHtml, independentHtml));
 }
 
 export function renderVariablesTab(managerApi, managerCurrentPresetId) {

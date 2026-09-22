@@ -10,6 +10,9 @@ import * as uiEvents from './ui-events.js';
 import { escapeHtml, generateUUID } from './utils.js';
 
 let managerCurrentPresetId = null;
+// 1.29: which of the Presets tab's two subtabs is showing ('regular' |
+// 'independent') - session state, same lifetime as managerCurrentPresetId.
+let managerCurrentPresetsSubtab = 'regular';
 let managerApi = null;
 
 export function setManagerApi(api) {
@@ -84,14 +87,14 @@ export function buildManagerModal() {
     $('body').append($overlay);
 
     // Initial tab rendering
-    uiRender.renderPresetsTab(managerApi, managerCurrentPresetId);
+    uiRender.renderPresetsTab(managerApi, managerCurrentPresetId, managerCurrentPresetsSubtab);
     managerCurrentPresetId = uiRender.renderVariablesTab(managerApi, managerCurrentPresetId);
     uiRender.renderCalendarsTab(managerApi);
     uiRender.renderWorldInfoTab(managerApi);
     renderedForChatId = managerApi.getCurrentChatId();
 
     // Wire events
-    const managerState = { currentPresetId: managerCurrentPresetId, hideManagerModal };
+    const managerState = { currentPresetId: managerCurrentPresetId, presetsSubtab: managerCurrentPresetsSubtab, hideManagerModal };
     uiEvents.wireEvents(managerApi, managerState);
 
     return showManagerModal();
@@ -107,7 +110,7 @@ let renderedForChatId = null;
 // keeps the preset that is selected in its dropdown.
 function renderChatDependentTabs() {
     const selected = $('#se-manager-preset-selector').val() || managerCurrentPresetId;
-    uiRender.renderPresetsTab(managerApi, selected);
+    uiRender.renderPresetsTab(managerApi, selected, managerCurrentPresetsSubtab);
     managerCurrentPresetId = uiRender.renderVariablesTab(managerApi, selected);
     uiRender.renderWorldInfoTab(managerApi);
     uiRender.renderVariableManagementTab(managerApi);

@@ -356,6 +356,29 @@ describe('1.29 variable batching', () => {
     });
 });
 
+describe('1.29 per-preset history limit', () => {
+    it('overrides the global message count, in chat-history mode', async () => {
+        create({ historyLimit: 1 });
+        promptedOn('Indy', 'mood');
+        context.chat = [{ is_user: true, mes: 'first' }, { is_user: false, name: 'Bot', mes: 'second' }, { is_user: true, mes: 'third' }];
+        callBackgroundLLM.mockResolvedValue('{"se__mood":"tense"}');
+        await runIndy();
+        const prompt = callBackgroundLLM.mock.calls[0][2][0].content;
+        expect(prompt).toContain('third');
+        expect(prompt).not.toContain('first');
+        expect(prompt).not.toContain('second');
+    });
+
+    it('is unused in extension/empty context modes', async () => {
+        create({ historyLimit: 1 });
+        promptedOn('Indy', 'mood');
+        setContext({ a: 1 });
+        callBackgroundLLM.mockResolvedValue('{"se__mood":"tense"}');
+        await runIndy();
+        expect(callBackgroundLLM.mock.calls[0][2][0].content).not.toContain('Recent conversation');
+    });
+});
+
 describe('1.29 enabled / disabled', () => {
     it('disabled: the LLM is never called, nothing runs, and status records why', async () => {
         create({ enabled: false });

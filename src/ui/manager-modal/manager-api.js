@@ -28,6 +28,7 @@ import { renderTrackerPanel } from '../tracker-panel-ui.js';
 import { setStatus } from '../settings-panel-ui.js';
 import { getCurrentChatId } from '../wand-ui.js';
 import { previewCalendarDefinition, validateCalendarDefinition } from '../../core/calendar-engine.js';
+import { listConnectionProfiles as connectionProfiles } from '../connection-profile-ui.js';
 
 function findPresetById(presetId) {
     return getSettings().presets[presetId] || null;
@@ -108,6 +109,75 @@ export function removePresetFromChatAdapter(chatId, presetId) {
     callAsBuiltin((extId, instId) => stateEngine.deactivatePreset(extId, instId, chatId, preset.namespace || BUILTIN_NAMESPACE, preset.name));
 }
 
+// Independent preset operations for the Presets tab's "Independent Presets"
+// subtab (requirements spec 1.29), made AS the built-in extension exactly
+// like the regular-preset adapters above - same presetId<->(namespace,name)
+// translation, same callAsBuiltin() error-to-status-bar convention (these
+// functions already warn+return null/false on their own failures, and throw
+// only on an identity problem that can never actually happen here since the
+// caller is always 'se').
+export function createIndependentPresetAdapter(name) {
+    const desired = (name || 'New Independent Preset').trim() || 'New Independent Preset';
+    const finalName = uniquePresetName(BUILTIN_NAMESPACE, desired, null);
+    const created = callAsBuiltin((extId, instId) => stateEngine.createIndependentPreset(extId, instId, { namespace: BUILTIN_NAMESPACE, name: finalName }));
+    return created ? created.id : null;
+}
+
+// patch: { name?, description?, connectionProfileId?, temperature?, maxTokens?,
+// historyLimit?, batch?, promptedHeader?, enabled? } - anything not present is
+// left untouched (updateIndependentPreset/configureIndependentPreset both merge).
+export function updateIndependentPresetAdapter(presetId, patch) {
+    const preset = findPresetById(presetId);
+    if (!preset) return null;
+    const namespace = preset.namespace || BUILTIN_NAMESPACE;
+    const safePatch = { ...patch };
+    if (typeof safePatch.name === 'string') safePatch.name = uniquePresetName(namespace, safePatch.name, presetId);
+    return callAsBuiltin((extId, instId) => stateEngine.updateIndependentPreset(extId, instId, namespace, preset.name, safePatch));
+}
+
+export function deleteIndependentPresetAdapter(presetId) {
+    const preset = findPresetById(presetId);
+    if (!preset) return false;
+    return !!callAsBuiltin((extId, instId) => stateEngine.deleteIndependentPreset(extId, instId, preset.namespace || BUILTIN_NAMESPACE, preset.name));
+}
+
+export function toggleIndependentPresetAdapter(presetId, enabled) {
+    const preset = findPresetById(presetId);
+    if (!preset) return null;
+    return callAsBuiltin((extId, instId) => stateEngine.toggleIndependentPreset(extId, instId, preset.namespace || BUILTIN_NAMESPACE, preset.name, enabled));
+}
+
+// Fire-and-forget from the click handler's point of view (ui-events.js awaits
+// it to re-render the row with the fresh status once it settles) - chatId is
+// the chat currently open in SillyTavern, never a chat the row was drawn for.
+export function runIndependentPresetAdapter(presetId, chatId) {
+    const preset = findPresetById(presetId);
+    if (!preset) return Promise.resolve(false);
+    if (!chatId) {
+        setStatus('Open a chat before running an independent preset.', true);
+        return Promise.resolve(false);
+    }
+    return callAsBuiltin((extId, instId) => stateEngine.runIndependentPreset(extId, instId, chatId, { namespace: preset.namespace || BUILTIN_NAMESPACE, name: preset.name }))
+        ?? Promise.resolve(false);
+}
+
+// Open read (no identity) - see getIndependentPresetStatus's own doc comment.
+export function getIndependentPresetStatusAdapter(presetId) {
+    const preset = findPresetById(presetId);
+    if (!preset) return null;
+    return stateEngine.getIndependentPresetStatus(preset.namespace || BUILTIN_NAMESPACE, preset.name);
+}
+
+export const independentPresetAdapters = {
+    createIndependentPreset: createIndependentPresetAdapter,
+    updateIndependentPreset: updateIndependentPresetAdapter,
+    deleteIndependentPreset: deleteIndependentPresetAdapter,
+    toggleIndependentPreset: toggleIndependentPresetAdapter,
+    runIndependentPreset: runIndependentPresetAdapter,
+    getIndependentPresetStatus: getIndependentPresetStatusAdapter,
+    connectionProfiles,
+};
+
 // Calendar operations for the Calendars tab, made AS the built-in extension
 // through stateEngine.* like the preset adapters above. Unlike callAsBuiltin(),
 // these let the API's errors propagate: the editor needs the reason (an
@@ -148,5 +218,6 @@ setManagerApi({
     blankDefinition,
     isVariableNameTaken,
     generateUniqueVariableName,
-    ...calendarAdapters
+    ...calendarAdapters,
+    ...independentPresetAdapters,
 });
