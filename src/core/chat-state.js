@@ -21,6 +21,7 @@ import { LOG_PREFIX, getSettings, persistSettings } from './settings-core.js';
 import { setMacroValue, deleteMacroValue } from './macro-store.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
 import { getDefaultValue } from './variable-schema.js';
+import { coerceValue } from './variable-validation.js';
 import { isImageType, sanitizeImageValue } from './image-variables.js';
 import { DEFAULT_CALENDAR_ID } from './settings-core.js';
 import { incrementScalar, toScalar } from './calendar-engine.js';
@@ -165,6 +166,19 @@ function sanitizeArrayValue(def, rawValue) {
 // sets one). Any other definition is returned as is.
 function arrayViewOf(def) {
     return def?.type === 'imageList' ? { ...def, itemType: 'string', sorted: false } : def;
+}
+
+// Flag-mode booleans (def.flagMode === true, requirements spec 1.28): once the
+// stored value is true, an AUTOMATIC write (manual=false) that would flip it back
+// to false is refused - true stays true until a MANUAL write (the tracker's edit
+// pencil or reset button, both pass manual=true) changes it. A write attempting
+// true (or a value that isn't currently true) is never affected. `attemptedRaw` is
+// interpreted through coerceValue() - the same boolean coercion the tracker's own
+// manual-edit path already uses - so a prompted "false"/0/no all count as false.
+function blockedFlagReset(def, currentValue, attemptedRaw, manual) {
+    if (manual || def?.type !== 'boolean' || def?.flagMode !== true) return false;
+    if (currentValue !== true) return false; // nothing set yet - any write is fine
+    return coerceValue(def, attemptedRaw) !== true;
 }
 
 // Applies one array operation to a copy of currentArray and returns the
@@ -339,7 +353,13 @@ export function getVar(chatId, varName) {
 // write to the right def.name/def.scope. Omitting it falls back to
 // whatever def was already stored, and mirrors into the macro store as a
 // chat-scoped variable named varName.
-export function setVar(chatId, varName, value, def) {
+// `options.manual` (default false) marks a write as a deliberate, direct user
+// action - the ONLY thing allowed to reset a flag-mode boolean back to false
+// (see blockedFlagReset above). Every automatic caller (prompted-engine.js,
+// deterministic-engine.js, seeding, new-chat continuation) omits it and gets
+// the default false; only tracker-panel-ui.js's edit-pencil and reset-button
+// handlers - the actual "manually in the tracker" UI action - pass true.
+export function setVar(chatId, varName, value, def, { manual = false } = {}) {
     try {
         const state = loadChatState(chatId);
 
@@ -347,6 +367,11 @@ export function setVar(chatId, varName, value, def) {
         // canonical schema (def) that produced it.
         const existing = state.variables[varName] || {};
         const effectiveDef = keepSnapshotBatch(def ?? existing.def ?? null, existing.def);
+
+        if (blockedFlagReset(effectiveDef, existing.value, value, manual)) {
+            console.warn(LOG_PREFIX, `setVar: "${varName}" is a flag-mode boolean already true - refusing to reset it to false (not a manual write)`);
+            return;
+        }
 
         // Array values are validated/sanitized here (itemType, maxLength,
         // unique, sorted) so the isolated store - the source of truth, spec
@@ -443,6 +468,15 @@ export function applyIncrement(chatId, varName, delta, def) {
             // getVar() - what calculated-engine.js reads - saw the raw
             // number, breaking boolean logic (`!flag`, `flag && ...`) for
             // any calculated variable depending on it.
+            //
+            // A flag-mode boolean that is already true never toggles back off
+            // through an increment (applyIncrement is only ever called by the
+            // prompted/deterministic engines - never "manually" - so this check
+            // has no manual bypass, unlike setVar's blockedFlagReset): 1.28.
+            if (def.flagMode === true && entry.value === true) {
+                saveChatState(chatId, state);
+                return;
+            }
             next = typeof entry.value === 'boolean' ? !entry.value : !(Number(entry.value) !== 0);
         } else if (def?.type === 'datetime') {
             // Scalar seconds, but NOT a number increment: delta is a string

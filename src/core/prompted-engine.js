@@ -16,6 +16,14 @@ export function shouldSkipPromptedRefresh(def) {
     return !!(def && def.skipPromptedRefresh);
 }
 
+// A flag-mode boolean (1.28) that has already fired: nothing prompted can change
+// it (setVar/applyIncrement already refuse to reset it), so asking about it again
+// wastes tokens and can read as an invitation to "turn it back off" - it is simply
+// left out of every prompted category once true.
+export function isDoneFlag(chatId, def) {
+    return def?.type === 'boolean' && def?.flagMode === true && getVar(chatId, def.name)?.value === true;
+}
+
 // Variable batching (requirements spec 1.20): the definitions, out of
 // `variables` (the { id: def } map getAllVariablesFromPresets() returns),
 // that belong to `batchName`. The main prompted update below only ever asks
@@ -94,11 +102,13 @@ export async function runPromptedStateUpdate(triggerType) {
                 def.behaviors?.prompted === true &&
                 def.behaviors?.increment !== true &&
                 !isImageType(def) &&
+                !isDoneFlag(chatId, def) &&
                 !shouldSkipPromptedRefresh(def);
 
             const isPromptedIncrement =
                 def.behaviors?.prompted === true &&
-                def.behaviors?.increment === true;
+                def.behaviors?.increment === true &&
+                !isDoneFlag(chatId, def);
 
             const isDeterministicIncrement =
                 def.behaviors?.increment === true &&

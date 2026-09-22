@@ -1800,6 +1800,77 @@ variable rules (1.26), the expression language or the tracker.
   removed (they stay in the folder); a shared preset without its embedded files keeps
   its paths, which show the placeholder until the files exist.
 
+1.28 Boolean "Flag Mode" (write-once booleans) (2026-09-21)
+
+An optional property on boolean variables, def.flagMode (default false, blankDefinition()).
+No new variable type. Code: variable-schema.js (schema + forced-false default),
+chat-state.js (the enforcement - setVar/applyIncrement, the ONE write path every
+caller shares), prompted-engine.js + independent-presets.js (leaving a fired flag
+out of the prompt), tracker-panel-ui.js (the one authorized manual reset path),
+variable-api.js (createVariable/updateVariable validation).
+
+- flagMode is only meaningful for type "boolean"; present on any other type it is
+  simply inert (every runtime check gates on type === 'boolean' too), the same
+  tolerance itemType gets on a non-array definition.
+- Starts false: getDefaultValue() forces a flag-mode boolean's default to false
+  UNCONDITIONALLY, ignoring whatever defaultValue says - the API layer
+  (createVariable/updateVariable) also normalizes the STORED defaultValue field to
+  false whenever type is boolean and flagMode is true (not just when no default was
+  given), so the definition never shows a "true" default it will never actually use.
+- The rule, enforced in chat-state.js's setVar()/applyIncrement() (never anywhere
+  else - every write path funnels through them): once the stored value is true, an
+  AUTOMATIC write (prompted update, prompted/deterministic increment toggle, seeding,
+  new-chat continuation, a future extension value-write API) that would flip it back
+  to false is silently refused (a console warning names the variable) and the value
+  stays true. A write attempting true, or any write while the value is not yet true,
+  is never affected - "starts false, becomes true, stays true" is the whole rule.
+  setVar() takes a new options.manual flag (default false); applyIncrement() is
+  never called manually (only the two prompted/deterministic engines call it) so it
+  has no such flag - its boolean branch just unconditionally refuses to flip a
+  true flag back off.
+- Deviation from "except manually in the manager modal": the manager modal's own
+  inline editor only ever edits DEFINITIONS (name/type/behaviors/...), never a
+  variable's runtime VALUE - there is no value-edit surface there at all, confirmed
+  by reading every setVar/getVar call site in src/ui/manager-modal/*.js (none). The
+  ONE place in the running UI that edits a variable's stored value is the
+  tracker panel's edit pencil (and its "Reset to default" button, shown when
+  increment is on) - tracker-panel-ui.js's own header comment already calls this
+  "the runtime state edit surface". Both call setVar with { manual: true }, and
+  isStaticVariable() is given one exception: a flag-mode boolean is ALWAYS offered
+  the edit pencil, even when it is also prompted and/or incremented (the normal
+  case - a flag that only an LLM or an engine ever sets true would otherwise have
+  no way to be manually reset at all, since isStaticVariable ordinarily hides the
+  pencil whenever prompted/increment owns the value). An ordinary (non-flag)
+  prompted/incremented boolean keeps the old behavior - no pencil.
+- "Extensions may set true but may not set false unless explicitly allowed by the
+  user": there is currently no API function for an extension to write a variable's
+  runtime VALUE at all (only its definition, and updateVariable already refuses
+  patch.value); the write-path gate lives at the shared choke point (setVar/
+  applyIncrement) specifically so this rule applies automatically to such an API
+  the moment one exists, with zero further changes needed.
+- Prompted updates: a flag-mode boolean that is already true is left out of BOTH
+  prompt categories entirely (updateVars and incrementVars) in prompted-engine.js
+  AND independent-presets.js's own duplicated classification (Section 6 of the
+  API doc already documents that duplication) - not merely write-blocked but never
+  asked about again, since the answer can no longer change anything and re-asking
+  wastes tokens / could read as an invitation to "turn it back off". A still-false
+  flag's prompt line uses a one-way-flag wording (describeConstraint,
+  formatting-utils.js) telling the model to only ever answer true.
+- World Info conditions (is_true/is_false) and the expression language treat a
+  flag-mode boolean exactly like any other boolean - flagMode is a write-path-only
+  concept neither of them is even aware of. The tracker displays it normally (no
+  badge); it is otherwise an ordinary boolean row, editable through the exception
+  above.
+- Export/import: flagMode is a plain definition field with no special handling
+  needed - exportPreset/importPresetDetailed already clone every field of a
+  definition untouched, so it round-trips like any other (itemType,
+  currentKeyVariable, ...).
+- Manager modal editor: a boolean-type editor gains a "Flag mode (write-once)"
+  checkbox (data-field="flagMode", picked up by the existing generic field
+  collector - no new event wiring needed) with the requested explanatory text;
+  describeVariable()'s explanation box and the increment description both note a
+  flag's one-way nature when it is set.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 

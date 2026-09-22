@@ -198,6 +198,14 @@ export function normalizeCollectedValues(values) {
         out.resetOnNewChat = !!values.resetOnNewChat;
     }
 
+    // Flag mode (1.28) - only meaningful for type "boolean"; harmless (and inert:
+    // getDefaultValue()/setVar()/applyIncrement() all gate on type === 'boolean'
+    // too) if present on any other type, same as itemType being present on a
+    // non-array definition.
+    if (values.flagMode !== undefined) {
+        out.flagMode = !!values.flagMode;
+    }
+
     if (values.showInTracker !== undefined) {
         out.showInTracker = values.showInTracker !== false;
     }
@@ -311,7 +319,9 @@ export function describeVariable(d) {
         if (d.type === 'number') {
             out.push(`Each increment changes the value by ${d.increment?.delta ?? 1}.`);
         } else if (d.type === 'boolean') {
-            out.push(`Each increment toggles the boolean value.`);
+            out.push(d.flagMode === true
+                ? `Each increment sets it to true (it cannot toggle back to false once true - only a manual reset in the tracker can).`
+                : `Each increment toggles the boolean value.`);
         } else if (d.type === 'enum') {
             out.push(`Each increment cycles through the enum values.`);
         } else if (d.type === 'datetime') {
@@ -324,6 +334,10 @@ export function describeVariable(d) {
             const op = d.increment?.operation;
             out.push(op ? `Each increment applies the "${op}" operation to the array.` : `No array operation is configured, so increments do nothing.`);
         }
+    }
+
+    if (d.type === 'boolean' && d.flagMode === true) {
+        out.push(`It is a write-once flag: once true, it cannot be set back to false except manually (the tracker's edit pencil or reset button).`);
     }
 
     return out.join(' ');

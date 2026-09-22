@@ -20,7 +20,14 @@ import { setStatus } from './settings-panel-ui.js';
 // increment engine own it). There is no separate "static" schema type -
 // number/string/boolean/enum/array are all eligible here whenever neither
 // behavior flag is set; type itself doesn't matter.
+//
+// A flag-mode boolean (1.28) is the one deliberate exception: it is ALWAYS
+// editable here, even when prompted or incremented, because the tracker's edit
+// pencil (and its reset button, below) is the only manual write surface this
+// extension actually has - without this override a flag that is also prompted
+// (the normal case: "set true by prompted updates") could never be reset at all.
 function isStaticVariable(def) {
+    if (def?.type === 'boolean' && def.flagMode === true) return true;
     return !!def
         && def.type !== 'calculated'
         && !isImageType(def) // shown as a picture only - no editing from the tracker
@@ -284,7 +291,9 @@ export function renderTrackerPanel() {
                             try {
                                 const edit = resolveTrackerEdit(def, rawValue);
                                 if (edit.ok) {
-                                    setVar(cid, def.name, edit.value, def);
+                                    // manual: true - the pencil IS "manually in the
+                                    // tracker" (1.28's authorized flag-reset path).
+                                    setVar(cid, def.name, edit.value, def, { manual: true });
                                     recalculateDependents(cid, def.name);
                                 } else {
                                     setStatus(`"${def.label || def.name}" not changed: ${edit.error}`, true);
@@ -328,7 +337,10 @@ export function renderTrackerPanel() {
                         // the manager-modal defaultValue input is a plain
                         // text field.
                         const next = getDefaultValue(def);
-                        setVar(chatId, def.name, next, def);
+                        // manual: true - clicking Reset is a deliberate user action
+                        // too, and for a flag-mode boolean it is the other authorized
+                        // way to reset one to false (getDefaultValue forces false).
+                        setVar(chatId, def.name, next, def, { manual: true });
                         recalculateDependents(chatId, def.name);
                         renderTrackerPanel();
                     } catch (err) {

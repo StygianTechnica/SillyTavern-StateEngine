@@ -49,6 +49,15 @@ export function blankDefinition() {
         type: 'number', // number | string | boolean | enum | array | calculated | datetime | image | imageList | imageMap
         enumValues: [],
 
+        // Flag mode (only meaningful when type === 'boolean', requirements spec
+        // 1.28): once true, the value can only move back to false through a
+        // MANUAL write (the tracker's edit pencil / reset button) - never a
+        // prompted update, an increment operation, or an extension. See
+        // getDefaultValue() below (a flag always starts false) and chat-state.js's
+        // setVar()/applyIncrement() (where the rule is actually enforced - the
+        // one write path every caller shares).
+        flagMode: false,
+
         // Calculated-variable configuration (only meaningful when
         // type === 'calculated'). dependencies names the other variables
         // (in the same preset) the expression may reference; expression is
@@ -127,6 +136,9 @@ export function getDefaultValue(def) {
             return Number.isFinite(n) ? n : 0;
         }
         case 'boolean':
+            // A flag-mode boolean always STARTS false, whatever defaultValue says -
+            // the whole point of a flag is "this hasn't happened yet" (1.28).
+            if (def.flagMode === true) return false;
             return String(def.defaultValue).trim().toLowerCase() === 'true';
         case 'enum': {
             const list = Array.isArray(def.enumValues) ? def.enumValues : [];

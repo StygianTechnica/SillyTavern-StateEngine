@@ -31,7 +31,11 @@ export function describeConstraint(def) {
         if (def.max !== '' && def.max !== null && def.max !== undefined) parts.push(`max ${def.max}`);
         return `number${parts.length ? ` (${parts.join(', ')})` : ''}`;
     }
-    if (def.type === 'boolean') return 'true or false';
+    if (def.type === 'boolean') {
+        return def.flagMode === true
+            ? 'true or false - a one-way flag: once you answer true it stays true and you will not be asked again, so only answer true, never false'
+            : 'true or false';
+    }
     if (def.type === 'datetime') {
         // A calendar other than Gregorian (spec 1.22) is described in its own
         // terms: the model sees the date in that calendar's names, so its

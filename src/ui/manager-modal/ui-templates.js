@@ -319,6 +319,13 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                     value="${escapeHtml(d.defaultValue)}" />
                 ${d.type === 'image' ? `<div class="se-image-editor-preview">${thumbHtml(typeof d.defaultValue === 'string' ? d.defaultValue : '', { enlarge: true, extraClass: 'se-image-preview' })}<small>Only a reference is stored (a URL, path, id or base64 data) - never the image itself. Nothing is fetched or checked. Drop an image file anywhere on this editor to import it.</small></div>` : ''}
                 ${d.type === 'datetime' ? `<small class="se-manager-datetime-preview">${escapeHtml(variableSchema.datetimeDefaultPreview(d.calendar, d.defaultValue))}</small>` : ''}
+                ${d.type === 'boolean' ? `
+                    <label class="checkbox_label se-manager-flagmode-toggle">
+                        <input type="checkbox" class="se-manager-var-field" data-field="flagMode" ${d.flagMode ? 'checked' : ''} />
+                        <span>Flag mode (write-once)</span>
+                    </label>
+                    <div class="se-empty">When enabled, this boolean starts false and can be set to true by prompted updates, increments or extensions - but cannot be set back to false except manually (the tracker's edit pencil or reset button).</div>
+                ` : ''}
             `}
 
             <!-- Calculated variable: dependency selector + expression -->

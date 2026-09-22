@@ -31,7 +31,7 @@ import { getVar, setVar, applyIncrement } from '../core/chat-state.js';
 import { recalculateDependents } from '../core/calculated-engine.js';
 import { callBackgroundLLM } from '../core/background-llm.js';
 import { extractJsonObject, stripHtml, describeConstraint } from '../ui/formatting-utils.js';
-import { shouldSkipPromptedRefresh } from '../core/prompted-engine.js';
+import { shouldSkipPromptedRefresh, isDoneFlag } from '../core/prompted-engine.js';
 
 // namespace.name's preset gets a merged config bag stored on
 // preset.independentConfig. Expected (all optional) fields, mirroring the
@@ -106,8 +106,11 @@ async function runIndependentPresetInternal(chatId, presetRef) {
         const incrementVars = [];
         for (const def of variables) {
             if (!def?.name) continue;
-            const isPromptedUpdate = def.behaviors?.prompted === true && def.behaviors?.increment !== true && !shouldSkipPromptedRefresh(def);
-            const isPromptedIncrement = def.behaviors?.prompted === true && def.behaviors?.increment === true;
+            // 1.28: a flag-mode boolean that already fired is left out here too - the
+            // same rule as the main prompted engine (prompted-engine.js), and for the
+            // same reason (nothing prompted can reset it, so asking wastes tokens).
+            const isPromptedUpdate = def.behaviors?.prompted === true && def.behaviors?.increment !== true && !isDoneFlag(chatId, def) && !shouldSkipPromptedRefresh(def);
+            const isPromptedIncrement = def.behaviors?.prompted === true && def.behaviors?.increment === true && !isDoneFlag(chatId, def);
             if (isPromptedUpdate) updateVars.push(def);
             else if (isPromptedIncrement) incrementVars.push(def);
         }

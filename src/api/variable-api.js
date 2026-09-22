@@ -121,6 +121,25 @@ function checkedImage(def, fnName, hadDefault) {
     return { ok: true };
 }
 
+// A flag-mode boolean (1.28): flagMode, if given, must be a real boolean, and
+// defaultValue is ALWAYS forced to false when type is boolean and flagMode is
+// true - "the variable starts false" is absolute, not just "when no default was
+// given" (getDefaultValue() already ignores defaultValue unconditionally for a
+// flag; forcing it here too keeps the stored definition honest about what it
+// actually does, rather than showing a caller-supplied "true" default that is
+// silently never used). Never rejects flagMode on a non-boolean type: like
+// itemType on a non-array definition, it is simply inert there (every runtime
+// check gates on type === 'boolean' too).
+function checkedFlagMode(def, fnName) {
+    if (def.flagMode !== undefined && typeof def.flagMode !== 'boolean') {
+        return { ok: false, error: `${fnName}: flagMode must be true or false` };
+    }
+    if (def.type === 'boolean' && def.flagMode === true) {
+        def.defaultValue = false;
+    }
+    return { ok: true };
+}
+
 function currentChatId() {
     try {
         return SillyTavern.getContext().chatId;
@@ -284,6 +303,11 @@ export function createVariable(extensionId, instanceId, def) {
             console.warn(LOG_PREFIX, imageCheck.error);
             return null;
         }
+        const flagCheck = checkedFlagMode(fullDef, 'createVariable');
+        if (!flagCheck.ok) {
+            console.warn(LOG_PREFIX, flagCheck.error);
+            return null;
+        }
         if (fullDef.type === 'datetime') {
             const datetime = checkedDatetime(fullDef, 'createVariable');
             if (!datetime.ok) {
@@ -405,6 +429,12 @@ export function updateVariable(extensionId, instanceId, ref, patch) {
         const imageCheck = checkedImage(newDef, 'updateVariable', !becameImage || safePatch.defaultValue !== undefined);
         if (!imageCheck.ok) {
             console.warn(LOG_PREFIX, imageCheck.error);
+            return null;
+        }
+
+        const flagCheck = checkedFlagMode(newDef, 'updateVariable');
+        if (!flagCheck.ok) {
+            console.warn(LOG_PREFIX, flagCheck.error);
             return null;
         }
 

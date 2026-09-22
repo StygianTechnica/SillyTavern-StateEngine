@@ -1514,6 +1514,16 @@ that carry a preset's image files (requirements spec 1.27). They are internal (u
 manager modal); the existing synchronous functions are unchanged, except that a plain
 import discards an embedded `stateEngineImages` block.
 
+**12.10 Boolean flag mode (createVariable / updateVariable)**
+
+`flagMode` (boolean, default false) is accepted on a `type: "boolean"` definition
+through the existing create/update calls - no new API functions (requirements spec
+1.28). It must be a real boolean or the call is rejected; `defaultValue` is always
+normalized to `false` when `type` is `"boolean"` and `flagMode` is `true`. The
+actual write-once ENFORCEMENT is not an API-layer concern - it lives in
+chat-state.js's setVar()/applyIncrement(), the shared write path every value change
+(including a future extension value-write API) already goes through.
+
 **12.6 Verification**
 
 `tests/api/notification-api.test.js` and `tests/notification-ui.test.js`; the full
