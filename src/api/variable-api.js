@@ -80,7 +80,13 @@ function checkedBatch(value, fnName) {
 // defaultValue is rewritten as that scalar, the canonical stored form, so an
 // ISO string given by a caller is converted once, here. Returns { ok: true }
 // or { ok: false, error } - never throws.
-function checkedDatetime(def, fnName) {
+// `preset` (optional - the same preset object createVariable()/
+// updateVariable() already have in scope) lets deltaSource be checked
+// against the preset's own variables, the same same-preset scoping
+// validateCalculatedDefinitionInternal() already uses for a calculated
+// variable's dependencies. Omitted only by callers that don't have a preset
+// on hand, in which case deltaSource's existence/type is left unchecked.
+function checkedDatetime(def, fnName, preset) {
     const calendarId = def.calendar ?? 'gregorian';
     if (!getCalendar(calendarId)) {
         return { ok: false, error: `${fnName}: calendar "${calendarId}" does not exist` };
@@ -94,6 +100,38 @@ function checkedDatetime(def, fnName) {
     }
     def.calendar = calendarId;
     def.defaultValue = scalar;
+
+    // Calculated-datetime extension (requirements spec 1.31). Caught here,
+    // at save time, rather than left to silently do nothing forever at
+    // runtime: a tickUnit that can never parse, or a deltaSource that can
+    // never resolve, would otherwise fail invisibly on every engine pass.
+    if (def.fixedIncrement === true && !calendarEngine.isValidDelta(calendarId, def.tickUnit)) {
+        return { ok: false, error: `${fnName}: tickUnit ${JSON.stringify(def.tickUnit)} is not a valid delta for calendar "${calendarId}"` };
+    }
+    if (typeof def.deltaSource === 'string' && def.deltaSource.trim()) {
+        const sourceName = def.deltaSource.trim();
+        // No separate "cannot reference itself" check: on createVariable()
+        // the variable being created is not yet in preset.variables (that
+        // write happens after this validation), so self-reference already
+        // fails "does not exist"; on updateVariable() the variable already
+        // in preset.variables is never type 'string' at this point (it is
+        // the datetime being validated), so self-reference already fails
+        // the type check below. A dedicated check here would be untestable
+        // dead code - confirmed by mutation testing, not assumed.
+        if (preset) {
+            const sourceDef = Object.values(preset.variables || {}).find((v) => v?.name === sourceName);
+            if (!sourceDef) {
+                return { ok: false, error: `${fnName}: deltaSource "${sourceName}" does not exist in this preset` };
+            }
+            if (sourceDef.type !== 'string') {
+                return { ok: false, error: `${fnName}: deltaSource "${sourceName}" must be a string variable (got "${sourceDef.type}")` };
+            }
+        }
+        def.deltaSource = sourceName;
+    } else {
+        def.deltaSource = '';
+    }
+
     return { ok: true };
 }
 
@@ -309,7 +347,7 @@ export function createVariable(extensionId, instanceId, def) {
             return null;
         }
         if (fullDef.type === 'datetime') {
-            const datetime = checkedDatetime(fullDef, 'createVariable');
+            const datetime = checkedDatetime(fullDef, 'createVariable', preset);
             if (!datetime.ok) {
                 console.warn(LOG_PREFIX, datetime.error);
                 return null;
@@ -442,7 +480,7 @@ export function updateVariable(extensionId, instanceId, ref, patch) {
             // Same rules as createVariable(), on the merged definition - so a
             // patch that changes only `calendar`, or only `defaultValue`, is
             // checked against the other's stored value too.
-            const datetime = checkedDatetime(newDef, 'updateVariable');
+            const datetime = checkedDatetime(newDef, 'updateVariable', preset);
             if (!datetime.ok) {
                 console.warn(LOG_PREFIX, datetime.error);
                 return null;

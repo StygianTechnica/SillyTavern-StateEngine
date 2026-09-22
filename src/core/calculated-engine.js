@@ -16,10 +16,12 @@
 // Each caller owning its own trigger avoids that, mirroring how
 // deterministic-engine.js already owns its own applyIncrement trigger.
 
-import { LOG_PREFIX } from './settings-core.js';
+import { LOG_PREFIX, DEFAULT_CALENDAR_ID } from './settings-core.js';
 import { getVar, setVar } from './chat-state.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
 import { evaluateExpression } from './expression-dsl.js';
+import { toScalar, resolveInstruction } from './calendar-engine.js';
+import { getDefaultValue } from './variable-schema.js';
 
 // Builds a name-keyed map of every variable definition active for this chat,
 // plus the list of calculated-type variable names among them. Variable
@@ -141,17 +143,140 @@ function warnCyclic(cyclic) {
     }
 }
 
+// Calculated-datetime extension (requirements spec 1.31): datetime.value has
+// just jumped via its deltaSource, keyed "chatId::datetimeVarName". Read
+// (and cleared) once by deterministic-engine.js's fixedIncrement tick, so a
+// jump that lands the same round a tick would otherwise fire suppresses that
+// one tick rather than both landing on top of each other. Best-effort, not a
+// hard guarantee: the prompted update that writes a deltaSource is fire-and-
+// forget (prompted-engine.js never awaits it), so it can resolve either
+// before or after that round's deterministic pass already ran - a jump that
+// lands AFTER the tick already fired cannot retroactively suppress it. In-
+// memory only, same lifetime/cleanup tradeoff as lastEvaluationErrors above.
+const recentDatetimeJumps = new Map();
+
+function jumpKey(chatId, varName) {
+    return `${chatId}::${varName}`;
+}
+
+// One-shot read: true if `varName` just received a delta jump since this was
+// last called for it, and clears the flag either way. Exported for
+// deterministic-engine.js.
+export function consumeDatetimeJump(chatId, varName) {
+    const key = jumpKey(chatId, varName);
+    const had = recentDatetimeJumps.get(key) === true;
+    recentDatetimeJumps.delete(key);
+    return had;
+}
+
+// Datetime delta-consumption trigger (requirements spec 1.31): a datetime
+// variable can name another (normal, prompted, type: 'string') variable in
+// the same preset as its deltaSource. Whenever that source variable's value
+// changes - detected here, since every write-path caller already calls
+// recalculateDependents() right after any write (this file's own header
+// comment) - its text ("3 days", "until morning", "skip to next season", an
+// exact date, ...) is parsed through the SAME calendar NL parser
+// prompted-engine.js's direct "update" mode already uses (resolveInstruction,
+// spec 1.22.4) and applied to the datetime variable's current value. The
+// source is then reset to '' so the same answer is never re-applied on a
+// later, unrelated write to some other variable. A source whose text fails
+// to parse is left untouched (neither the datetime value nor the source
+// itself is written) so the bad answer stays visible - for the console and
+// for the next write to correct - rather than being silently discarded.
+//
+// Two or more datetime variables may share one deltaSource (fan-out): each
+// gets the delta applied independently, and the source resets once, after the
+// loop, only if at least one of them actually applied it (so an all-parse-
+// failure round leaves the source untouched, for the same reason above).
+//
+// Returns the names of every datetime variable actually updated, so the
+// caller (recalculateDependents) can cascade into their own dependents -
+// both ordinary calculated variables and, via deltaSource chaining, another
+// datetime variable's own trigger.
+function applyDatetimeDeltaTriggers(chatId, sourceVarName, allDefs) {
+    const sourceValue = getVar(chatId, sourceVarName)?.value;
+    if (typeof sourceValue !== 'string' || sourceValue.trim() === '') return [];
+
+    const defs = Object.values(allDefs || {});
+    const touched = [];
+    let anyApplied = false;
+
+    for (const def of defs) {
+        if (def?.type !== 'datetime' || def.deltaSource !== sourceVarName || !def.name) continue;
+        try {
+            const calendarId = def.calendar || DEFAULT_CALENDAR_ID;
+            const stored = getVar(chatId, def.name)?.value ?? getDefaultValue(def);
+            const current = toScalar(calendarId, stored) ?? 0;
+            // resolveInstruction() as prompted-engine.js's direct "update" mode
+            // already uses it requires a verb ("advance 3 hours") or an absolute
+            // date/scalar - a bare duration ("3 days", the example phrasing
+            // requirements spec 1.31 itself gives a delta variable) matches
+            // neither, so it is retried with an implicit "advance " prefix
+            // before being treated as unparseable. An instruction that already
+            // has its own verb (or is an absolute date) is unaffected - the
+            // first, unprefixed attempt already resolves those.
+            const next = resolveInstruction(calendarId, current, sourceValue)
+                ?? resolveInstruction(calendarId, current, `advance ${sourceValue}`);
+            if (next === null) {
+                console.warn(LOG_PREFIX, `datetime delta skipped for "${def.name}": could not understand ${JSON.stringify(sourceValue)} from "${sourceVarName}"`);
+                continue;
+            }
+            setVar(chatId, def.name, next, def);
+            if (def.fixedIncrement === true) recentDatetimeJumps.set(jumpKey(chatId, def.name), true);
+            touched.push(def.name);
+            anyApplied = true;
+        } catch (err) {
+            console.warn(LOG_PREFIX, `datetime delta trigger failed for "${def.name}" (gracefully handled)`, err);
+        }
+    }
+
+    if (anyApplied) {
+        const sourceDef = defs.find((d) => d?.name === sourceVarName) || null;
+        if (sourceDef) setVar(chatId, sourceVarName, '', sourceDef);
+    }
+
+    return touched;
+}
+
+// Recursion guard for the datetime delta trigger below: recalculateDependents
+// can call itself (a jump writes a datetime variable, which itself needs its
+// own dependents recalculated - including, via deltaSource chaining, another
+// datetime trigger). The calculated-variable graph itself never recurses
+// (topoSortCalculated already excludes a dependency cycle from `order`), so
+// this cap only ever matters for a misconfigured deltaSource chain (A's jump
+// writes B, whose own trigger writes back to A, ...). Generous but finite -
+// a legitimate chain of datetime triggers is never this deep.
+const MAX_DATETIME_TRIGGER_DEPTH = 25;
+
 // Re-evaluates every calculated variable that (directly or transitively,
-// through a chain of other calculated variables) depends on `varName`.
-// Called by every write-path caller right after it changes varName's value -
-// deterministic-engine.js after an increment, prompted-engine.js after a
-// prompted write, ui-events.js after a variable is saved/renamed/deleted.
-export function recalculateDependents(chatId, varName) {
+// through a chain of other calculated variables) depends on `varName`, and
+// runs the calculated-datetime delta trigger for it (requirements spec
+// 1.31). Called by every write-path caller right after it changes varName's
+// value - deterministic-engine.js after an increment, prompted-engine.js
+// after a prompted write, ui-events.js after a variable is saved/renamed/
+// deleted. `_visited` is internal recursion state only - external callers
+// always use the two-argument form and get a fresh guard each call.
+export function recalculateDependents(chatId, varName, _visited = new Set()) {
     try {
         if (!chatId || !varName) return;
+        if (_visited.has(varName)) {
+            console.warn(LOG_PREFIX, `datetime delta trigger cycle detected at "${varName}"; stopping.`);
+            return;
+        }
+        if (_visited.size >= MAX_DATETIME_TRIGGER_DEPTH) {
+            console.warn(LOG_PREFIX, 'datetime delta trigger chain exceeded depth limit; stopping.');
+            return;
+        }
+        _visited.add(varName);
 
         const activePresetIds = getPresetsForChat(chatId);
         const allDefs = getAllVariablesFromPresets(activePresetIds);
+
+        const touchedByDelta = applyDatetimeDeltaTriggers(chatId, varName, allDefs);
+        for (const touchedName of touchedByDelta) {
+            recalculateDependents(chatId, touchedName, _visited);
+        }
+
         const { byName, calcNames } = buildCalculatedGraph(allDefs);
         const { order, cyclic } = topoSortCalculated(byName, calcNames);
 

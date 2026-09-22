@@ -9,7 +9,7 @@
 import { LOG_PREFIX, DEFAULT_CALENDAR_ID, getSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
 import { setVar, applyIncrement } from './chat-state.js';
-import { recalculateDependents } from './calculated-engine.js';
+import { recalculateDependents, consumeDatetimeJump } from './calculated-engine.js';
 import { isValidDelta } from './calendar-engine.js';
 
 // Returns how many variables were incremented (0 when nothing was), so the caller
@@ -60,8 +60,49 @@ export function runDeterministicIncrements(chatId, triggerType) {
                 console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
             }
         }
+
+        applied += runFixedIncrementTicks(chatId, variables);
     } catch (err) {
         console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+    }
+    return applied;
+}
+
+// Calculated-datetime extension (requirements spec 1.31): a SEPARATE,
+// independent mechanism from the legacy behaviors.increment/increment.delta
+// loop above - a datetime variable opts in with fixedIncrement: true AND
+// accumulate: true (both required; accumulate is the deliberate master
+// switch a datetime variable can flip without touching fixedIncrement/
+// tickUnit - see variable-schema.js) and steps by tickUnit on every
+// deterministic pass, i.e. every call to runDeterministicIncrements()
+// regardless of triggerType - it has no `triggers` config of its own,
+// unlike the legacy path. A variable whose deltaSource just applied a jump
+// this same pass (calculated-engine.js's consumeDatetimeJump(), one-shot)
+// skips this one tick instead of also stepping by tickUnit on top of the
+// jump it just received - per instruction, a delta jump and the fixed tick
+// never both land on the same variable at once. This is best-effort, not a
+// hard guarantee: see consumeDatetimeJump()'s own comment for why.
+function runFixedIncrementTicks(chatId, variables) {
+    let applied = 0;
+    for (const def of Object.values(variables)) {
+        try {
+            if (def?.type !== 'datetime' || !def.name) continue;
+            if (def.fixedIncrement !== true || def.accumulate !== true) continue;
+
+            if (consumeDatetimeJump(chatId, def.name)) continue;
+
+            const calendarId = def.calendar || DEFAULT_CALENDAR_ID;
+            if (!isValidDelta(calendarId, def.tickUnit)) {
+                console.warn(LOG_PREFIX, `fixedIncrement tick skipped for "${def.name}": invalid tickUnit ${JSON.stringify(def.tickUnit)} for calendar "${calendarId}"`);
+                continue;
+            }
+
+            applyIncrement(chatId, def.name, def.tickUnit, def);
+            recalculateDependents(chatId, def.name);
+            applied += 1;
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
     }
     return applied;
 }

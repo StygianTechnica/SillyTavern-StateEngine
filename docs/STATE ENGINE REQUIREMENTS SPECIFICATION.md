@@ -1954,6 +1954,102 @@ Code: src/ui/manager-modal/manager-modal.css.
   syntactically sound and that the existing 1737-test suite (unaffected by
   a pure CSS change) still passes; she should confirm visually once pulled.
 
+1.31 Calculated Datetime Extension (2026-09-21)
+
+Extends the EXISTING `datetime` type with four new optional fields instead of
+introducing a new variable type or a special datetime category - a plain
+datetime variable that sets none of them behaves exactly as it always has
+(1.21/1.22). Code: variable-schema.js (fields), variable-api.js
+(validation), calculated-engine.js (the delta trigger), deterministic-
+engine.js (the tick). Superseded an earlier two-round design (a proposed new
+`calculatedDatetime` type, and folding datetime fully into the general
+prompted-variable pool) after both were found to either collide with
+`calculated`'s own contract (never written outside its own expression
+evaluation - calculated-engine.js's header comment) or lose a real
+capability (variable, model-chosen jump magnitude, which the boolean-
+increment path cannot express - only a fixed, preconfigured delta).
+
+- New fields (blankDefinition(), only meaningful when type === 'datetime'):
+  fixedIncrement (boolean, default false), tickUnit (string, default
+  "1 day"), deltaSource (string, default ''), accumulate (boolean, default
+  false). Validated by checkedDatetime() (variable-api.js): a fixedIncrement
+  variable's tickUnit must be a delta the variable's own calendar accepts
+  (isValidDelta); a non-empty deltaSource must name an existing, type:
+  'string' variable in the SAME preset (same same-preset scoping
+  validateCalculatedDefinitionInternal() already uses for a calculated
+  variable's dependencies, including that it is given by its fully-qualified
+  stored name, e.g. "ext__jump", not its local name) and may not be the
+  datetime variable's own name.
+- Fixed-increment ticking (deterministic-engine.js's NEW runFixedIncrementTicks,
+  separate from and independent of the legacy behaviors.increment/
+  increment.delta path 1.21 already has): a variable ticks by tickUnit on
+  EVERY deterministic pass - i.e. every call to runDeterministicIncrements(),
+  both 'user' and 'ai' - only when BOTH fixedIncrement AND accumulate are
+  true. accumulate is a deliberate master switch, not a synonym for
+  fixedIncrement: fixedIncrement: true with accumulate left at its false
+  default ticks nothing (explicit user instruction, 2026-09-21) - "it should
+  only apply delta jumps... and should NOT tick normally" is accumulate's
+  whole job when false.
+- Delta consumption (calculated-engine.js's NEW applyDatetimeDeltaTriggers,
+  called from inside recalculateDependents() - the one function every write-
+  path caller already invokes after any write, so every caller gets this for
+  free with no change to any of its 11 call sites): when deltaSource's value
+  changes to a non-empty string, that text is parsed via the SAME calendar
+  NL parser prompted-engine.js's direct "update" mode already uses
+  (resolveInstruction, 1.22.4) against the datetime variable's OWN calendar
+  and current value, applied via setVar, and deltaSource is reset to ''
+  - so the same answer is never re-applied on a later, unrelated write. A
+  bare duration ("3 days", the example phrasing this feature's own request
+  gives) has no verb, so resolveInstruction (built for "advance 3 hours"
+  phrasing) does not parse it on its own; retried with an implicit "advance "
+  prefix before being treated as unparseable - a phrase that already has a
+  verb, or an absolute date/scalar, resolves on the first attempt exactly as
+  it always has and is never re-prefixed. A source whose text fails to parse
+  either way leaves BOTH the datetime value and the source untouched (visible
+  for the console and the next write to correct, never silently discarded).
+  Two or more datetime variables may share one deltaSource; each applies
+  independently, and the source resets once, after the loop, only if at
+  least one actually applied it.
+- Combined behavior / no double-stepping (explicit user instruction,
+  2026-09-21): a delta jump and the fixed tick never both land on a variable
+  in the same pass. calculated-engine.js's applyDatetimeDeltaTriggers records
+  a one-shot "just jumped" flag (consumeDatetimeJump(), in-memory, keyed
+  "chatId::varName") whenever a jump applies to a fixedIncrement variable;
+  deterministic-engine.js's tick loop consumes (reads and clears) that flag
+  before ticking and skips the tick if it was set. Best-effort, not a hard
+  guarantee: the prompted update that writes a deltaSource is fire-and-
+  forget (prompted-engine.js never awaits its background LLM call), so a
+  jump can resolve either before or after that round's deterministic pass
+  already ran - one that lands after cannot retroactively suppress a tick
+  that already fired.
+- Cycle guard: recalculateDependents(chatId, varName, _visited) gained a
+  third, internal-only parameter (a Set, fresh by default on every external
+  two-argument call) so it can recurse into a delta trigger's own dependents
+  - both ordinary calculated variables and, via deltaSource chaining,
+  another datetime trigger - without re-entering a name already in its own
+  recursion chain (capped at 25 regardless). A genuine infinite cycle cannot
+  actually form through this trigger in practice - applyDatetimeDeltaTriggers
+  only treats a STRING, non-empty value as a pending delta, and every
+  successful apply both writes the target a NUMBER and resets the source to
+  '' - so this is defense-in-depth for that check ever being bypassed, not a
+  scenario reachable through the validated create/update path.
+- Export/import, independent presets: both fields are plain data (preset-
+  export.js's whole-preset clone() already carries them, no special-casing)
+  and an independent preset's own write path already calls
+  recalculateDependents() (1.29) at its two write sites, so a deltaSource
+  answered by an independent preset run triggers the identical cascade with
+  no independent-presets.js changes at all.
+- UI: deferred (this pass is engine/schema/API only, per the request's own
+  phasing) - fixedIncrement/tickUnit/deltaSource/accumulate are configurable
+  today only through createVariable/updateVariable, not the manager modal's
+  inline editor.
+- Tests: tests/calculated-datetime.test.js (37 tests) - validation, ticking
+  (including the accumulate/fixedIncrement truth table), delta consumption
+  (including fan-out and a fantasy calendar), the tick-suppression
+  interaction, cycle-guard behavior (including why a real cycle cannot form),
+  end-to-end through both the main prompted update and an independent
+  preset, and export.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 

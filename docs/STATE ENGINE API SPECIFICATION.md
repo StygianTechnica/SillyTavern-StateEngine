@@ -1772,3 +1772,82 @@ through the independent-preset controls); the full suite passes under `npm
 test`. Every rule above was also verified by deliberately breaking it and
 confirming the suite catches the break (mutation testing), the same standard
 every other pass in this document has been held to.
+
+SECTION 14 — CALCULATED DATETIME EXTENSION (2026-09-21)
+
+**14.0 What it is**
+
+Four new optional fields on the EXISTING `datetime` type (requirements spec
+1.31) - no new type, no new `stateEngine.*` function. A caller sets them
+exactly like any other field, through `createVariable(extensionId, instanceId,
+def)` / `updateVariable(extensionId, instanceId, ref, patch)` (Section 6/7),
+which already accept `def`/`patch` as a bag of fields:
+
+```
+fixedIncrement: boolean   // default false - see 14.1
+tickUnit: string          // default "1 day" - a calendar delta, e.g. "1h", "1mo"
+deltaSource: string       // default '' - the FULLY-QUALIFIED name (e.g.
+                          // "ext__jump") of a type: 'string' variable in the
+                          // SAME preset; same convention a calculated
+                          // variable's `dependencies` already uses (7.3)
+accumulate: boolean       // default false - see 14.1
+```
+
+Superseded an earlier "new `calculatedDatetime` type" design (rejected: it
+would be written outside its own expression evaluation, contradicting
+`calculated`'s own contract - calculated-engine.js's header comment) after
+discussion with the requester; the final, implemented design is the four
+fields above.
+
+**14.1 fixedIncrement / accumulate (continuous ticking)**
+
+A datetime variable ticks by `tickUnit` on every deterministic pass
+(`runDeterministicIncrements`, Section 5 - every call, both `'user'` and
+`'ai'`, unlike the legacy `behaviors.increment` path's own `triggers`
+config) ONLY when BOTH `fixedIncrement` AND `accumulate` are `true`.
+`accumulate` is a deliberate master switch a caller can flip without
+touching `fixedIncrement`/`tickUnit` - `fixedIncrement: true` alone ticks
+nothing. `tickUnit` is validated the same way the legacy path's
+`increment.delta` already is (must parse for the variable's own calendar) -
+an invalid one is rejected by createVariable/updateVariable, never silently
+inert at runtime.
+
+**14.2 deltaSource (narrative jumps)**
+
+Whenever the named `deltaSource` variable's value changes to a non-empty
+string, its text (a duration - "3 days", "12 hours" - or a full instruction
+like "advance 3 hours" or an absolute date) is parsed against the datetime
+variable's OWN calendar via the SAME parser `resolveInstruction()` already
+uses (Section 10/11), applied to the datetime's current value, and the
+source is reset to `''`. This means the intended integration is: give an
+extension's preset a plain `type: 'string', behaviors.prompted: true`
+variable as the delta source, let the model (or any caller, including
+`runIndependentPreset` - Section 13) write a duration into it, and the
+datetime variable updates itself with no further code. `deltaSource` must
+reference an existing `type: 'string'` variable in the same preset or
+`createVariable`/`updateVariable` rejects the definition (same warn-and-null
+convention as every other validation in this module).
+
+**14.3 No new read/status surface**
+
+Nothing new is exposed for reading "did a jump just happen" or "when does
+this tick" - `getVariable`/`listVariables` (Section 2) return the new fields
+like any other, and the datetime variable's own stored value (`getVar`
+internally, or a preset's normal read path) is the only place to observe the
+result. The one-shot jump/tick-suppression flag (requirements spec 1.31) is
+purely internal to `calculated-engine.js`/`deterministic-engine.js` and is
+not part of the public API.
+
+**14.4 Verification**
+
+`tests/calculated-datetime.test.js` (37 tests): schema defaults, every
+validation rule, the fixedIncrement/accumulate truth table, deltaSource
+consumption (including fan-out to multiple datetime variables and a fantasy
+calendar), the jump-suppresses-the-next-tick interaction, the recursion/
+cycle guard (including why a real infinite cycle cannot form through this
+mechanism), end-to-end through both the main prompted update and
+`runIndependentPreset`, and export. Every rule was verified by deliberately
+breaking it and confirming the suite catches the break (mutation testing);
+one deliberately-added "cannot reference itself" check was found to be
+dead code by this process (already caught by the existence/type checks on
+both the create and update paths) and removed rather than kept untested.
