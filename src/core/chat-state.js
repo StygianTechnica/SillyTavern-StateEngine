@@ -24,7 +24,7 @@ import { getDefaultValue } from './variable-schema.js';
 import { coerceValue } from './variable-validation.js';
 import { isImageType, sanitizeImageValue } from './image-variables.js';
 import { DEFAULT_CALENDAR_ID } from './settings-core.js';
-import { incrementScalar, toScalar } from './calendar-engine.js';
+import { incrementScalar, toScalar, normalizeForDatetimeMode } from './calendar-engine.js';
 
 const SCHEMA_VERSION = 1;
 
@@ -380,9 +380,24 @@ export function setVar(chatId, varName, value, def, { manual = false } = {}) {
         // An image list is an array of strings and goes through the same
         // sanitizer as one (see arrayViewOf); an image or an image map is kept to
         // strings (sanitizeImageValue) - "must be strings", nothing more.
+        // Datetime mode (requirements spec 1.36): every write path in this
+        // codebase funnels through setVar (this function's own header
+        // comment), so normalizing here - a dateOnly/timeOnly variable's
+        // value ALWAYS gets its irrelevant half truncated away, "after each
+        // update" per the request - covers every caller (prompted-engine.js's
+        // direct write, calculated-engine.js's deltaSource jump, the
+        // tracker's manual edit, seeding) for free, with no change needed at
+        // any of them. Only applies to an already-numeric scalar - every
+        // datetime-writing caller already converts to scalar before calling
+        // setVar (this function never itself calls toScalar for datetime,
+        // unlike array/image above), so a non-number here would mean a
+        // caller regression, not something to silently coerce.
         const storedValue = effectiveDef?.type === 'array' || effectiveDef?.type === 'imageList'
             ? sanitizeArrayValue(arrayViewOf(effectiveDef), value)
-            : (isImageType(effectiveDef) ? sanitizeImageValue(effectiveDef.type, value) : value);
+            : (isImageType(effectiveDef) ? sanitizeImageValue(effectiveDef.type, value)
+                : (effectiveDef?.type === 'datetime'
+                    ? normalizeForDatetimeMode(effectiveDef.calendar || DEFAULT_CALENDAR_ID, value, effectiveDef.datetimeMode)
+                    : value));
 
         state.variables[varName] = {
             value: storedValue,
@@ -486,7 +501,12 @@ export function applyIncrement(chatId, varName, delta, def) {
             // calendar cannot parse throws into the catch below and leaves
             // the stored value untouched.
             const current = toScalar(def.calendar || DEFAULT_CALENDAR_ID, entry.value) ?? getDefaultValue(def);
-            next = incrementScalar(def.calendar || DEFAULT_CALENDAR_ID, current, delta);
+            // This branch writes entry.value directly, below, rather than
+            // through setVar() - so datetimeMode normalization (1.36),
+            // otherwise applied once at setVar's single choke point, is
+            // repeated here for the one write path that bypasses it (the
+            // automatic per-message tick, behaviors.increment).
+            next = normalizeForDatetimeMode(def.calendar || DEFAULT_CALENDAR_ID, incrementScalar(def.calendar || DEFAULT_CALENDAR_ID, current, delta), def.datetimeMode);
         } else {
             // Convert current value to number safely
             let current = Number(entry.value);

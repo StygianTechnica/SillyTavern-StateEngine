@@ -236,3 +236,96 @@ describe('the manager modal: saving a datetime\'s deltaSource and its automatic 
         expect(stored('se__clock')).toMatchObject({ deltaSource: 'se__jump', increment: { delta: '2d' } });
     });
 });
+
+// ---------------------------------------------------------------------------
+// Datetime mode (requirements spec 1.36) - same manager-modal DOM harness.
+describe('the manager modal: saving a datetime\'s datetimeMode', () => {
+    let presetId;
+    const api = () => ({
+        getSettings,
+        persistSettings: vi.fn(),
+        getCurrentChatId: () => context.chatId,
+        getPresetsForChat, addPresetToChat, removePresetFromChat,
+        createPreset: vi.fn(), renamePreset: vi.fn(), deletePreset: vi.fn(),
+        setStatus: vi.fn(), renderVarTable: vi.fn(), renderTrackerPanel: vi.fn(),
+        restoreDefaultPresets: vi.fn(), toggleDebugMode: vi.fn(), getDebugInfo: () => ({}),
+        isReservedVariable: () => false, blankDefinition,
+        isVariableNameTaken: () => false, generateUniqueVariableName: (n) => n,
+        listCalendars: () => getSettings().calendars,
+    });
+    const stored = (name) => Object.values(getSettings().presets[presetId].variables).find((v) => v.name === name);
+    const editor = () => $('.se-manager-variable-editor-inline').filter((_, el) => el.innerHTML.trim() !== '');
+    const addVar = (id, def) => { getSettings().presets[presetId].variables[id] = { ...blankDefinition(), id, ...def }; };
+    const rerenderVariablesTab = () => {
+        $('.se-manager-tab-btn[data-tab="presets"]').trigger('click');
+        buildManagerModal();
+        $('.se-manager-tab-btn[data-tab="variables"]').trigger('click');
+    };
+
+    beforeEach(() => {
+        context.chatId = 'chat-1';
+        presetId = 'p1';
+        getSettings().presets[presetId] = { id: presetId, name: 'Alpha', namespace: 'se', description: '', triggers: ['ai'], showInTracker: false, variables: {} };
+        addPresetToChat('chat-1', presetId);
+        setManagerApi(api());
+        buildManagerModal();
+        $('.se-manager-tab-btn[data-tab="variables"]').trigger('click');
+    });
+
+    it('saves datetimeMode on a new datetime variable, normalizing its default', () => {
+        $('#se-manager-new-variable').trigger('click');
+        editor().find('[data-field="name"]').val('clock');
+        editor().find('[data-field="type"]').val('datetime').trigger('change');
+        editor().find('[data-field="datetimeMode"]').val('dateOnly');
+        editor().find('[data-field="defaultValue"]').val('2026-09-18 22:00:00');
+        editor().find('.se-manager-save-variable-inline').trigger('click');
+
+        expect(stored('se__clock')).toMatchObject({ datetimeMode: 'dateOnly' });
+        // The time portion is dropped from the DEFAULT itself at save time,
+        // not just on the next write (schema/validation, tests/datetime.test.js).
+        expect(stored('se__clock').defaultValue).toBe(Date.UTC(2026, 8, 18) / 1000);
+        expect(globalThis.alert).not.toHaveBeenCalled();
+    });
+
+    it('defaults to "full" when left untouched', () => {
+        $('#se-manager-new-variable').trigger('click');
+        editor().find('[data-field="name"]').val('clock');
+        editor().find('[data-field="type"]').val('datetime').trigger('change');
+        editor().find('.se-manager-save-variable-inline').trigger('click');
+
+        expect(stored('se__clock')).toMatchObject({ datetimeMode: 'full' });
+    });
+
+    // The "Semantic time of day" section only re-renders when the TYPE field
+    // changes (not datetimeMode - no live-narrowing UI for this pass), so
+    // switching datetimeMode to "dateOnly" within the same edit session
+    // leaves a now-stale, still-visible timeSemanticMode select in the DOM.
+    // The save handler must still force it off regardless of what that
+    // stale control holds - proving the fix does not depend on the DOM
+    // having already hidden the field.
+    it('switching to "Date only" forces timeSemanticMode off at save time, even from a stale visible control', () => {
+        addVar('clock', { name: 'se__clock', type: 'datetime', datetimeMode: 'full', timeSemanticMode: 'semanticTimeOfDay' });
+        rerenderVariablesTab();
+
+        $('.se-manager-edit-variable[data-var-id="clock"]').trigger('click');
+        expect(editor().find('[data-field="timeSemanticMode"]').val()).toBe('semanticTimeOfDay');
+        editor().find('[data-field="datetimeMode"]').val('dateOnly');
+        // The stale control is still present and still says "on" - not reset by the DOM itself.
+        expect(editor().find('[data-field="timeSemanticMode"]').val()).toBe('semanticTimeOfDay');
+        editor().find('.se-manager-save-variable-inline').trigger('click');
+
+        expect(stored('se__clock')).toMatchObject({ datetimeMode: 'dateOnly', timeSemanticMode: 'none' });
+    });
+
+    it('"Time only" and "full" keep whatever timeSemanticMode was chosen', () => {
+        addVar('clock', { name: 'se__clock', type: 'datetime', datetimeMode: 'full' });
+        rerenderVariablesTab();
+
+        $('.se-manager-edit-variable[data-var-id="clock"]').trigger('click');
+        editor().find('[data-field="datetimeMode"]').val('timeOnly');
+        editor().find('[data-field="timeSemanticMode"]').val('semanticTimeOfDay');
+        editor().find('.se-manager-save-variable-inline').trigger('click');
+
+        expect(stored('se__clock')).toMatchObject({ datetimeMode: 'timeOnly', timeSemanticMode: 'semanticTimeOfDay' });
+    });
+});

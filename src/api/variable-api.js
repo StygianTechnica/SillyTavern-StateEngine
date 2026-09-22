@@ -39,7 +39,7 @@ import { findPresetEntry } from './preset-api.js';
 import { blankDefinition, TIME_BATCH } from '../core/variable-schema.js';
 import { isImageType, checkImageValue, emptyImageValue } from '../core/image-variables.js';
 import * as calendarEngine from '../core/calendar-engine.js';
-import { getCalendar, toScalar } from '../core/calendar-engine.js';
+import { getCalendar, toScalar, normalizeForDatetimeMode } from '../core/calendar-engine.js';
 import { isVariableNameTaken } from '../core/preset-manager.js';
 import { seedVariablesForChat, resetValueIfTypeChanged, deleteVariableValueEverywhere } from '../core/chat-state.js';
 import { recalculateAllForChat, evaluateCalculatedVariable, recalculateDependents } from '../core/calculated-engine.js';
@@ -99,7 +99,19 @@ function checkedDatetime(def, fnName, preset) {
         return { ok: false, error: `${fnName}: defaultValue ${JSON.stringify(def.defaultValue)} is not a number of seconds or an ISO date such as "2026-09-18 22:00"` };
     }
     def.calendar = calendarId;
-    def.defaultValue = scalar;
+
+    // Datetime mode (requirements spec 1.36): validated the same way
+    // timeSemanticMode is (a fixed choice, not free text). The default
+    // itself is normalized here too, not just at runtime writes (chat-
+    // state.js's setVar/applyIncrement) - so a dateOnly/timeOnly variable
+    // never even STARTS with an inconsistent stored default (a defaultValue
+    // typed as "2026-09-18 22:00" for a dateOnly variable becomes
+    // "2026-09-18 00:00" on save, not just on its first update).
+    if (def.datetimeMode !== undefined && def.datetimeMode !== 'full' && def.datetimeMode !== 'dateOnly' && def.datetimeMode !== 'timeOnly') {
+        return { ok: false, error: `${fnName}: datetimeMode must be "full", "dateOnly" or "timeOnly" (got ${JSON.stringify(def.datetimeMode)})` };
+    }
+    def.datetimeMode = ['dateOnly', 'timeOnly'].includes(def.datetimeMode) ? def.datetimeMode : 'full';
+    def.defaultValue = normalizeForDatetimeMode(calendarId, scalar, def.datetimeMode);
 
     // Calculated-datetime extension (requirements spec 1.31): deltaSource.
     // Caught here, at save time, rather than left to silently do nothing
@@ -133,6 +145,26 @@ function checkedDatetime(def, fnName, preset) {
     } else {
         def.deltaSource = '';
     }
+
+    // Semantic time of day (requirements spec 1.35): a fixed-choice field, not
+    // free text, so this is really just "did a caller send garbage" - the
+    // manager-modal editor only ever offers the two real values via a
+    // <select>, same as deltaSource's dropdown.
+    if (def.timeSemanticMode !== undefined && def.timeSemanticMode !== 'none' && def.timeSemanticMode !== 'semanticTimeOfDay') {
+        return { ok: false, error: `${fnName}: timeSemanticMode must be "none" or "semanticTimeOfDay" (got ${JSON.stringify(def.timeSemanticMode)})` };
+    }
+    def.timeSemanticMode = def.timeSemanticMode === 'semanticTimeOfDay' ? 'semanticTimeOfDay' : 'none';
+
+    // "Add optional semantic time of day support for timeOnly and full
+    // modes" (1.36) - a dateOnly variable has no time-of-day to interpret a
+    // semantic phrase INTO (it is normalized away, above), and the request
+    // is explicit that dateOnly must "ignore semantic time of day phrases"
+    // outright, not merely have them resolve to a no-op. Forced off here
+    // (the one place both fields are validated together), not just gated at
+    // the prompted-engine.js call site, so the stored definition is never
+    // self-contradictory (an "on" toggle the UI would otherwise still show
+    // as active for a mode that can never actually use it).
+    if (def.datetimeMode === 'dateOnly') def.timeSemanticMode = 'none';
 
     return { ok: true };
 }

@@ -7,7 +7,7 @@
 import { vi } from 'vitest';
 import { getSettings, persistSettings } from '../../src/core/settings-core.js';
 import { getDefaultValue } from '../../src/core/variable-schema.js';
-import { incrementScalar } from '../../src/core/calendar-engine.js';
+import { incrementScalar, normalizeForDatetimeMode } from '../../src/core/calendar-engine.js';
 import context from './context.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.mock.js';
 
@@ -42,9 +42,18 @@ export const setVar = vi.fn((chatId, varName, value, def) => {
     // a def with no `batch` keeps the batch the previous snapshot recorded.
     // The REAL function is tested directly in batching.test.js via importActual.
     if (snapshot && snapshot.batch === undefined && typeof previous?.batch === 'string') snapshot = { ...snapshot, batch: previous.batch };
-    state.variables[varName] = { value, def: snapshot };
+    // Datetime mode (requirements spec 1.36): mirrors the real setVar()'s own
+    // normalization, the same reason incrementScalar (below) already mirrors
+    // the real applyIncrement()'s datetime branch - every OTHER suite that
+    // uses this standard mock (not just datetime.test.js, which also tests
+    // the real module directly via realChatState) needs dateOnly/timeOnly to
+    // actually behave, not silently no-op.
+    const storedValue = snapshot?.type === 'datetime'
+        ? normalizeForDatetimeMode(snapshot.calendar || 'gregorian', value, snapshot.datetimeMode)
+        : value;
+    state.variables[varName] = { value: storedValue, def: snapshot };
     persistSettings();
-    context.variables.local.set(varName, value);
+    context.variables.local.set(varName, storedValue);
 });
 
 export const applyIncrement = vi.fn((chatId, varName, delta, def) => {

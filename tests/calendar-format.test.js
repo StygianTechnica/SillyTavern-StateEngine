@@ -203,8 +203,16 @@ describe('calendar formatting', () => {
 
         it('tracker-panel-ui formats through calendarEngine.format (no manual formatting left)', () => {
             const src = readFileSync(join(ROOT, 'src', 'ui', 'tracker-panel-ui.js'), 'utf8');
-            expect(src).toContain("import { format } from '../core/calendar-engine.js'");
-            expect(src).toContain("{ style: 'full' }");
+            // `format` is imported from calendar-engine.js - not necessarily
+            // ALONE any more (formatIsoScalar joined it for datetime mode's
+            // 1.36 bare-time tracker edit, below), so this checks the import
+            // source, not one exact literal import line.
+            expect(src).toMatch(/import\s*\{[^}]*\bformat\b[^}]*\}\s*from\s*'\.\.\/core\/calendar-engine\.js'/);
+            // The style is computed now (datetime mode, requirements spec
+            // 1.36), not a literal 'full' object - checked as a call plus
+            // that plain-mode datetime still resolves to 'full' somewhere.
+            expect(src).toMatch(/\{\s*style\s*\}|\{\s*style:/);
+            expect(src).toContain("'full'");
             expect(src).not.toContain('formatScalar');
         });
     });

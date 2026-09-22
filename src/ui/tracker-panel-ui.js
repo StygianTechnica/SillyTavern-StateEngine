@@ -6,7 +6,7 @@ import { getMacroValue } from '../core/macro-store.js';
 import { setVar, getVar } from '../core/chat-state.js';
 import { getDefaultValue } from '../core/variable-schema.js';
 import { coerceValue, validateValueStrict } from '../core/variable-validation.js';
-import { format } from '../core/calendar-engine.js';
+import { format, formatIsoScalar } from '../core/calendar-engine.js';
 import { formatPartial } from '../core/calendar-engine.js';
 import { recalculateDependents, getCalculatedVariableError } from '../core/calculated-engine.js';
 import { formatValueForDisplay } from './formatting-utils.js';
@@ -43,9 +43,24 @@ function isStaticVariable(def) {
 // would silently reset the clock to 1970 on a typo, so there the text must be
 // an ISO date/datetime ("2026-09-18 22:55:00") or a number of seconds, and
 // anything else is refused and nothing is written.
+// A bare "HH:mm" or "HH:mm:ss", with no date at all - what datetimeEditText
+// shows a "Time only" (requirements spec 1.36) variable's edit box as, so
+// committing it back unchanged must round-trip. toScalar()/parseDateTime()
+// (calendar-engine.js) both require a date prefix (ISO_DATETIME), so this is
+// completed with the calendar's own reference date (day 0) before being
+// handed to the ordinary parser - the date is discarded again anyway, by
+// setVar()'s datetimeMode normalization, once written.
+const BARE_TIME = /^\d{1,2}:\d{2}(?::\d{2})?$/;
+
 export function resolveTrackerEdit(def, rawValue) {
     if (def?.type === 'datetime') {
-        const result = validateValueStrict(def, typeof rawValue === 'string' ? rawValue.trim() : rawValue);
+        let text = typeof rawValue === 'string' ? rawValue.trim() : rawValue;
+        if (def.datetimeMode === 'timeOnly' && typeof text === 'string' && BARE_TIME.test(text)) {
+            const refIso = formatIsoScalar(def.calendar || DEFAULT_CALENDAR_ID, 0);
+            const refDate = refIso ? refIso.split(' ')[0] : null;
+            if (refDate) text = `${refDate} ${text}`;
+        }
+        const result = validateValueStrict(def, text);
         // An empty box is not a value (validateValueStrict treats only
         // null/undefined that way).
         if (!result.valid || rawValue === '' || rawValue === null || rawValue === undefined) {
@@ -79,9 +94,14 @@ function imageMapKeyValue(def, variables, context) {
 // gives "2026-09-18 22:55:00"; a fantasy calendar shows its own month name and
 // pattern ("Stormfall 17, 1203 12:00:00", spec 1.22.2). A value or calendar
 // format() refuses is shown as stored rather than breaking the panel.
+// Datetime mode (requirements spec 1.36): "dateOnly" suppresses the time
+// portion of the tracker's display, "timeOnly" suppresses the date - the
+// stored scalar is already normalized (chat-state.js's setVar), so this is
+// purely a display choice, matching formatValueForDisplay's own gate.
 function datetimeText(def, scalar) {
+    const style = def.datetimeMode === 'dateOnly' ? 'date' : def.datetimeMode === 'timeOnly' ? 'time' : 'full';
     try {
-        return format(def.calendar || DEFAULT_CALENDAR_ID, Number(scalar), { style: 'full' });
+        return format(def.calendar || DEFAULT_CALENDAR_ID, Number(scalar), { style });
     } catch {
         return scalar ?? '';
     }
@@ -90,10 +110,16 @@ function datetimeText(def, scalar) {
 // What the tracker edit box starts with. Always the numeric ISO form, which
 // every calendar can read back (a fantasy calendar's own pattern - an era, a
 // month name - need not be parseable), so committing an untouched box never
-// fails.
+// fails. "Date only"/"Time only" (1.36) show just their meaningful half,
+// so the box never invites editing the part that gets normalized away
+// anyway; resolveTrackerEdit()'s BARE_TIME handling is what lets a bare
+// "timeOnly" box round-trip back through the same, unmodified ISO parser.
 function datetimeEditText(def, scalar) {
     try {
-        return format(def.calendar || DEFAULT_CALENDAR_ID, Number(scalar), { style: 'custom', pattern: 'YYYY-MM-DD HH:mm:ss' });
+        const pattern = def.datetimeMode === 'dateOnly' ? 'YYYY-MM-DD'
+            : def.datetimeMode === 'timeOnly' ? 'HH:mm:ss'
+                : 'YYYY-MM-DD HH:mm:ss';
+        return format(def.calendar || DEFAULT_CALENDAR_ID, Number(scalar), { style: 'custom', pattern });
     } catch {
         return scalar ?? '';
     }
@@ -101,8 +127,12 @@ function datetimeEditText(def, scalar) {
 
 // The extra line a fantasy calendar adds under its date: the season and the
 // cycle position ("Deepfrost · Silver Moon day 5"). '' for a calendar with
-// neither (Gregorian), or when the value cannot be formatted.
+// neither (Gregorian), when the value cannot be formatted, or for "Time
+// only" (1.36) - its date is always the same fixed reference day, so a
+// season/cycle line would only ever show that one moment's, never anything
+// meaningful about the variable's actual (time-only) value.
 function datetimeDetail(def, scalar) {
+    if (def.datetimeMode === 'timeOnly') return '';
     try {
         const p = formatPartial(def.calendar || DEFAULT_CALENDAR_ID, Number(scalar), ['season', 'cycle', 'cycleDay']);
         return [p.season, p.cycle ? `${p.cycle} day ${p.cycleDay}` : ''].filter(Boolean).join(' · ');

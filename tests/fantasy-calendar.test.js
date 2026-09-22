@@ -982,9 +982,15 @@ describe('fantasy calendar: UI', () => {
             expect(find('se-tracker-datetime-detail')).toHaveLength(0);
         });
 
-        it('the tracker source still formats through format() with { style: "full" }', () => {
+        it('the tracker source still formats through format(), defaulting to style "full"', () => {
             const src = read('src', 'ui', 'tracker-panel-ui.js');
-            expect(src).toContain("format(def.calendar || DEFAULT_CALENDAR_ID, Number(scalar), { style: 'full' })");
+            // The style is now computed (datetime mode, requirements spec
+            // 1.36: "dateOnly"/"timeOnly" pick "date"/"time" instead), not a
+            // literal 'full' - checked structurally rather than as one exact
+            // call string, plus that a plain ('full') datetime still resolves
+            // to 'full' somewhere in that computation.
+            expect(src).toContain('format(def.calendar || DEFAULT_CALENDAR_ID, Number(scalar), { style');
+            expect(src).toMatch(/datetimeMode.*'full'|'full'.*datetimeMode/s);
             expect(src).toContain('formatPartial');
         });
     });

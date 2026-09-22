@@ -2445,6 +2445,229 @@ genuinely is the literal last message in the API call.
   rule was verified by deliberately breaking it and confirming the suite
   catches the break (mutation testing).
 
+1.35 Semantic Time of Day (2026-09-22)
+
+Extends the EXISTING `datetime` type with ONE new optional field,
+timeSemanticMode ('none' | 'semanticTimeOfDay', default 'none'), the same
+shape of extension deltaSource (1.31) already is - a plain datetime that
+leaves it at 'none' behaves exactly as it always has. Code:
+variable-schema.js (the field), variable-api.js's checkedDatetime()
+(validation), calendar-engine.js (resolveSemanticTimeOfDay() and
+resolveInstruction()'s new options.semanticTimeOfDay parameter), prompted-
+engine.js (the one call site that actually turns it on), manager-modal/
+ui-templates.js (the editor field).
+
+- The field (blankDefinition(), only meaningful when type === 'datetime'):
+  timeSemanticMode: 'none' | 'semanticTimeOfDay'. Validated by
+  checkedDatetime() the same way deltaSource is - a fixed choice, not free
+  text, so validation is really just "did a caller send garbage"; the
+  manager-modal editor only ever offers the two real values via a <select>.
+- Canonical phrases and hours (minute/second always 0): morning 08:00, dawn
+  06:00, sunrise 06:00, noon 12:00, afternoon 15:00, evening 18:00, sunset
+  19:00, night 21:00, midnight 00:00 - exactly the request's own table.
+  "The next X" (or bare "next X", generalized to every phrase above, not
+  just the three the request gave as examples - "the next dawn"/"next
+  noon" work too) advances the date by one day first, then applies the
+  canonical hour; a bare phrase ("morning") applies the canonical hour to
+  the CURRENT day - which can move the clock backwards within that day if
+  the current time is already past it (a literal reading of the request's
+  own mapping table, not inferred as "always forward"; covered by its own
+  test).
+- Where it applies: ONLY the datetime's own direct prompted answer
+  (prompted-engine.js's runPromptedStateUpdate(), the one place a def is on
+  hand to check timeSemanticMode against) - resolveInstruction() gained a
+  4th, optional `options` parameter (`{ semanticTimeOfDay: boolean }`,
+  default `{}`) so every other existing caller (deltaSource's own
+  applyDatetimeDeltaTriggers in calculated-engine.js, schedule-engine.js,
+  the calendar-manager preview) is completely unaffected without being
+  touched at all. Per the request's own explicit instruction ("DeltaSource
+  prompts do not need to handle semantic time phrases"), deltaSource text
+  is deliberately NEVER given semantic interpretation, even when the
+  TARGET datetime has timeSemanticMode enabled - confirmed by its own test
+  in tests/calculated-datetime.test.js, not assumed from the reading of the
+  request alone.
+- Precedence ("semantic time phrases override duration based deltas"):
+  resolveSemanticTimeOfDay() is checked FIRST in resolveInstruction(),
+  before the absolute-date parse, phrase rules, and the advance/rewind
+  verb grammar - in practice a bare phrase like "morning" never collides
+  with any of those anyway (none of them would ever match it), so this is
+  precedence as specified rather than a fix for an actual conflict that
+  could otherwise arise.
+- Not described to the model: describeConstraint() (formatting-utils.js) is
+  UNCHANGED - the request is explicit that "the engine must perform all
+  semantic time interpretation internally," never mentioning the phrases in
+  the prompt. A semantic phrase understood here works simply because it
+  also reads as ordinary natural language, the same way the model already
+  free-writes "advance 3 hours" without that literal phrase appearing
+  anywhere in its instructions either.
+- Tracker display: no new code needed - a semantic phrase is resolved to an
+  ordinary scalar and written through the SAME setVar() path any other
+  resolved datetime answer already uses, so the tracker (which always reads
+  the stored scalar, never the text that produced it) shows the normalized
+  result "for free." Confirmed by a test that reads the resolved value back
+  through formatValueForDisplay(), not merely assumed from the shared code
+  path.
+- A calendar that cannot represent a canonical hour (e.g. a fantasy
+  calendar with fewer than 22 hoursPerDay, asked for "night" -> 21:00)
+  fails through fromStructured()'s own range check, caught by
+  resolveInstruction's existing top-level try/catch and returned as null -
+  "recognised, but not applicable to this calendar" is treated the same as
+  "not understood," consistent with every other unresolvable instruction.
+- UI (manager-modal/ui-templates.js's buildInlineVariableEditor): a
+  "Semantic time of day" <select> (Off / On), shown only for type ===
+  'datetime', right after the deltaSource section - a plain select value
+  needing no special collection or normalization (same pattern as
+  deltaSource and currentKeyVariable: ui-events.js's generic
+  .se-manager-var-field loop already collects it, and
+  normalizeCollectedValues() passes it through untouched).
+- Tests: tests/datetime.test.js ("semantic time of day (spec 1.35)" - the
+  canonical mapping, the "the"/case tolerance, next-day variants including
+  the generalization beyond the three given examples, the same-day
+  backwards-in-time case, the calendar-cannot-represent-the-hour case, that
+  it is completely inert unless explicitly enabled, schema defaults and
+  validation, and end-to-end prompted-update integration including the
+  tracker-display check) and tests/calculated-datetime.test.js (one test
+  confirming deltaSource text is never given semantic interpretation, using
+  that file's own real-calculated-engine harness - tests/datetime.test.js
+  uses the simplified calculated-engine mock every other suite there
+  relies on, so that specific interaction cannot be exercised from it).
+  Every new rule was verified by deliberately breaking it (the canonical
+  hour table, the enable/disable gate, the next-day-advance step, the
+  save-time validation, the prompted-engine.js wiring, the UI template's
+  selected-option rendering) and confirming the suite catches each break
+  (mutation testing) before being called done.
+
+1.36 Datetime Mode (2026-09-22)
+
+Extends the EXISTING `datetime` type with ONE new optional field,
+datetimeMode ('full' | 'dateOnly' | 'timeOnly', default 'full'), restricting
+which HALF of a moment is meaningful. Code: variable-schema.js (the field),
+variable-api.js's checkedDatetime() (validation, default normalization),
+calendar-engine.js (normalizeForDatetimeMode()), chat-state.js's setVar()/
+applyIncrement() (where it is actually applied), prompted-engine.js (the
+dateOnly/timeSemanticMode gate), ui-templates.js/ui-events.js/variable-ui-
+schema.js (the editor field), formatting-utils.js/tracker-panel-ui.js (mode-
+aware display and editing).
+
+- Design choice, and why: the request's own bullets for dateOnly read, taken
+  literally, as two different rules ("apply all numeric time deltas
+  including hours, minutes, and seconds" vs "apply only day, week, month,
+  and year deltas directly"). Reconciled as ONE coherent design rather than
+  picked between: every existing delta/answer/semantic-phrase path
+  (resolveInstruction, incrementScalar, deltaSource, the deterministic tick)
+  is left COMPLETELY UNCHANGED - no unit-level restriction was added to the
+  parser, which cannot currently tell "3 days" from "72 hours" apart once
+  parsed (parseDeltaFor collapses both into the same `parsed.seconds`; only
+  months/years/seasons are tracked separately, because they need calendar-
+  aware arithmetic). Instead, the RESULT of applying any delta/answer is
+  normalized afterward: dateOnly truncates the time-of-day to 00:00:00,
+  timeOnly truncates the date back to the calendar's own reference moment
+  (day 0 - 1970-01-01 for Gregorian, year 1 month 1 day 1 for a fantasy
+  calendar). This single post-processing step, applied once at the write-
+  path choke point (below), satisfies every bullet as an OUTCOME rather than
+  an input restriction: "apply all numeric deltas" is true (nothing is
+  rejected), "roll the date forward when accumulated time exceeds 24 hours"
+  falls out for free from ordinary scalar arithmetic (30 hours added, THEN
+  truncated, already lands on day+1 - no special-cased rollover logic
+  exists), and "apply only day/week/month/year deltas directly" describes
+  which units have a GUARANTEED effect after truncation (an hour-only delta
+  on a dateOnly variable is silently absorbed unless it crosses a day
+  boundary). timeOnly's own bullets ("apply only hour/minute/second deltas,
+  ignore day/week/month/year deltas") read the same way under this design: a
+  pure date-unit delta changes the date, which is then thrown away by the
+  truncation, so it has no visible effect - "ignored" as an outcome, not a
+  parse-time rejection.
+- normalizeForDatetimeMode(calendarId, scalarTime, datetimeMode)
+  (calendar-engine.js): 'full' (or anything unrecognized) is a pure no-op.
+  Never throws - a bad scalar or calendar falls back to the value unchanged.
+- Applied at chat-state.js's setVar() - the single choke point every
+  write path already shares (its own header comment) - so a
+  dateOnly/timeOnly variable's value is normalized "after each update" (the
+  request's own words) for EVERY caller with zero changes needed at any of
+  them: prompted-engine.js's direct write, calculated-engine.js's
+  deltaSource jump (1.31 - untouched by this feature at all, the
+  normalization is entirely on the write side), the tracker's manual edit,
+  seeding. applyIncrement() writes entry.value directly rather than through
+  setVar() (its own header comment), so the SAME normalization is repeated
+  there for the one write path that bypasses it (the automatic per-message
+  tick, behaviors.increment) - confirmed as a real gap by mutation testing,
+  not assumed identical to setVar's coverage.
+- The default itself is normalized too, at save time (checkedDatetime(),
+  variable-api.js, and variable-ui-schema.js's normalizeCollectedValues() for
+  the manager-modal's own inline-save path, which bypasses checkedDatetime
+  the same way deltaSource's validation is already duplicated there) - a
+  dateOnly/timeOnly variable never even STARTS with an inconsistent stored
+  default.
+- Semantic time of day (1.35) interaction: "Add optional semantic time of
+  day support for timeOnly and full modes" - dateOnly never interprets a
+  semantic phrase at all (not merely a no-op after truncation): gated at
+  prompted-engine.js's one call site (`def.datetimeMode !== 'dateOnly' &&
+  def.timeSemanticMode === 'semanticTimeOfDay'`) AND forced to
+  timeSemanticMode: 'none' at save time (checkedDatetime() and the
+  manager-modal's own inline-save handler, same duplication reason as
+  above) - belt and suspenders, since without the save-time force a
+  dateOnly variable could still show an "on" toggle that can never actually
+  fire. timeOnly keeps semantic phrases fully: "the next morning" resolves
+  its canonical hour normally, then has its (irrelevant) day-advance
+  component silently dropped by the same truncation as any other delta.
+- Tracker display and editing ("suppress time/date display in the
+  tracker"): formatValueForDisplay() (formatting-utils.js) and the tracker's
+  own datetimeText()/datetimeEditText() (tracker-panel-ui.js, kept as a
+  dedicated formatter rather than routed through formatValueForDisplay - see
+  that file's own header comment on why) pick style 'date'/'time'/'full'
+  from datetimeMode - calendar-engine.js's format() and formatScalar()
+  already supported both styles for every calendar (1.21.5/1.22.2); only
+  formatScalar() needed a new (default-'full', backward compatible) style
+  parameter. datetimeDetail() (the season/cycle line) is suppressed
+  entirely for timeOnly - its date is always the same fixed reference
+  moment, so a season/cycle for it would never be meaningful. The tracker's
+  edit box for timeOnly shows and accepts a bare "HH:mm:ss" - toScalar()/
+  parseDateTime() both require a date prefix (ISO_DATETIME), so
+  resolveTrackerEdit() completes a bare time with the calendar's own
+  reference date (formatIsoScalar at scalar 0) before handing it to the
+  ordinary, unmodified parser; the date is discarded again anyway by
+  setVar()'s own normalization once written. A full ISO date/time is still
+  accepted unchanged for any mode - normalization always happens on write,
+  never by restricting what can be typed.
+- UI (manager-modal/ui-templates.js's buildInlineVariableEditor): a
+  "Datetime mode" <select> (Full / Date only / Time only) right after the
+  calendar picker. The "Semantic time of day" section (1.35) is not
+  rendered at all when datetimeMode is 'dateOnly' - there is no live field
+  that re-renders the editor when datetimeMode itself changes (only the
+  `type` field does, an existing, unrelated mechanism), so switching modes
+  within one edit session can leave a stale, still-visible
+  timeSemanticMode control in the DOM; the save handler's own force-to-
+  'none' (above) does not depend on the DOM having already hidden it -
+  confirmed directly, not assumed, by a test that leaves the stale control
+  visibly "on" and checks what gets SAVED regardless.
+- Tests: tests/datetime.test.js ("datetime mode (spec 1.36)" -
+  normalizeForDatetimeMode including a fantasy calendar's own reference
+  moment and the natural 24h-rollover case, schema defaults/validation
+  including the dateOnly-forces-timeSemanticMode-none rule and its
+  prompted-engine.js defense-in-depth gate (checked structurally, the same
+  way this codebase's calendar-format.test.js/fantasy-calendar.test.js
+  already check source-level guarantees), write-path normalization through
+  both setVar and the real applyIncrement, end-to-end prompted-update
+  integration for both modes including their interaction with semantic
+  phrases, tracker display, and the timeOnly bare-time edit round-trip) and
+  tests/calculated-datetime-ui.test.js (a new describe block: saving
+  datetimeMode and its default-normalization, and the stale-DOM-control
+  case above) and tests/calculated-datetime.test.js (one test confirming a
+  deltaSource jump normalizes for the target's datetimeMode exactly like any
+  other write, since deltaSource's own code is completely untouched by this
+  feature). tests/harness/chat-state.mock.js (the standard mocked chat-state
+  every OTHER suite in this codebase uses) was updated to mirror the same
+  normalization the real module now does - found as a real gap, not assumed
+  fixed: the first version of this feature's tests all failed against the
+  unmodified mock, the same class of issue as 1.31's consumeDatetimeJump
+  mock gap earlier in this project. Every rule was verified by deliberately
+  breaking it (the truncation targets, both write-path call sites, the
+  save-time validation and forcing rule, the prompted-engine.js gate, the
+  display/edit formatting, the UI template's field and its stale-DOM
+  handling, the default-normalization on the manager-modal's own save path)
+  and confirming the suite catches each break (mutation testing) before
+  being called done.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 

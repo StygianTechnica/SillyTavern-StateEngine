@@ -596,6 +596,17 @@ export function wireEvents(managerApi, managerState) {
             newVariable.batch = 'time';
         }
 
+        // Datetime mode (requirements spec 1.36): a dateOnly variable
+        // "ignores semantic time of day phrases" outright, same reason
+        // variable-api.js's checkedDatetime() forces this too - re-checked
+        // here because this editor writes preset.variables directly rather
+        // than through createVariable()/updateVariable() (same reason the
+        // calendar/deltaSource checks above and below already duplicate
+        // that module's rules locally).
+        if (newVariable.type === 'datetime' && newVariable.datetimeMode === 'dateOnly') {
+            newVariable.timeSemanticMode = 'none';
+        }
+
         preset.variables[newVariable.id] = newVariable;
 
         const chatId = managerApi.getCurrentChatId();

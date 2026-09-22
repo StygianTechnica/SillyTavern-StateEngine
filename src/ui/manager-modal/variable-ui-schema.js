@@ -4,7 +4,7 @@
 
 import { DEFAULT_CALENDAR_ID } from '../../core/settings-core.js';
 import { isImageType } from '../../core/image-variables.js';
-import { getCalendar, toScalar, format, fromStructured } from '../../core/calendar-engine.js';
+import { getCalendar, toScalar, format, fromStructured, normalizeForDatetimeMode } from '../../core/calendar-engine.js';
 
 // Object arrays are extension-facing: they are created through the API only.
 // The manager modal must not create one or turn a variable into one, and saving
@@ -134,6 +134,14 @@ export function normalizeCollectedValues(values) {
     // currentKeyVariable above) and needs no normalization here - it passes
     // through from `values` untouched.
 
+    // Semantic time of day (requirements spec 1.35): timeSemanticMode is
+    // another plain select value (a fixed 'none' | 'semanticTimeOfDay'
+    // choice, like deltaSource) and likewise needs no normalization here.
+
+    // Datetime mode (requirements spec 1.36): datetimeMode is a third plain
+    // select value ('full' | 'dateOnly' | 'timeOnly') needing no
+    // normalization of its OWN - only defaultValue (above) depends on it.
+
     if (values.defaultValue !== undefined) {
         // The defaultValue input is a plain text field regardless of type
         // (jQuery .val() is always a string), so a number-type variable's
@@ -153,7 +161,16 @@ export function normalizeCollectedValues(values) {
         out.defaultValue = values.type === 'number'
             ? (Number.isFinite(Number(values.defaultValue)) ? Number(values.defaultValue) : 0)
             : values.type === 'datetime'
-                ? (toScalar(out.calendar || values.calendar || DEFAULT_CALENDAR_ID, values.defaultValue) ?? 0)
+                // Datetime mode (requirements spec 1.36): normalized here too,
+                // the same reason checkedDatetime() (variable-api.js)
+                // normalizes it on the API path - so a dateOnly/timeOnly
+                // variable created or edited through this editor never starts
+                // with an inconsistent stored default either.
+                ? normalizeForDatetimeMode(
+                    out.calendar || values.calendar || DEFAULT_CALENDAR_ID,
+                    toScalar(out.calendar || values.calendar || DEFAULT_CALENDAR_ID, values.defaultValue) ?? 0,
+                    values.datetimeMode,
+                )
                 : values.defaultValue;
     }
 

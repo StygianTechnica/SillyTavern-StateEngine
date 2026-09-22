@@ -183,8 +183,13 @@ export function formatValueForDisplay(value, def) {
     // A datetime variable stores scalar seconds; the tracker shows the
     // calendar's structured form, "2026-09-18 22:55:00" (requirements spec
     // 1.21). A value the calendar cannot convert is shown as stored.
+    // Datetime mode (requirements spec 1.36): "dateOnly" suppresses the time
+    // portion of the display, "timeOnly" suppresses the date - the stored
+    // scalar is already normalized (chat-state.js's setVar), so this is
+    // purely a formatting choice, not a second source of truth.
     if (def?.type === 'datetime') {
-        return formatScalar(def.calendar || DEFAULT_CALENDAR_ID, value) ?? String(value);
+        const style = def.datetimeMode === 'dateOnly' ? 'date' : def.datetimeMode === 'timeOnly' ? 'time' : 'full';
+        return formatScalar(def.calendar || DEFAULT_CALENDAR_ID, value, style) ?? String(value);
     }
     if (def?.type === 'boolean') {
         const isTrue = value === true || value === 'true'

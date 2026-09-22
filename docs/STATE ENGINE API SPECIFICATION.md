@@ -1939,3 +1939,110 @@ variable change) remain deferred from Section 13.10 for the same reasons.
 schedule.test.js` (22), `tests/independent-presets-schedule-ui.test.js` (8)
 - see requirements spec 1.32 for what each covers. Every rule was verified
 by deliberately breaking it and confirming the suite catches the break.
+
+SECTION 16 — SEMANTIC TIME OF DAY (2026-09-22)
+
+**16.0 What it is**
+
+ONE new optional field on the EXISTING `datetime` type (requirements spec
+1.35), the same shape of extension `deltaSource` (Section 14) already is -
+set through `createVariable`/`updateVariable` like any other field:
+
+```
+timeSemanticMode: 'none' | 'semanticTimeOfDay'   // default 'none'
+```
+
+When `'semanticTimeOfDay'`, a prompted answer for THIS variable
+(runPromptedStateUpdate's direct "update" mode only - Section 6) may use
+morning/dawn/sunrise/noon/afternoon/evening/sunset/night/midnight (mapped
+to 08:00/06:00/06:00/12:00/15:00/18:00/19:00/21:00/00:00) and "the next
+<phrase>" to also move to the following day, resolved internally - never
+described to the model (`describeConstraint()` is unchanged; the phrase
+works because it also reads as ordinary natural language, same as any
+other free-form answer).
+
+**16.1 Scope: not deltaSource, not scheduling**
+
+`resolveInstruction()` (Section 10/11) gained a 4th, optional `options`
+parameter (`{ semanticTimeOfDay: boolean }`, default off) rather than
+changing its behavior globally. Only `prompted-engine.js`'s direct write
+passes `true` for it, and only when the variable being written has
+`timeSemanticMode === 'semanticTimeOfDay'`. `deltaSource`'s own trigger
+(Section 14.2) and Section 15's schedule-engine.js both call
+`resolveInstruction()` without it and are completely unaffected - for
+deltaSource this is by explicit design (the request that introduced this
+field says so), not an oversight.
+
+Note for a future pass, not acted on here: Section 15.1's own "CONFIRMED
+GAP" (requirements spec 1.32) - that `atTime`/`repeat` scheduling could not
+understand "dawn"/"midnight"/"sunrise"/"sunset" because no hour-of-day
+vocabulary existed anywhere in calendar-engine.js - is exactly the
+vocabulary this section adds. Wiring `{ semanticTimeOfDay: true }` into
+`schedule-engine.js`'s own `resolveInstruction()` call would close that gap,
+but doing so is out of scope for the request behind this section (which
+only ever mentions datetime variables' own prompted answers) and was
+deliberately left undone.
+
+**16.2 Verification**
+
+`tests/datetime.test.js` ("semantic time of day (spec 1.35)": the canonical
+mapping, case/"the"-prefix tolerance, next-day variants generalized beyond
+the request's three given examples, the same-day backwards-in-time case, an
+incompatible calendar, the enable/disable gate, schema validation, and
+end-to-end prompted-update integration including tracker display) and
+`tests/calculated-datetime.test.js` (one test, using that file's real-
+calculated-engine harness, confirming deltaSource text is never given
+semantic interpretation even when the target datetime has it enabled).
+Every rule was verified by deliberately breaking it and confirming the
+suite catches the break (mutation testing).
+
+SECTION 17 — DATETIME MODE (2026-09-22)
+
+**17.0 What it is**
+
+ONE new optional field on the EXISTING `datetime` type (requirements spec
+1.36), the same shape of extension `deltaSource` (Section 14) and
+`timeSemanticMode` (Section 16) already are:
+
+```
+datetimeMode: 'full' | 'dateOnly' | 'timeOnly'   // default 'full'
+```
+
+`dateOnly` normalizes the time-of-day to 00:00:00 after every write;
+`timeOnly` normalizes the date to the calendar's own reference moment (day
+0) after every write. `'full'` is a pure no-op, so an existing datetime
+variable is completely unaffected.
+
+**17.1 Nothing about parsing changed - only the write-side result**
+
+Every existing input path - a relative delta (`incrementScalar`,
+`resolveInstruction`'s advance/rewind), an absolute date/time answer, a
+semantic time-of-day phrase (Section 16) - is unchanged by this field. The
+result is normalized once, at `chat-state.js`'s `setVar()` (the single
+choke point every write path already shares) and, separately, at
+`applyIncrement()` (which writes its own `entry.value` directly rather than
+through `setVar()`). A caller of the public API never needs to know which
+mode a datetime variable is in to write to it correctly - the engine always
+produces the right half of the value regardless.
+
+**17.2 Semantic time of day interaction**
+
+`dateOnly` never interprets a semantic phrase (Section 16) at all -
+`checkedDatetime()` forces `timeSemanticMode` to `'none'` whenever
+`datetimeMode` is `'dateOnly'`, on both `createVariable`/`updateVariable`.
+`timeOnly` and `'full'` may combine freely with `timeSemanticMode`.
+
+**17.3 Tracker display**
+
+`formatValueForDisplay` (used by any caller building its own read-only view
+of a variable's value) picks the calendar's `'date'`/`'time'`/`'full'`
+format style from `datetimeMode` automatically - no separate read call is
+needed to get a mode-appropriate string.
+
+**17.4 Verification**
+
+`tests/datetime.test.js` ("datetime mode (spec 1.36)"),
+`tests/calculated-datetime-ui.test.js` (a new describe block for the
+manager-modal save path), `tests/calculated-datetime.test.js` (one
+deltaSource-interaction test). Every rule was verified by deliberately
+breaking it and confirming the suite catches the break (mutation testing).

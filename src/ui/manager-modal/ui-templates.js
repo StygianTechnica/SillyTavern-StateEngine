@@ -273,6 +273,19 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                     This variable uses the calendar "${escapeHtml(d.calendar)}", which no longer exists. Pick another calendar before saving.
                 </div>` : ''}
 
+                <!-- Datetime mode (requirements spec 1.36): restricts which
+                     half of the value is meaningful. Every delta/answer path
+                     below is unaffected by this choice - it only changes what
+                     gets normalized away after the fact and what the tracker
+                     shows. -->
+                <label class="se-manager-label">Datetime mode</label>
+                <select class="text_pole se-manager-var-field" data-field="datetimeMode">
+                    <option value="full" ${(d.datetimeMode || 'full') === 'full' ? 'selected' : ''}>Full - date and time</option>
+                    <option value="dateOnly" ${d.datetimeMode === 'dateOnly' ? 'selected' : ''}>Date only - time is always midnight</option>
+                    <option value="timeOnly" ${d.datetimeMode === 'timeOnly' ? 'selected' : ''}>Time only - date is always the same fixed day</option>
+                </select>
+                <div class="se-empty">Date only normalizes the time to 00:00:00 after every update (a delta that crosses midnight still rolls the date forward first). Time only normalizes the date to a fixed reference day after every update, so only the time-of-day is meaningful; day/week/month/year deltas have no visible effect.</div>
+
                 <!-- Calculated-datetime extension (requirements spec 1.31, revised
                      2026-09-22): deltaSource only. Automatic per-message advancement for
                      a datetime is the SAME "Incremented Behavior" toggle every other type
@@ -290,6 +303,28 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                     </select>
                     <div class="se-empty">When the chosen String variable's value changes to something other than blank (e.g. a prompted update writes "3 days" or "advance 1 hour" into it), that text is applied to this date/time and the source is cleared. Independent of "Incremented Behavior" below - both can be used on the same variable together. Only String variables in this preset are offered.</div>
                 </div>
+
+                <!-- Semantic time of day (requirements spec 1.35): a prompted
+                     datetime answer ("the next morning") resolved to a precise
+                     target time internally - the model is never told about
+                     this option, it works because the phrase also reads as
+                     natural language. Independent of deltaSource above. Not
+                     offered at all for "Date only" (requirements spec 1.36) -
+                     there is no time-of-day for it to set, and the request
+                     is explicit that a dateOnly variable ignores these
+                     phrases outright (checkedDatetime() also forces the
+                     field to 'none' if a stored definition somehow has both,
+                     e.g. after switching datetimeMode - variable-api.js). -->
+                ${d.datetimeMode !== 'dateOnly' ? `
+                <div class="se-manager-datetime-semantic-section">
+                    <label class="se-manager-label">Semantic time of day</label>
+                    <select class="text_pole se-manager-var-field" data-field="timeSemanticMode">
+                        <option value="none" ${(d.timeSemanticMode || 'none') === 'none' ? 'selected' : ''}>Off - only exact durations/dates are understood</option>
+                        <option value="semanticTimeOfDay" ${d.timeSemanticMode === 'semanticTimeOfDay' ? 'selected' : ''}>On - understand "morning", "the next evening", etc.</option>
+                    </select>
+                    <div class="se-empty">When on, a prompted answer for this variable may use morning (08:00), dawn/sunrise (06:00), noon (12:00), afternoon (15:00), evening (18:00), sunset (19:00), night (21:00), or midnight (00:00) - and "the next morning"/"the next evening"/"the next night" (or any of the above with "the next" in front) to also move to the following day. These override an ordinary duration in the same answer.</div>
+                </div>
+                ` : ''}
             ` : ''}
 
             ${d.type === 'array' ? `

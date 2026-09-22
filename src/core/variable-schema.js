@@ -88,6 +88,19 @@ export function blankDefinition() {
         calendar: DEFAULT_CALENDAR_ID,
         unit: 'seconds',
 
+        // Datetime mode (requirements spec 1.36, only meaningful when
+        // type === 'datetime'): 'full' (default) | 'dateOnly' | 'timeOnly'.
+        // Restricts which HALF of the scalar is meaningful - dateOnly
+        // normalizes the time-of-day to 00:00:00 after every write,
+        // timeOnly normalizes the date to the calendar's own reference
+        // moment (day 0) after every write - see calendar-engine.js's
+        // normalizeForDatetimeMode(), applied at chat-state.js's setVar()/
+        // applyIncrement(), the write paths every caller already shares.
+        // Every existing delta/answer/semantic-phrase path is otherwise
+        // completely unchanged; 'full' is a pure no-op here, so a plain
+        // datetime variable (the default) behaves exactly as it always has.
+        datetimeMode: 'full',
+
         // Calculated-datetime extension (requirements spec 1.31, revised
         // 2026-09-22 - only meaningful when type === 'datetime'): deltaSource
         // names another (normal, prompted, type: 'string') variable in the
@@ -106,6 +119,18 @@ export function blankDefinition() {
         // deterministic-engine.js's datetime branch for how a tick now
         // cooperates with a deltaSource jump (consumeDatetimeJump).
         deltaSource: '',
+
+        // Semantic time of day (requirements spec 1.35, only meaningful when
+        // type === 'datetime'): 'none' (default) | 'semanticTimeOfDay'. When
+        // enabled, a prompted datetime answer's semantic phrases ("morning",
+        // "the next evening", ...) are interpreted into a precise target time
+        // BEFORE the ordinary duration/verb grammar gets a chance at them -
+        // see calendar-engine.js's resolveSemanticTimeOfDay(). Independent of
+        // deltaSource above: deltaSource's own text is never given semantic
+        // interpretation (the request that introduced this field says so
+        // explicitly) - only the model's direct prompted answer for THIS
+        // variable is.
+        timeSemanticMode: 'none',
 
         // Default value
         defaultValue: 0,
