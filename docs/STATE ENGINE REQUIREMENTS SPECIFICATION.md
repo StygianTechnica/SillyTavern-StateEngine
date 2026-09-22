@@ -1871,6 +1871,53 @@ variable-api.js (createVariable/updateVariable validation).
   describeVariable()'s explanation box and the increment description both note a
   flag's one-way nature when it is set.
 
+1.29 Independent Presets (2026-09-21)
+
+Formalizes "independent preset" (a preset whose prompted update runs on its own
+call, `runIndependentPreset`, instead of the per-message trigger flow) with a
+first-class flag, per-preset enabled/disabled, variable batch selection, the
+independent-context modes, and run status. Code: src/api/independent-presets.js.
+Full design, every deviation from the request, and what is deferred:
+docs/STATE ENGINE API SPECIFICATION.md Section 13.
+
+- preset.independentPreset (boolean, default false) - a plain flag, not a
+  parallel storage system; a preset already has everything one needs.
+- preset.independentConfig gains batch (which variable batch - 1.20 - this
+  preset's run selects from, default "core"; FIXES a real gap where every
+  prompted/incrementable variable in the preset was used with no batch
+  filtering at all) and enabled (false suspends every execution path,
+  checked before the concurrency lock).
+- Independent context (context: any | undefined, request Section 3): three
+  modes derived from whether/how updateIndependentPresetContext() was called -
+  never called -> chat-history (the existing transcript, unchanged); called
+  with null/undefined/{} -> empty (no context section, purely variables);
+  called with anything else -> extension-provided, passed through to the
+  prompt UNTOUCHED (never interpreted, validated or mutated). Modes A/C do
+  not read or require SillyTavern's chat array at all.
+- CRUD (createIndependentPreset/updateIndependentPreset/
+  deleteIndependentPreset/listIndependentPresets/toggleIndependentPreset) all
+  require preset.independentPreset === true and compose preset-api.js's
+  existing, already-tested preset CRUD - never a second implementation.
+  getIndependentPresetStatus() (open read) reports enabled/batch/contextMode/
+  lastRunAt/lastOutcome/lastError/changedVariables, written on every exit path
+  of runIndependentPreset (including early refusals), not just a successful run.
+- Deviation: runIndependentPreset itself is NOT gated on independentPreset -
+  it is the same dispatcher any preset has been runnable through since
+  2026-09-10; gating it now would break that already-tested behavior. "Cannot
+  modify other presets" is enforced as scope (a run only touches its own
+  preset), not as a type restriction on which presets this function accepts.
+- Export/import: independentPreset/independentConfig (including context) are
+  plain fields and round-trip with zero extra code; independentStatus (run
+  history) is stripped on both export and import, and a non-JSON-serializable
+  context is dropped from an export with a warning rather than failing it.
+- Deferred, not built this pass (reported per the request's own deviation
+  rule rather than rushed): the manager-modal UI (two Presets-tab subtabs and
+  the full per-preset editor - every field it would show already exists and
+  is readable), scheduled execution (needs a new timer subsystem), and
+  event-driven execution (needs hooking every variable write path - chat-state.js,
+  the codebase's most write-sensitive file, deserving its own careful pass).
+  A concrete design sketch for both is in the API spec Section 13.9.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 

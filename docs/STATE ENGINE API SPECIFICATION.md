@@ -1528,3 +1528,203 @@ chat-state.js's setVar()/applyIncrement(), the shared write path every value cha
 
 `tests/api/notification-api.test.js` and `tests/notification-ui.test.js`; the full
 suite passes under `npm test`.
+
+
+SECTION 13 — INDEPENDENT PRESETS (2026-09-21)
+
+**13.0 What changed from the Section 6 placeholder**
+
+Section 6 described `independent-presets.js` as "a named placeholder... not a
+description of existing batching/dispatch behavior (there is none yet)." This
+pass gives it: a first-class `independentPreset` flag, per-preset enabled/
+disabled, per-preset variable BATCH selection, the three independent-CONTEXT
+modes, and per-preset run status - all still composed on top of the same
+`runIndependentPreset` dispatcher from Section 6, unchanged in its core write
+pipeline. `runIndependentPreset(chatId, presetRef)` / `configureIndependentPreset
+(namespace, name, config)` keep exactly their Section-6 signatures.
+
+**13.1 "Independent preset" is a flag, not a parallel storage system**
+
+The request's Section 2 asks to "Add a new preset type: independent preset."
+A preset already has everything one needs (variables, namespace, name, export/
+import, tracker/dependency-graph integration) - duplicating all of that into a
+second storage system would fragment every feature already built on top of
+`settings.presets`, for no benefit. Deviation: `preset.independentPreset` is a
+plain boolean field (default `false`, `preset-manager.js`'s `createPreset()`),
+the same pattern `flagMode` used for booleans (1.28) and `itemType` uses for
+arrays - present on any preset, meaningful only when `true`.
+
+**13.2 CRUD** (`src/api/independent-presets.js`, all identity-checked)
+
+```
+createIndependentPreset(extensionId, instanceId, def)
+updateIndependentPreset(extensionId, instanceId, namespace, name, patch)
+deleteIndependentPreset(extensionId, instanceId, namespace, name)
+listIndependentPresets(extensionId, instanceId, namespace)
+toggleIndependentPreset(extensionId, instanceId, namespace, name, enabled)
+```
+
+None of these reimplement preset storage - they compose `preset-api.js`'s
+already-tested `createPreset`/`updatePreset`/`deletePreset`/`listPresets` (the
+SAME functions the manager modal's Presets tab already uses) with the
+`independentPreset` flag and the config merge below. `def`/`patch` accept
+`namespace`, `name` (patch only, renames), `description`, and the config
+fields in 13.3. `update`/`delete`/`toggle` all require
+`preset.independentPreset === true` first - "cannot modify other presets"
+(request Section 2) is read here as "these independent-preset-scoped
+operations only ever touch a preset that IS one." A regular preset passed to
+any of them is refused (`null`/`false`), never silently touched.
+
+**13.3 Config** (`preset.independentConfig`, `configureIndependentPreset`)
+
+Unchanged fields from Section 6: `connectionProfileId`, `temperature`,
+`maxTokens`, `promptedHeader`, `promptedRules` (per-preset overrides of the
+matching global settings, composed onto `callBackgroundLLM` via a shallow
+settings copy - the real settings object is never touched). New fields:
+
+- `batch` (string, default `"core"` = `DEFAULT_BATCH`) - request Section 5:
+  which variable batch (1.20) this preset's independent run operates on,
+  selected with the exact `selectBatchVariables()` `prompted-engine.js`'s own
+  main loop uses. **Fixes a real gap**: before this pass, `runIndependentPreset`
+  used EVERY prompted/incrementable variable in the preset with no batch
+  filtering at all - never matched the rest of the batching system.
+- `enabled` (boolean, default `true`) - request Section 7's toggle. `false`
+  makes `runIndependentPreset` refuse immediately (before the concurrency
+  lock, before any LLM call) whether triggered manually, by an extension, or
+  (once built) by a schedule or an event.
+
+`context` is deliberately NOT accepted through `configureIndependentPreset` /
+create / update - see 13.4.
+
+**13.4 Independent context** (request Section 3)
+
+```
+updateIndependentPresetContext(extensionId, instanceId, namespace, name, context)
+getIndependentPresetStatus(namespace, name)          // read; includes contextMode
+independentContextMode(config)                        // pure helper, exported for tests
+isEmptyIndependentContext(context)                    // pure helper, exported for tests
+```
+
+`context: any | undefined`, stored verbatim on `independentConfig.context`,
+**never interpreted, validated or mutated** (request Section 3.A, followed
+literally - `describeIndependentContext()` only ever turns it into prompt TEXT,
+a string used as-is or `JSON.stringify`'d, never inspected for shape). Mode is
+derived at run time, not stored as a separate flag:
+
+| Stored state | Mode | Prompt |
+|---|---|---|
+| `updateIndependentPresetContext` never called | chat-history (B) | the same transcript-building `runIndependentPreset` always had |
+| called with `null`, `undefined`, or `{}` | empty (C) | no context section at all - "operates purely on variables" |
+| called with anything else | extension (A) | `Independent context:\n<text>`, passed through untouched |
+
+In modes A and C, `SillyTavern.getContext().chat` is not read or required to
+exist at all - only mode B (chat-history) depends on the chat, matching
+request Section 4's "cannot modify the main chat" read as "does not even
+need it" outside the default mode.
+
+Deviation: calling `updateIndependentPresetContext` **commits** the preset to
+modes A/C from then on - there is no verb that returns it to "as if never
+called" (mode B). The request's three rules describe "supplied" vs. "not
+supplied," not "supplied, then un-supplied"; reading `undefined` as "go back
+to chat-history" would collide with mode C already claiming `undefined` as
+empty. If she wants an explicit reset-to-default verb, it is a small
+follow-up (a fourth call, or a `deleteIndependentPresetContext`).
+
+**13.5 Prompt construction** (request Section 6)
+
+Verified, not just asserted: the prompt is built from ONLY the header/rules
+text, the context section (13.4), and this preset's own selected-batch
+variable lines - no WI, calendar or image-variable metadata, no other
+preset's variables, no SillyTavern chat system message (the independent
+pipeline builds its own two-message `[system, user]` array, never reusing
+anything from SillyTavern's own chat-completion prompt).
+
+**13.6 Status** (request Sections 7/8)
+
+`getIndependentPresetStatus(namespace, name)` -> `{ enabled, batch,
+contextMode, lastRunAt, lastOutcome, lastError, changedVariables }` or `null`
+for a missing/non-independent preset. Read-only, no identity - same
+convention as `getVariable()`/`getDependents()`. `lastOutcome` is one of
+`never-run | updated | no-op | error | skipped-disabled |
+skipped-in-progress | skipped-nothing-to-update | skipped-parse-error`,
+written by `runIndependentPreset` on every exit path (`preset.
+independentStatus`), including every early refusal - `getIndependentPresetStatus`
+always has a meaningful, current answer, matching the request's "last output
+summary" / "variable changes from last run."
+
+**13.7 Export / import**
+
+`independentPreset`, `independentConfig` (batch/prompt/model/context - request
+Section 9's own list) are plain preset fields and round-trip through
+`exportPreset`/`importPresetDetailed` with zero extra code, exactly like
+`itemType` or `currentKeyVariable` already do. Two things are deliberately
+NOT carried across:
+
+- `independentStatus` is stripped on both export and import (defensively, in
+  case a hand-edited or differently-sourced file still has one) - it is run
+  HISTORY for what happened in THIS install's chats, not part of the request's
+  own export list, and re-importing it would misrepresent a preset that has
+  never run elsewhere as if it had.
+- A non-JSON-serializable `independentConfig.context` (a function, a circular
+  structure, a DOM node) is dropped from the export with a console warning;
+  every other field still exports. `context` is `any`, and exporting to a
+  JSON file is a hard boundary such a value cannot cross - not a gap in the
+  "never interpreted, validated or mutated" rule (13.4), which is about
+  RUNTIME behavior, not file portability.
+
+**13.8 Deviation: `runIndependentPreset` is NOT gated on `independentPreset`**
+
+Every CRUD/status function in 13.2/13.4/13.6 requires the flag; `runIndependentPreset`
+itself deliberately does not. It is the same dispatcher extensions have been
+calling on ANY preset since Section 6 (2026-09-10) - already tested, already
+documented - and gating it now would silently break that behavior for no
+benefit. "Cannot modify other presets" is about SCOPE (a run only ever
+touches its OWN preset's variables), not about which presets may be run this
+way. Manual execution (request Section 4.1, a "Run Now" button) and
+extension-triggered execution (4.4) are consequently the same function today;
+there is no manager-modal button yet (13.9).
+
+**13.9 Deferred (not built this pass) - request Sections 1, 4.2, 4.3, 7**
+
+Reported per the request's own Section 11 ("follow existing architecture,
+report the deviation, propose the cleanest fix") rather than built at lower
+rigor to check every box:
+
+- **Manager modal UI** - two Presets-tab subtabs, the full per-preset editor
+  (model/temperature/history/batch/prompt/context indicator/triggers/
+  schedule/Run Now/status), mirroring the existing ~500-line Presets tab's
+  template/render/event structure. Every field this UI would show already
+  exists and is readable today (13.2/13.3/13.4/13.6) - this is a real but
+  bounded, mechanical UI-construction task, not a design question.
+- **Scheduled execution** (run every N seconds/minutes/hours/days/ticks) -
+  needs a new timer subsystem (interval management across the extension's
+  lifecycle, persisted schedule config, pause-on-hidden-tab handling,
+  cleanup on preset deletion) that does not exist anywhere in this codebase.
+  Proposed design: `independentConfig.schedule = { unit: 'seconds'|'minutes'|
+  'hours'|'days'|'ticks', interval: number }`; a single `setInterval` in
+  `index.js` (not per-preset timers) ticks every independent preset with a
+  schedule and calls `runIndependentPreset` when due, storing `nextRunAt` in
+  `independentStatus` (already has a place to live - 13.6).
+- **Event-driven execution** (a variable change, a flag flip, a calendar
+  tick, a batch rule) - needs hooking into every write path (`setVar`,
+  `applyIncrement`, calculated recalculation) to detect a matching change and
+  fire a preset from there. This intersects `chat-state.js` - the codebase's
+  highest-priority, most write-sensitive file (Section 6 / 1.28's own
+  reasoning for not touching `prompted-engine.js` applies doubly here) -
+  and deserves its own careful, separately-tested pass rather than being
+  folded in alongside everything else in this one. Proposed design: a
+  `subscribeToVariableChanges(chatId, varName, listener)` primitive in
+  `chat-state.js` (additive, called from `setVar`/`applyIncrement` after a
+  successful write, mirroring `notification-core.js`'s own `subscribeToNotifications`
+  pattern - 1.24), with `independentConfig.triggers = [{ variable, batchRule?
+  }]` driving which presets subscribe to what.
+
+**13.10 Verification**
+
+`tests/api/independent-presets.test.js` (52 tests: the original Section-6
+pipeline tests plus CRUD, all three context modes, batching, enabled/disabled,
+status, export/import, write-path/flag-mode interaction, and compliance
+checks for 13.5); the full suite passes under `npm test`. Every rule above was
+also verified by deliberately breaking it and confirming the suite catches
+the break (mutation testing), the same standard every other pass in this
+document has been held to.

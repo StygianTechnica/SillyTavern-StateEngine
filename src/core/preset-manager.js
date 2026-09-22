@@ -389,6 +389,13 @@ export function createPreset(name) {
         variables: {},
         triggers: ['ai'],  // Preset-level: when to update prompted variables in this preset
         showInTracker: false,  // Whether this preset's variables appear in the floating tracker
+        // Independent presets (requirements spec 1.29): a plain flag, not a
+        // separate storage system - a preset IS a preset (it has variables,
+        // namespace, name already); this just marks that it also runs through
+        // src/api/independent-presets.js's dispatcher. independentConfig (added
+        // lazily by that module, not here) holds its own model/batch/context/
+        // schedule settings.
+        independentPreset: false,
     };
     const settings = getSettings();
     settings.presets[presetId] = preset;

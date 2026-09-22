@@ -17,9 +17,51 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // A deep copy of a stored preset, or null when there is no such preset.
+//
+// Independent presets (requirements spec 1.29): independentPreset,
+// independentConfig (model/batch/prompt/schedule/trigger settings - request
+// Section 9's own list) and independentConfig.context (if any) are plain
+// preset fields, so they come along with everything else in the clone below -
+// no special-casing needed to include them. TWO things are deliberately
+// dropped again right after cloning:
+//   - independentStatus: last-run time/outcome/changed-variables is runtime
+//     history for what happened HERE, in THIS install's chats - re-importing
+//     it into another install (or re-importing the same preset here) would
+//     misrepresent a preset that has never actually run there as if it had.
+//     Not in the request's own export list either (name/batch/prompt/model/
+//     triggers/schedule/context - no "status").
+//   - a non-JSON-serializable independentConfig.context: context is `any`,
+//     extension-owned, and never interpreted (request Section 3.A) - but
+//     exporting to a JSON file is a hard boundary a function, a circular
+//     structure or a DOM node cannot cross. Dropped with a console warning
+//     rather than failing the whole export; every other field still exports.
 export function exportPreset(presetId) {
     const preset = getSettings().presets?.[presetId];
-    return preset ? clone(preset) : null;
+    if (!preset) return null;
+
+    // A non-JSON-safe context (a circular structure, a function, a DOM node...)
+    // would make clone()'s JSON.stringify throw for the WHOLE preset, not just
+    // that one field - checked and set aside before the real clone runs, never
+    // touching the live preset object itself.
+    let unsafeContext = false;
+    if (preset.independentConfig && Object.prototype.hasOwnProperty.call(preset.independentConfig, 'context')) {
+        try {
+            JSON.stringify(preset.independentConfig.context);
+        } catch {
+            unsafeContext = true;
+        }
+    }
+    const toClone = unsafeContext
+        ? { ...preset, independentConfig: { ...preset.independentConfig, context: null } }
+        : preset;
+
+    const data = clone(toClone); // the LIVE preset is never touched - only this copy
+    delete data.independentStatus;
+    if (unsafeContext) {
+        console.warn(LOG_PREFIX, `exportPreset: "${preset.name}"'s independent context is not JSON-serializable and was left out of the export`);
+        delete data.independentConfig.context;
+    }
+    return data;
 }
 
 // exportPreset() plus the image files its image variables reference in State
@@ -72,6 +114,10 @@ export function importPresetDetailed(presetData) {
     // Embedded image files belong to the image folder, never to the stored preset
     // (importPresetWithImages() restores them first); a plain import just drops them.
     delete data.stateEngineImages;
+    // Defensive: exportPreset() already strips this, but a hand-edited or
+    // differently-sourced file might still carry it - an imported independent
+    // preset always starts with a clean run history (1.29).
+    delete data.independentStatus;
 
     // A namespace this install does not know is imported into the built-in one,
     // swapping the "<ns>__" prefix its variable names carry.
