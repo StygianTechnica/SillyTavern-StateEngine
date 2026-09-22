@@ -12,6 +12,7 @@ import { LOG_PREFIX, BUILTIN_NAMESPACE, getSettings, persistSettings } from './s
 import { genId } from './variable-schema.js';
 import { isVariableNameTaken } from './preset-manager.js';
 import { embedManagedImages, restoreEmbeddedImages } from './image-import.js';
+import { parseScheduleTarget } from './schedule-engine.js';
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -57,6 +58,14 @@ export function exportPreset(presetId) {
 
     const data = clone(toClone); // the LIVE preset is never touched - only this copy
     delete data.independentStatus;
+    // Scheduling (requirements spec 1.32): enabled/mode/value/calendar/repeat
+    // are plain, portable config and export like anything else; nextRun is
+    // engine-managed (computed from THIS install's real clock, meaningless -
+    // and often already in the past - anywhere else) and is stripped here,
+    // the same reasoning and pattern as independentStatus above.
+    if (data.independentConfig?.schedule) {
+        delete data.independentConfig.schedule.nextRun;
+    }
     if (unsafeContext) {
         console.warn(LOG_PREFIX, `exportPreset: "${preset.name}"'s independent context is not JSON-serializable and was left out of the export`);
         delete data.independentConfig.context;
@@ -118,6 +127,31 @@ export function importPresetDetailed(presetData) {
     // differently-sourced file might still carry it - an imported independent
     // preset always starts with a clean run history (1.29).
     delete data.independentStatus;
+
+    // Scheduling (requirements spec 1.32): a stray nextRun (hand-edited file,
+    // or one exported before this pass stripped it) is never trusted as-is -
+    // it was computed against a DIFFERENT install's real clock and could
+    // already be far in the past, which would fire the preset immediately
+    // and repeatedly on import. An enabled schedule gets a FRESH nextRun,
+    // computed exactly like a newly configured one
+    // (updateIndependentPresetSchedule, api/independent-presets.js); one
+    // whose mode/value/calendar cannot be parsed here (e.g. a fantasy
+    // calendar this install does not have) is imported disabled instead of
+    // silently enabled-but-never-firing, with a console warning explaining
+    // why.
+    if (data.independentConfig?.schedule) {
+        const schedule = data.independentConfig.schedule;
+        delete schedule.nextRun;
+        if (schedule.enabled === true) {
+            const result = parseScheduleTarget(schedule);
+            if (result.ok) {
+                schedule.nextRun = result.nextRun;
+            } else {
+                console.warn(LOG_PREFIX, `importPreset: schedule could not be resumed (${result.error}) - imported disabled`);
+                schedule.enabled = false;
+            }
+        }
+    }
 
     // A namespace this install does not know is imported into the built-in one,
     // swapping the "<ns>__" prefix its variable names carry.

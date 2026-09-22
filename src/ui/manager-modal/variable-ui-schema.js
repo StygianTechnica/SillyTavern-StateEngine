@@ -127,15 +127,12 @@ export function normalizeCollectedValues(values) {
         out.calendar = getCalendar(calendarId) ? calendarId : DEFAULT_CALENDAR_ID;
     }
 
-    // Calculated-datetime extension (requirements spec 1.31) - only
-    // meaningful for type === 'datetime', harmless (and inert - every read
-    // site gates on type) if present on any other type, same as itemType on
-    // a non-array definition. deltaSource is a plain select value (like
+    // Calculated-datetime extension (requirements spec 1.31, revised
+    // 2026-09-22): deltaSource only now (fixedIncrement/tickUnit/accumulate
+    // were removed as a redundant, confusing second tick mechanism - see
+    // variable-schema.js). deltaSource is a plain select value (like
     // currentKeyVariable above) and needs no normalization here - it passes
-    // through from `values` untouched when this block doesn't set it.
-    if (values.fixedIncrement !== undefined) out.fixedIncrement = !!values.fixedIncrement;
-    if (values.accumulate !== undefined) out.accumulate = !!values.accumulate;
-    if (values.tickUnit !== undefined) out.tickUnit = String(values.tickUnit || '').trim();
+    // through from `values` untouched.
 
     if (values.defaultValue !== undefined) {
         // The defaultValue input is a plain text field regardless of type

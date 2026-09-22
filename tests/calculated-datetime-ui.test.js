@@ -1,10 +1,15 @@
 // @vitest-environment jsdom
 //
-// Calculated-datetime extension (requirements spec 1.31), Phase 2: the manager
-// modal's inline variable editor for fixedIncrement/tickUnit/deltaSource/
-// accumulate on a datetime variable. Phase 1 (engine/schema/API) is covered by
-// tests/calculated-datetime.test.js; this file covers only the UI added on top
-// of it - the underlying engine behavior is not re-tested here.
+// Calculated-datetime extension (requirements spec 1.31, revised 2026-09-22):
+// the manager modal's inline variable editor for deltaSource on a datetime
+// variable, and its cooperation with the ORDINARY "Incremented Behavior"
+// section every other type already has (a datetime's own automatic
+// advancement is that same mechanism now - an earlier separate fixedIncrement/
+// tickUnit/accumulate section was removed for being redundant with it and
+// positioned in a way that read as a second, unrelated toggle). Phase 1
+// (engine/schema/API) is covered by tests/calculated-datetime.test.js; this
+// file covers only the UI - the underlying engine behavior is not re-tested
+// here.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import jQuery from 'jquery';
@@ -41,27 +46,17 @@ describe('the editor template', () => {
     };
     const dom = (html) => { const el = document.createElement('div'); el.innerHTML = html; return el; };
 
-    it('offers fixedIncrement/tickUnit/accumulate/deltaSource, all inert by default', () => {
+    it('offers only deltaSource near the calendar picker, inert by default', () => {
         const el = dom(editor());
-        expect(el.querySelector('[data-field="fixedIncrement"]').checked).toBe(false);
-        expect(el.querySelector('[data-field="tickUnit"]').value).toBe('1 day');
-        expect(el.querySelector('[data-field="accumulate"]').checked).toBe(false);
         expect(el.querySelector('[data-field="deltaSource"]').value).toBe('');
+        expect(el.querySelector('[data-field="fixedIncrement"]')).toBe(null);
+        expect(el.querySelector('[data-field="tickUnit"]')).toBe(null);
+        expect(el.querySelector('[data-field="accumulate"]')).toBe(null);
     });
 
-    it('reflects an existing configured definition', () => {
-        const el = dom(editor({ fixedIncrement: true, tickUnit: '1h', accumulate: true, deltaSource: 'se__jump' }, [
-            { name: 'se__jump', label: '', type: 'string' },
-        ]));
-        expect(el.querySelector('[data-field="fixedIncrement"]').checked).toBe(true);
-        expect(el.querySelector('[data-field="tickUnit"]').value).toBe('1h');
-        expect(el.querySelector('[data-field="accumulate"]').checked).toBe(true);
+    it('reflects an existing deltaSource', () => {
+        const el = dom(editor({ deltaSource: 'se__jump' }, [{ name: 'se__jump', label: '', type: 'string' }]));
         expect(el.querySelector('[data-field="deltaSource"]').value).toBe('se__jump');
-    });
-
-    it('the tick-amount/accumulate sub-section starts hidden unless fixedIncrement is already on', () => {
-        expect(dom(editor()).querySelector('.se-manager-datetime-tick-settings').style.display).toBe('none');
-        expect(dom(editor({ fixedIncrement: true })).querySelector('.se-manager-datetime-tick-settings').style.display).toBe('block');
     });
 
     it('the deltaSource dropdown offers only type: string variables from otherVars', () => {
@@ -82,30 +77,31 @@ describe('the editor template', () => {
         expect(opt.textContent).toContain('not a String variable in this preset');
     });
 
-    it('no other type offers any of the four fields', () => {
+    it('no other type offers deltaSource', () => {
         for (const type of ['number', 'string', 'boolean', 'enum', 'array', 'calculated', 'image', 'imageList', 'imageMap']) {
             const el = dom(editor({ type }));
-            for (const field of ['fixedIncrement', 'tickUnit', 'accumulate', 'deltaSource']) {
-                expect(el.querySelector(`[data-field="${field}"]`), `${type}.${field}`).toBe(null);
-            }
+            expect(el.querySelector('[data-field="deltaSource"]'), type).toBe(null);
         }
+    });
+
+    it('the "Advance by" field (Incremented Behavior) is what ticks a datetime automatically, with an explanatory note about deltaSource', () => {
+        const html = editor({ behaviors: { increment: true, prompted: false }, increment: { delta: '1d', triggers: 'ai' } });
+        const el = dom(html);
+        expect(el.querySelector('[data-field="increment.delta"]')).not.toBe(null);
+        expect(html).toMatch(/Advance by/);
+        expect(html).toMatch(/Narrative jump source.*skips this step's next automatic advance/s);
+    });
+
+    it('there is no longer a separate "automatic time flow" toggle floating above the calendar picker', () => {
+        const html = editor();
+        expect(html).not.toMatch(/Advance automatically on every message/);
+        expect(html).not.toMatch(/Automatic time flow/);
     });
 });
 
 describe('normalizeCollectedValues', () => {
-    it('coerces fixedIncrement and accumulate to real booleans', () => {
-        expect(normalizeCollectedValues({ type: 'datetime', fixedIncrement: true }).fixedIncrement).toBe(true);
-        expect(normalizeCollectedValues({ type: 'datetime', fixedIncrement: '' }).fixedIncrement).toBe(false);
-        expect(normalizeCollectedValues({ type: 'datetime', accumulate: true }).accumulate).toBe(true);
-        expect(normalizeCollectedValues({ type: 'datetime', accumulate: '' }).accumulate).toBe(false);
-    });
-
-    it('trims tickUnit', () => {
-        expect(normalizeCollectedValues({ type: 'datetime', tickUnit: '  1mo  ' }).tickUnit).toBe('1mo');
-    });
-
-    it('leaves fields out entirely when not present (inert for other types)', () => {
-        const out = normalizeCollectedValues({ type: 'string' });
+    it('no longer produces fixedIncrement/tickUnit/accumulate for any input', () => {
+        const out = normalizeCollectedValues({ type: 'datetime', fixedIncrement: true, tickUnit: '1d', accumulate: true });
         expect('fixedIncrement' in out).toBe(false);
         expect('tickUnit' in out).toBe(false);
         expect('accumulate' in out).toBe(false);
@@ -113,7 +109,7 @@ describe('normalizeCollectedValues', () => {
 });
 
 // ---------------------------------------------------------------------------
-describe('the manager modal: saving the calculated-datetime fields', () => {
+describe('the manager modal: saving a datetime\'s deltaSource and its automatic tick', () => {
     let presetId;
     const api = () => ({
         getSettings,
@@ -130,6 +126,11 @@ describe('the manager modal: saving the calculated-datetime fields', () => {
     const stored = (name) => Object.values(getSettings().presets[presetId].variables).find((v) => v.name === name);
     const editor = () => $('.se-manager-variable-editor-inline').filter((_, el) => el.innerHTML.trim() !== '');
     const addVar = (id, def) => { getSettings().presets[presetId].variables[id] = { ...blankDefinition(), id, ...def }; };
+    const rerenderVariablesTab = () => {
+        $('.se-manager-tab-btn[data-tab="presets"]').trigger('click');
+        buildManagerModal();
+        $('.se-manager-tab-btn[data-tab="variables"]').trigger('click');
+    };
 
     beforeEach(() => {
         context.chatId = 'chat-1';
@@ -141,50 +142,38 @@ describe('the manager modal: saving the calculated-datetime fields', () => {
         $('.se-manager-tab-btn[data-tab="variables"]').trigger('click');
     });
 
-    it('saves all four fields on a new datetime variable', () => {
+    it('saves deltaSource on a new datetime variable', () => {
         addVar('jump', { name: 'se__jump', type: 'string', behaviors: { prompted: true, increment: false } });
 
         $('#se-manager-new-variable').trigger('click');
         editor().find('[data-field="name"]').val('clock');
         editor().find('[data-field="type"]').val('datetime').trigger('change');
-        editor().find('[data-field="fixedIncrement"]').prop('checked', true).trigger('change');
-        editor().find('[data-field="tickUnit"]').val('1h');
-        editor().find('[data-field="accumulate"]').prop('checked', true);
         editor().find('[data-field="deltaSource"]').val('se__jump');
         editor().find('.se-manager-save-variable-inline').trigger('click');
 
-        expect(stored('se__clock')).toMatchObject({ fixedIncrement: true, tickUnit: '1h', accumulate: true, deltaSource: 'se__jump' });
+        expect(stored('se__clock')).toMatchObject({ deltaSource: 'se__jump' });
         expect(globalThis.alert).not.toHaveBeenCalled();
     });
 
-    it('leaving everything untouched stores the inert defaults', () => {
+    it('turning on "Incremented Behavior" for a datetime saves it through the SAME field every other type uses', () => {
+        $('#se-manager-new-variable').trigger('click');
+        editor().find('[data-field="name"]').val('clock');
+        editor().find('[data-field="type"]').val('datetime').trigger('change');
+        editor().find('#se-manager-increment-toggle').prop('checked', true).trigger('change');
+        editor().find('[data-field="increment.delta"]').val('1h');
+        editor().find('.se-manager-save-variable-inline').trigger('click');
+
+        expect(stored('se__clock')).toMatchObject({ behaviors: { increment: true }, increment: { delta: '1h' } });
+    });
+
+    it('leaving everything untouched stores an inert deltaSource', () => {
         $('#se-manager-new-variable').trigger('click');
         editor().find('[data-field="name"]').val('clock');
         editor().find('[data-field="type"]').val('datetime').trigger('change');
         editor().find('.se-manager-save-variable-inline').trigger('click');
 
-        expect(stored('se__clock')).toMatchObject({ fixedIncrement: false, tickUnit: '1 day', accumulate: false, deltaSource: '' });
-    });
-
-    it('checking fixedIncrement reveals the tick-amount/accumulate fields live', () => {
-        $('#se-manager-new-variable').trigger('click');
-        editor().find('[data-field="type"]').val('datetime').trigger('change');
-        expect(editor().find('.se-manager-datetime-tick-settings').css('display')).toBe('none');
-
-        editor().find('[data-field="fixedIncrement"]').prop('checked', true).trigger('change');
-        expect(editor().find('.se-manager-datetime-tick-settings').css('display')).toBe('block');
-    });
-
-    it('refuses to save an invalid tickUnit and writes nothing', () => {
-        $('#se-manager-new-variable').trigger('click');
-        editor().find('[data-field="name"]').val('clock');
-        editor().find('[data-field="type"]').val('datetime').trigger('change');
-        editor().find('[data-field="fixedIncrement"]').prop('checked', true).trigger('change');
-        editor().find('[data-field="tickUnit"]').val('banana');
-        editor().find('.se-manager-save-variable-inline').trigger('click');
-
-        expect(globalThis.alert).toHaveBeenLastCalledWith(expect.stringContaining('is not a valid duration'));
-        expect(stored('se__clock')).toBeUndefined();
+        expect(stored('se__clock')).toMatchObject({ deltaSource: '' });
+        expect(stored('se__clock').behaviors).toMatchObject({ increment: false });
     });
 
     // A nonexistent or wrong-type deltaSource can never be *selected* live -
@@ -194,12 +183,6 @@ describe('the manager modal: saving the calculated-datetime fields', () => {
     // that way (e.g. the source variable was deleted or retyped after being
     // chosen) - rendered as the flagged fallback <option> and left selected,
     // exactly as a real user who never touched the dropdown would leave it.
-    const rerenderVariablesTab = () => {
-        $('.se-manager-tab-btn[data-tab="presets"]').trigger('click');
-        buildManagerModal();
-        $('.se-manager-tab-btn[data-tab="variables"]').trigger('click');
-    };
-
     it('refuses a deltaSource that does not exist in this preset', () => {
         addVar('clock', { name: 'se__clock', type: 'datetime', deltaSource: 'se__ghost' });
         rerenderVariablesTab();
@@ -218,7 +201,7 @@ describe('the manager modal: saving the calculated-datetime fields', () => {
         rerenderVariablesTab();
 
         $('.se-manager-edit-variable[data-var-id="clock"]').trigger('click');
-        expect(editor().find('[data-field="deltaSource"]').val()).toBe('se__hp'); // flagged fallback (bug fix: was blank before)
+        expect(editor().find('[data-field="deltaSource"]').val()).toBe('se__hp'); // flagged fallback
         editor().find('.se-manager-save-variable-inline').trigger('click');
 
         expect(globalThis.alert).toHaveBeenLastCalledWith(expect.stringContaining('must be a String variable'));
@@ -234,19 +217,22 @@ describe('the manager modal: saving the calculated-datetime fields', () => {
         expect(options).not.toContain('se__clock');
     });
 
-    it('editing an existing configured datetime variable shows its stored values and can update them', () => {
+    it('editing an existing configured datetime variable shows both its deltaSource and its Incremented Behavior settings, and can update them', () => {
         addVar('jump', { name: 'se__jump', type: 'string' });
-        addVar('clock', { name: 'se__clock', type: 'datetime', fixedIncrement: true, tickUnit: '1d', accumulate: true, deltaSource: 'se__jump' });
+        addVar('clock', {
+            name: 'se__clock', type: 'datetime', deltaSource: 'se__jump',
+            behaviors: { increment: true, prompted: false }, increment: { delta: '1d', triggers: 'ai' },
+        });
         rerenderVariablesTab();
 
         $('.se-manager-edit-variable[data-var-id="clock"]').trigger('click');
-        expect(editor().find('[data-field="tickUnit"]').val()).toBe('1d');
         expect(editor().find('[data-field="deltaSource"]').val()).toBe('se__jump');
+        expect(editor().find('#se-manager-increment-toggle').is(':checked')).toBe(true);
+        expect(editor().find('[data-field="increment.delta"]').val()).toBe('1d');
 
-        editor().find('[data-field="tickUnit"]').val('2d');
-        editor().find('[data-field="accumulate"]').prop('checked', false);
+        editor().find('[data-field="increment.delta"]').val('2d');
         editor().find('.se-manager-save-variable-inline').trigger('click');
 
-        expect(stored('se__clock')).toMatchObject({ tickUnit: '2d', accumulate: false, fixedIncrement: true, deltaSource: 'se__jump' });
+        expect(stored('se__clock')).toMatchObject({ deltaSource: 'se__jump', increment: { delta: '2d' } });
     });
 });

@@ -45,6 +45,7 @@ import { recalculateDependents } from '../core/calculated-engine.js';
 import { callBackgroundLLM } from '../core/background-llm.js';
 import { extractJsonObject, stripHtml, describeConstraint } from '../ui/formatting-utils.js';
 import { shouldSkipPromptedRefresh, isDoneFlag, selectBatchVariables } from '../core/prompted-engine.js';
+import { parseScheduleTarget, scheduleAfterRun } from '../core/schedule-engine.js';
 
 // Config fields configureIndependentPreset()/createIndependentPreset()/
 // updateIndependentPreset() accept. `context` is deliberately NOT among them
@@ -265,6 +266,73 @@ export function updateIndependentPresetContext(extensionId, instanceId, namespac
     } catch (err) {
         console.warn(LOG_PREFIX, 'updateIndependentPresetContext failed (gracefully handled)', err);
         return false;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Scheduling (requirements spec 1.32 / request Section 2) - its own entry
+// point, deliberately separate from configureIndependentPreset's generic
+// merge, for the same reason updateIndependentPresetContext() above is: a
+// blind config spread must never be able to set schedule.nextRun (engine-
+// managed, like independentStatus - never accepted from a caller here even
+// if present on the `schedule` argument).
+// ---------------------------------------------------------------------------
+
+const SCHEDULE_FIELDS = ['enabled', 'mode', 'value', 'calendar', 'repeat'];
+
+function pickScheduleFields(source) {
+    const out = {};
+    if (!source || typeof source !== 'object') return out;
+    for (const field of SCHEDULE_FIELDS) if (source[field] !== undefined) out[field] = source[field];
+    return out;
+}
+
+// Merges `schedule` into the EXISTING stored schedule (like
+// configureIndependentPreset merges into independentConfig), so disabling a
+// schedule ({ enabled: false }) never requires repeating mode/value.
+// mode/value/calendar are only (re-)validated, and nextRun only (re-)
+// computed, when: the merged schedule is enabled AND (mode/value/calendar
+// was just touched, OR there is no nextRun yet). Turning enabled back on
+// with nothing else touched always recomputes fresh from "now" rather than
+// reusing a nextRun from before the schedule was disabled (silently firing
+// immediately because the clock ran out while it was off would surprise
+// more than it would help) - and every disable clears nextRun to null for
+// the same reason. Returns the stored schedule (with nextRun) or null: a
+// missing/invalid mode or an unparseable value, or namespace.name not being
+// an independent preset, refuses the write and changes nothing.
+export function updateIndependentPresetSchedule(extensionId, instanceId, namespace, name, schedule) {
+    validateCallerIdentity(extensionId, instanceId, namespace);
+    try {
+        const entry = requireIndependentPreset(namespace, name, 'updateIndependentPresetSchedule');
+        if (!entry) return null;
+        const [, preset] = entry;
+
+        const previous = preset.independentConfig?.schedule || {};
+        const incoming = pickScheduleFields(schedule);
+        const merged = { ...previous, ...incoming };
+        const modeOrValueChanged = incoming.mode !== undefined || incoming.value !== undefined || incoming.calendar !== undefined;
+
+        let nextRun = null;
+        if (merged.enabled === true) {
+            if (!modeOrValueChanged && typeof previous.nextRun === 'number') {
+                nextRun = previous.nextRun;
+            } else {
+                const result = parseScheduleTarget(merged);
+                if (!result.ok) {
+                    console.warn(LOG_PREFIX, `updateIndependentPresetSchedule: ${result.error}`);
+                    return null;
+                }
+                nextRun = result.nextRun;
+            }
+        }
+
+        const stored = { ...merged, nextRun };
+        preset.independentConfig = { ...(preset.independentConfig || {}), schedule: stored };
+        persistSettings();
+        return stored;
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'updateIndependentPresetSchedule failed (gracefully handled)', err);
+        return null;
     }
 }
 
@@ -551,4 +619,77 @@ async function runIndependentPresetInternal(chatId, presetRef) {
         if (preset) recordStatus(preset, { lastOutcome: 'error', lastError: err?.message || String(err), changedVariables: [] });
         return false;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Scheduling execution (requirements spec 1.32) - the due-schedule check
+// itself. Called from src/events/event-engine.js: once per message-driven
+// pass (the "scheduler pass" request Section 4A describes - deliberately
+// orchestrated from the events layer rather than added to
+// deterministic-engine.js directly, since src/core/ modules do not import
+// src/api/ ones - the same layering calculated-engine.js's own header
+// comment already documents for chat-state.js/calculated-engine.js) and
+// from a REAL setInterval timer event-engine.js also starts - see that
+// file for why a message-driven check alone cannot deliver "every 10
+// minutes" when chat messages are sparse.
+// ---------------------------------------------------------------------------
+
+// Runs every enabled, due independent preset (schedule.nextRun <= now) for
+// `chatId` - across every namespace, not scoped to one caller: scheduling
+// is engine-internal housekeeping, not an extension-identity operation,
+// the same open-read convention getIndependentPresetStatus() already uses,
+// just extended to a write here because nothing but the engine itself ever
+// calls this (event-engine.js, not exposed on stateEngine).
+//
+// nextRun is recomputed (and the schedule possibly disabled, per
+// scheduleAfterRun()'s per-mode rules) for EVERY due preset BEFORE any of
+// their runs is awaited - not after - so a slow-resolving LLM call can
+// never leave a due schedule looking "still due" to the NEXT periodic
+// check while its run is still in flight. Runs are then awaited ONE AT A
+// TIME (never Promise.all - independentRunInProgress is one lock shared by
+// the whole module, so a second run started before the first finishes
+// would just observe the lock and record itself as skipped rather than
+// actually running) - the existing lock is a second, independent line of
+// defense against the same overlap, not the only one. Returns how many
+// presets actually ran (0 if none were due); never throws.
+export async function checkAndRunDueSchedules(chatId) {
+    let ran = 0;
+    if (!chatId) return ran;
+    try {
+        const settings = getSettings();
+        // Same gate runPromptedStateUpdate()/runDeterministicIncrements()
+        // already apply - the one this function's own runIndependentPreset()
+        // dispatcher does NOT have (a pre-existing gap from the original
+        // Independent Presets pass, not introduced or silently fixed here -
+        // flagged, not touched, since changing that function's gating is
+        // outside this request's scope).
+        if (!settings.enabled) return ran;
+        const now = Date.now();
+        const due = [];
+        for (const preset of Object.values(settings.presets || {})) {
+            if (preset?.independentPreset !== true || !preset.namespace || !preset.name) continue;
+            const schedule = preset.independentConfig?.schedule;
+            if (!schedule || schedule.enabled !== true) continue;
+            if (typeof schedule.nextRun !== 'number' || schedule.nextRun > now) continue;
+            due.push(preset);
+        }
+        if (due.length === 0) return ran;
+
+        for (const preset of due) {
+            try {
+                const schedule = preset.independentConfig.schedule;
+                const after = scheduleAfterRun(schedule);
+                preset.independentConfig = { ...preset.independentConfig, schedule: { ...schedule, nextRun: after.nextRun, enabled: after.enabled } };
+                persistSettings();
+
+                await runIndependentPresetInternal(chatId, { namespace: preset.namespace, name: preset.name });
+                ran += 1;
+            } catch (err) {
+                console.warn(LOG_PREFIX, `checkAndRunDueSchedules: run failed for "${preset?.namespace}.${preset?.name}" (gracefully handled)`, err);
+            }
+        }
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'checkAndRunDueSchedules failed (gracefully handled)', err);
+    }
+    return ran;
 }

@@ -273,29 +273,12 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                     This variable uses the calendar "${escapeHtml(d.calendar)}", which no longer exists. Pick another calendar before saving.
                 </div>` : ''}
 
-                <!-- Calculated-datetime extension (requirements spec 1.31): fixedIncrement/
-                     tickUnit/deltaSource/accumulate. A SEPARATE, independent mechanism from
-                     the legacy "Incremented Behavior" toggle further down - both may be used
-                     together, so this is its own section rather than folded into that one. -->
-                <div class="se-manager-datetime-auto-section">
-                    <label class="se-manager-label">Automatic time flow (optional)</label>
-
-                    <label class="checkbox_label">
-                        <input id="se-manager-fixedincrement-toggle" type="checkbox" class="se-manager-var-field" data-field="fixedIncrement" ${d.fixedIncrement ? 'checked' : ''} />
-                        <span>Advance automatically on every message</span>
-                    </label>
-
-                    <div class="se-manager-datetime-tick-settings" style="display: ${d.fixedIncrement ? 'block' : 'none'};">
-                        <label>Amount per message (e.g. 1h, 1d, 1mo, 1y):</label>
-                        <input class="text_pole se-manager-var-field" data-field="tickUnit" value="${escapeHtml(d.tickUnit || '')}" />
-
-                        <label class="checkbox_label">
-                            <input type="checkbox" class="se-manager-var-field" data-field="accumulate" ${d.accumulate ? 'checked' : ''} />
-                            <span>Automatic advancing is turned ON</span>
-                        </label>
-                        <div class="se-empty">Both switches above must be on for this to actually tick - this lets the amount be set up without turning it on yet.</div>
-                    </div>
-
+                <!-- Calculated-datetime extension (requirements spec 1.31, revised
+                     2026-09-22): deltaSource only. Automatic per-message advancement for
+                     a datetime is the SAME "Incremented Behavior" toggle every other type
+                     already has, further down - a second, separate toggle here for the
+                     same thing was removed for being confusingly redundant with it. -->
+                <div class="se-manager-datetime-deltasource-section">
                     <label class="se-manager-label">Narrative jump source (optional)</label>
                     <select class="text_pole se-manager-var-field" data-field="deltaSource">
                         <option value="">-- none --</option>
@@ -305,7 +288,7 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                         ${d.deltaSource && !otherVars.some((v) => v.name === d.deltaSource && v.type === 'string')
                             ? `<option value="${escapeHtml(d.deltaSource)}" selected>${escapeHtml(d.deltaSource)} (not a String variable in this preset)</option>` : ''}
                     </select>
-                    <div class="se-empty">When the chosen String variable's value changes to something other than blank (e.g. a prompted update writes "3 days" or "advance 1 hour" into it), that text is applied to this date/time and the source is cleared. Independent of the ticking above - both can be used together. Only String variables in this preset are offered.</div>
+                    <div class="se-empty">When the chosen String variable's value changes to something other than blank (e.g. a prompted update writes "3 days" or "advance 1 hour" into it), that text is applied to this date/time and the source is cleared. Independent of "Incremented Behavior" below - both can be used on the same variable together. Only String variables in this preset are offered.</div>
                 </div>
             ` : ''}
 
@@ -537,6 +520,7 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                         <input class="text_pole se-manager-var-field"
                             data-field="increment.delta"
                             value="${escapeHtml(d.increment.delta)}" />
+                        <div class="se-empty">This is what makes the date/time move forward on its own, by this fixed amount, on the trigger selected above. If "Narrative jump source" is set (further up), a jump from it skips this step's next automatic advance so the two never stack on the same variable.</div>
                     ` : ''}
 
                     ${d.type === 'boolean' ? `
@@ -742,7 +726,14 @@ function relativeTime(ms) {
 // for. `status` is managerApi.getIndependentPresetStatus(presetId)'s result
 // (never null here - every row IS an independent preset); `connectionProfiles`
 // is managerApi.connectionProfiles()'s live list ([{ id, name }]).
-export function buildIndependentPresetRow(presetId, preset, currentChatId, status, connectionProfiles) {
+const SCHEDULE_MODE_LABEL = {
+    interval: 'Interval (run every N units)',
+    atTime: 'At a specific time (one-shot unless Repeat)',
+    delay: 'Delay (run once, after a duration)',
+    repeat: 'Repeat (run again at each next occurrence)',
+};
+
+export function buildIndependentPresetRow(presetId, preset, currentChatId, status, connectionProfiles, calendars = {}) {
     const config = preset.independentConfig || {};
     const enabled = status.enabled;
     const profileOptions = (connectionProfiles || [])
@@ -751,6 +742,20 @@ export function buildIndependentPresetRow(presetId, preset, currentChatId, statu
     const changedVariables = status.changedVariables.length > 0
         ? status.changedVariables.map((n) => `<code>${escapeHtml(n)}</code>`).join(', ')
         : '<span class="se-empty-inline">none</span>';
+
+    // Scheduling (requirements spec 1.32).
+    const schedule = config.schedule || {};
+    const scheduleMode = schedule.mode || 'interval';
+    // "optional... if fantasy calendars exist" (request Section 6): the
+    // built-in Gregorian calendar alone means nothing fantasy-specific to
+    // pick from, so the field is left out entirely rather than shown with
+    // one inert option.
+    const fantasyCalendars = Object.values(calendars || {}).filter((c) => c.id !== 'gregorian');
+    const nextRunText = schedule.enabled !== true
+        ? 'Disabled'
+        : typeof schedule.nextRun === 'number'
+            ? (schedule.nextRun <= Date.now() ? 'Due now' : new Date(schedule.nextRun).toLocaleString())
+            : 'Not scheduled yet';
 
     return `
                 <div class="se-manager-preset-accordion-item se-manager-independent-preset-item" data-preset-id="${presetId}">
@@ -831,10 +836,62 @@ export function buildIndependentPresetRow(presetId, preset, currentChatId, statu
                         <textarea class="text_pole se-indy-field" data-preset-id="${presetId}" data-field="promptedHeader" placeholder="Leave blank to use the global default" rows="4">${escapeHtml(config.promptedHeader || '')}</textarea>
 
                         <div class="se-manager-preset-triggers">
-                            <div class="se-manager-trigger-title">Triggers &amp; schedule</div>
+                            <div class="se-manager-trigger-title">Scheduling</div>
                             <div class="se-empty">
-                                Not available yet - scheduled and event-driven execution are planned but not built. Today this
-                                preset runs only when you click Run Now, or when an extension calls it directly.
+                                Event-driven triggers (run when a variable changes) are not available yet - see the requirements
+                                spec. Today, besides Run Now, a preset can run on a time-based schedule:
+                            </div>
+
+                            <label class="checkbox_label">
+                                <input type="checkbox" class="se-indy-schedule-field" data-preset-id="${presetId}" data-field="enabled" ${schedule.enabled === true ? 'checked' : ''} />
+                                <span>Enable Schedule</span>
+                            </label>
+
+                            <div class="se-indy-schedule-settings" style="display: ${schedule.enabled === true ? 'block' : 'none'};">
+                                <div class="se-manager-grid2">
+                                    <div>
+                                        <label class="se-manager-label">Mode</label>
+                                        <select class="text_pole se-indy-schedule-field" data-preset-id="${presetId}" data-field="mode">
+                                            ${Object.entries(SCHEDULE_MODE_LABEL).map(([value, label]) => `
+                                                <option value="${value}" ${scheduleMode === value ? 'selected' : ''}>${escapeHtml(label)}</option>
+                                            `).join('')}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="se-manager-label">Value</label>
+                                        <input type="text" class="text_pole se-indy-schedule-field" data-preset-id="${presetId}" data-field="value"
+                                            value="${escapeHtml(schedule.value || '')}"
+                                            placeholder="${scheduleMode === 'interval' || scheduleMode === 'delay' ? 'e.g. 10 minutes, 1 hour, 2 days' : 'e.g. advance 1 day, next season, 2026-09-22 06:00:00'}" />
+                                    </div>
+                                    ${fantasyCalendars.length > 0 ? `
+                                        <div>
+                                            <label class="se-manager-label">Calendar</label>
+                                            <select class="text_pole se-indy-schedule-field" data-preset-id="${presetId}" data-field="calendar">
+                                                <option value="gregorian" ${(!schedule.calendar || schedule.calendar === 'gregorian') ? 'selected' : ''}>Gregorian (real time)</option>
+                                                ${fantasyCalendars.map((c) => `
+                                                    <option value="${escapeHtml(c.id)}" ${schedule.calendar === c.id ? 'selected' : ''}>${escapeHtml(c.label || c.id)}</option>
+                                                `).join('')}
+                                            </select>
+                                        </div>
+                                    ` : ''}
+                                    <div>
+                                        <label class="checkbox_label">
+                                            <input type="checkbox" class="se-indy-schedule-field" data-preset-id="${presetId}" data-field="repeat" ${schedule.repeat === true ? 'checked' : ''} />
+                                            <span>Repeat</span>
+                                        </label>
+                                        <small class="se-empty-inline">Only changes anything in "at a specific time" mode - interval and repeat mode always run again on their own; delay always runs once.</small>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="se-manager-label">Next run</label>
+                                    <div class="se-indy-schedule-nextrun">${escapeHtml(nextRunText)}</div>
+                                </div>
+                                <div class="se-empty">
+                                    "Now" for every mode here is this device's real clock, not story time - scheduling checks
+                                    while this browser tab is open with this preset's chat active (every ~30 seconds, and right
+                                    after each message). "dawn"/"midnight"/"sunrise"/"sunset" are not understood - use an exact
+                                    time, a duration ("10 minutes", "1 hour"), or a season/cycle name your calendar defines.
+                                </div>
                             </div>
                         </div>
 
@@ -878,8 +935,15 @@ export function buildVariablesTabContainer(presetOptions, variablesList, showAct
     return `
         <div class="se-manager-section">
             <div class="se-manager-section-header">
-                <div style="display: flex; align-items: center; gap: 12px; flex: 1;">
+                <div style="display: flex; align-items: center; gap: 12px; flex: 1; flex-wrap: wrap;">
                     <h3 style="margin: 0;">Variables for Preset:</h3>
+                    <input
+                        type="text"
+                        id="se-manager-preset-search"
+                        class="text_pole"
+                        placeholder="Search presets..."
+                        style="width: 140px; padding: 4px 8px; font-size: 0.9em;"
+                    />
                     <select id="se-manager-preset-selector" class="text_pole">
                         <option value="">-- Select preset --</option>
                         ${presetOptions}

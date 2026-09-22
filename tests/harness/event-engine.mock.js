@@ -12,3 +12,9 @@ export const dispatchNamespacedEvent = vi.fn((chatId, eventName) => {
 
 // The real registerEvents() wires SillyTavern's built-in events; nothing here.
 export const registerEvents = vi.fn();
+
+// The real one starts a setInterval (requirements spec 1.32); nothing here -
+// a test that needs the actual due-schedule check calls
+// checkAndRunDueSchedules() (api/independent-presets.js) directly instead of
+// waiting on a real timer.
+export const startIndependentPresetScheduler = vi.fn();

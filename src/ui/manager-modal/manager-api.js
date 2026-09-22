@@ -147,6 +147,21 @@ export function toggleIndependentPresetAdapter(presetId, enabled) {
     return callAsBuiltin((extId, instId) => stateEngine.toggleIndependentPreset(extId, instId, preset.namespace || BUILTIN_NAMESPACE, preset.name, enabled));
 }
 
+// Scheduling (requirements spec 1.32): schedule: { enabled?, mode?, value?,
+// calendar?, repeat? } - merges into the stored schedule exactly like
+// updateIndependentPresetAdapter's patch does for the rest of the config
+// (updateIndependentPresetSchedule itself owns the merge/validation/nextRun
+// computation - this is a thin identity-translation wrapper, same as every
+// other adapter here). Returns the stored schedule (with nextRun) or null
+// on a validation failure - the editor (ui-events.js) is expected to show
+// console.warn's message via setStatus, the same pattern every other
+// rejected save in this modal already uses.
+export function updateIndependentPresetScheduleAdapter(presetId, schedule) {
+    const preset = findPresetById(presetId);
+    if (!preset) return null;
+    return callAsBuiltin((extId, instId) => stateEngine.updateIndependentPresetSchedule(extId, instId, preset.namespace || BUILTIN_NAMESPACE, preset.name, schedule));
+}
+
 // Fire-and-forget from the click handler's point of view (ui-events.js awaits
 // it to re-render the row with the fresh status once it settles) - chatId is
 // the chat currently open in SillyTavern, never a chat the row was drawn for.
@@ -175,6 +190,7 @@ export const independentPresetAdapters = {
     toggleIndependentPreset: toggleIndependentPresetAdapter,
     runIndependentPreset: runIndependentPresetAdapter,
     getIndependentPresetStatus: getIndependentPresetStatusAdapter,
+    updateIndependentPresetSchedule: updateIndependentPresetScheduleAdapter,
     connectionProfiles,
 };
 

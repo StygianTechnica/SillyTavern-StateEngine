@@ -55,6 +55,12 @@ export function clonePreset(presetId, newName) {
     // never itself run; same reasoning as preset-export.js's exportPreset().
     delete newPreset.independentStatus;
 
+    // independentConfig.schedule.nextRun (1.32) is deliberately NOT stripped
+    // here, unlike export/import: a clone stays on THIS SAME install's real
+    // clock, so an already-computed nextRun is still exactly as valid as it
+    // was on the source preset - only a cross-install copy (export/import)
+    // needs it recomputed.
+
     // Every cloned variable gets a fresh id and a fresh, globally-unique
     // name. generateUniqueVariableName() is called with no excludeVarId -
     // the source preset's own identically-named variable must always

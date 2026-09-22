@@ -28,7 +28,7 @@ import { initImagePreviews } from './src/ui/image-preview.js';
 import { initExtensionUpdateNotifier, checkForExtensionUpdates, onStateEngineUpdate } from './src/events/extension-updates.js';
 import { registerTemplates, loadManagerModalStyles } from './src/ui/ui-entrypoints.js';
 
-import { registerEvents } from './src/events/event-engine.js';
+import { registerEvents, startIndependentPresetScheduler } from './src/events/event-engine.js';
 import { registerSlashCommand } from './src/events/slash-command-engine.js';
 
 // ---------------------------------------------------------------------------
@@ -47,6 +47,7 @@ jQuery(async () => {
         initImagePreviews();
         initExtensionUpdateNotifier();
         registerEvents();
+        startIndependentPresetScheduler(); // requirements spec 1.32: real wall-clock timer for scheduled independent presets
         registerSlashCommand();
         updateManagerButtonState();
         watchChatSelection();

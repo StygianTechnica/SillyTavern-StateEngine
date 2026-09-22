@@ -101,13 +101,15 @@ function checkedDatetime(def, fnName, preset) {
     def.calendar = calendarId;
     def.defaultValue = scalar;
 
-    // Calculated-datetime extension (requirements spec 1.31). Caught here,
-    // at save time, rather than left to silently do nothing forever at
-    // runtime: a tickUnit that can never parse, or a deltaSource that can
-    // never resolve, would otherwise fail invisibly on every engine pass.
-    if (def.fixedIncrement === true && !calendarEngine.isValidDelta(calendarId, def.tickUnit)) {
-        return { ok: false, error: `${fnName}: tickUnit ${JSON.stringify(def.tickUnit)} is not a valid delta for calendar "${calendarId}"` };
-    }
+    // Calculated-datetime extension (requirements spec 1.31): deltaSource.
+    // Caught here, at save time, rather than left to silently do nothing
+    // forever at runtime - a deltaSource that can never resolve would
+    // otherwise fail invisibly on every engine pass. (An earlier version of
+    // this feature also validated a separate tickUnit field here; removed
+    // 2026-09-22 along with fixedIncrement/accumulate - a datetime's
+    // automatic tick is now the same behaviors.increment/increment.delta
+    // every other type already has, validated nowhere at save time either,
+    // consistent with how that path has always worked.)
     if (typeof def.deltaSource === 'string' && def.deltaSource.trim()) {
         const sourceName = def.deltaSource.trim();
         // No separate "cannot reference itself" check: on createVariable()

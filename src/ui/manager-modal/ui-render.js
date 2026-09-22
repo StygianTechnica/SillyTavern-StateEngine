@@ -52,7 +52,7 @@ export function renderPresetsTab(managerApi, managerCurrentPresetId, presetsSubt
             const status = managerApi.getIndependentPresetStatus(presetId) || {
                 enabled: true, batch: 'core', contextMode: 'chat-history', lastRunAt: null, lastOutcome: 'never-run', lastError: null, changedVariables: [],
             };
-            return uiTemplates.buildIndependentPresetRow(presetId, preset, currentChatId, status, connectionProfiles);
+            return uiTemplates.buildIndependentPresetRow(presetId, preset, currentChatId, status, connectionProfiles, managerApi.listCalendars());
         })
         .join('');
     const independentHtml = uiTemplates.buildIndependentPresetsTabContainer(independentRows);
@@ -80,6 +80,11 @@ export function renderVariablesTab(managerApi, managerCurrentPresetId) {
     const presetsToShow = showActiveOnly
         ? allPresets.filter(id => activePresetIds.includes(id))
         : allPresets;
+
+    // Alphabetic by name (case-insensitive), not creation order - the
+    // dropdown previously had no ordering at all, which made a preset hard
+    // to find once there were more than a few.
+    presetsToShow.sort((a, b) => (settings.presets[a]?.name || '').localeCompare(settings.presets[b]?.name || '', undefined, { sensitivity: 'base' }));
 
     const presetOptions = presetsToShow
         .map(id => {
@@ -122,6 +127,20 @@ export function renderVariablesTab(managerApi, managerCurrentPresetId) {
     $('#se-manager-variable-sort').on('change', function () {
         filterAndSortVariables();
         updateMoveButtonStates();
+    });
+
+    // Preset-picker search: filters the <option> list in place (no re-render,
+    // same as filterAndSortVariables above) so the typed text and the
+    // dropdown's own open/scroll state are never disturbed by a keystroke.
+    // The placeholder ("-- Select preset --", value="") always stays, so a
+    // search that matches nothing still leaves a way to deselect.
+    $('#se-manager-preset-search').on('input', function () {
+        const term = $(this).val().trim().toLowerCase();
+        $('#se-manager-preset-selector option').each(function () {
+            const $opt = $(this);
+            if ($opt.val() === '') return;
+            $opt.toggle(term === '' || $opt.text().toLowerCase().includes(term));
+        });
     });
 
     // Set initial button states

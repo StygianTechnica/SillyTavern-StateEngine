@@ -1773,46 +1773,43 @@ test`. Every rule above was also verified by deliberately breaking it and
 confirming the suite catches the break (mutation testing), the same standard
 every other pass in this document has been held to.
 
-SECTION 14 — CALCULATED DATETIME EXTENSION (2026-09-21)
+SECTION 14 — CALCULATED DATETIME EXTENSION (2026-09-21, consolidated 2026-09-22)
 
 **14.0 What it is**
 
-Four new optional fields on the EXISTING `datetime` type (requirements spec
-1.31) - no new type, no new `stateEngine.*` function. A caller sets them
+ONE new optional field on the EXISTING `datetime` type (requirements spec
+1.31) - no new type, no new `stateEngine.*` function. A caller sets it
 exactly like any other field, through `createVariable(extensionId, instanceId,
 def)` / `updateVariable(extensionId, instanceId, ref, patch)` (Section 6/7),
 which already accept `def`/`patch` as a bag of fields:
 
 ```
-fixedIncrement: boolean   // default false - see 14.1
-tickUnit: string          // default "1 day" - a calendar delta, e.g. "1h", "1mo"
 deltaSource: string       // default '' - the FULLY-QUALIFIED name (e.g.
                           // "ext__jump") of a type: 'string' variable in the
                           // SAME preset; same convention a calculated
                           // variable's `dependencies` already uses (7.3)
-accumulate: boolean       // default false - see 14.1
 ```
 
-Superseded an earlier "new `calculatedDatetime` type" design (rejected: it
-would be written outside its own expression evaluation, contradicting
-`calculated`'s own contract - calculated-engine.js's header comment) after
-discussion with the requester; the final, implemented design is the four
-fields above.
+Superseded two earlier designs: a "new `calculatedDatetime` type" (rejected -
+it would be written outside its own expression evaluation, contradicting
+`calculated`'s own contract, calculated-engine.js's header comment), and a
+second pass that added THREE more fields (`fixedIncrement`, `tickUnit`,
+`accumulate`) as a parallel automatic-ticking mechanism for datetime
+specifically. That second design is also gone: it turned out to duplicate
+`behaviors.increment`/`increment.delta` (14.1 below), which every type,
+datetime included, already had - a real redundancy, reported by the person
+using the manager modal as confusing before it was caught here. See
+requirements spec 1.31 for the full account of both revisions.
 
-**14.1 fixedIncrement / accumulate (continuous ticking)**
+**14.1 Automatic advancement is `behaviors.increment`, not a datetime-specific field**
 
-A datetime variable ticks by `tickUnit` on every deterministic pass
-(`runDeterministicIncrements`, Section 5 - every call, both `'user'` and
-`'ai'`, unlike the legacy `behaviors.increment` path's own `triggers`
-config) ONLY when BOTH `fixedIncrement` AND `accumulate` are `true`.
-`accumulate` is a deliberate master switch a caller can flip without
-touching `fixedIncrement`/`tickUnit` - `fixedIncrement: true` alone ticks
-nothing. `tickUnit` is validated the same way the legacy path's
-`increment.delta` already is (must parse for the variable's own calendar) -
-an invalid one is rejected by createVariable/updateVariable, never silently
-inert at runtime.
+A datetime variable that should tick forward on its own uses the SAME
+`behaviors.increment: true` + `increment.delta` (a calendar duration string,
+e.g. `"1h"`, `"1d"`, `"1mo"`) + `increment.triggers` every other
+incrementable type already has (Section 5/1.21) - nothing new here. The only
+datetime-specific behavior layered on top is jump-suppression (14.2).
 
-**14.2 deltaSource (narrative jumps)**
+**14.2 deltaSource (narrative jumps) and its interaction with a tick**
 
 Whenever the named `deltaSource` variable's value changes to a non-empty
 string, its text (a duration - "3 days", "12 hours" - or a full instruction
@@ -1826,42 +1823,119 @@ variable as the delta source, let the model (or any caller, including
 datetime variable updates itself with no further code. `deltaSource` must
 reference an existing `type: 'string'` variable in the same preset or
 `createVariable`/`updateVariable` rejects the definition (same warn-and-null
-convention as every other validation in this module).
+convention as every other validation in this module). If the SAME datetime
+also has `behaviors.increment: true` (14.1), a jump that lands the same
+pass as its automatic tick suppresses that one tick (best-effort, not a hard
+guarantee - see requirements spec 1.31) so the two never both land at once;
+a PROMPTED increment (`behaviors.prompted: true`) is never suppressed this
+way, since it only ever fires on the model's own answer, not a fixed pass.
 
 **14.3 No new read/status surface**
 
-Nothing new is exposed for reading "did a jump just happen" or "when does
-this tick" - `getVariable`/`listVariables` (Section 2) return the new fields
-like any other, and the datetime variable's own stored value (`getVar`
-internally, or a preset's normal read path) is the only place to observe the
-result. The one-shot jump/tick-suppression flag (requirements spec 1.31) is
-purely internal to `calculated-engine.js`/`deterministic-engine.js` and is
-not part of the public API.
+Nothing new is exposed for reading "did a jump just happen" - `getVariable`/
+`listVariables` (Section 2) return `deltaSource` like any other field, and
+the datetime variable's own stored value (`getVar` internally, or a preset's
+normal read path) is the only place to observe the result. The one-shot
+jump-suppression flag (requirements spec 1.31) is purely internal to
+`calculated-engine.js`/`deterministic-engine.js` and is not part of the
+public API.
 
-**14.4 Manager modal UI (2026-09-22, second pass)**
+**14.4 Manager modal UI**
 
 Not a new `stateEngine.*` function - 14.3 still holds. The datetime editor
 in the manager modal (a caller of `createVariable`/`updateVariable` for
 every other type, but one that writes `preset.variables` directly for its
-own inline save, like the rest of that editor) gained fixedIncrement/
-tickUnit/deltaSource/accumulate fields and re-implements checkedDatetime()'s
-validation locally for them, for the same reason it already duplicates the
-calendar/defaultValue checks. Full UI details, including a rendering bug
-found and fixed by mutation testing (a stale/wrong-type stored `deltaSource`
-was not always flagged), are in requirements spec 1.31.
+own inline save, like the rest of that editor) has a `deltaSource` dropdown
+next to the calendar picker, and re-implements checkedDatetime()'s
+`deltaSource` validation locally, for the same reason it already duplicates
+the calendar/defaultValue checks. Automatic advancement is configured
+through the ordinary, shared "Incremented Behavior" section every type has -
+no datetime-specific tick UI exists any more (removed in the consolidation;
+see requirements spec 1.31, including a rendering bug found and fixed by
+mutation testing during the original build, a stale/wrong-type stored
+`deltaSource` not always being flagged).
 
 **14.5 Verification**
 
-`tests/calculated-datetime.test.js` (37 tests, Phase 1): schema defaults,
-every validation rule, the fixedIncrement/accumulate truth table, deltaSource
+`tests/calculated-datetime.test.js` (34 tests): schema/validation, automatic
+ticking through the ordinary `behaviors.increment` mechanism, deltaSource
 consumption (including fan-out to multiple datetime variables and a fantasy
-calendar), the jump-suppresses-the-next-tick interaction, the recursion/
-cycle guard (including why a real infinite cycle cannot form through this
-mechanism), end-to-end through both the main prompted update and
-`runIndependentPreset`, and export. `tests/calculated-datetime-ui.test.js`
-(17 tests, Phase 2): the manager-modal editor above. Every rule in both was
-verified by deliberately breaking it and confirming the suite catches the
-break (mutation testing); one deliberately-added "cannot reference itself"
-check was found to be dead code by this process (already caught by the
-existence/type checks on both the create and update paths) and removed
-rather than kept untested.
+calendar), the jump-suppresses-the-next-tick interaction (including that a
+PROMPTED increment is never suppressed), the recursion/cycle guard
+(including why a real infinite cycle cannot form through this mechanism),
+end-to-end through both the main prompted update and `runIndependentPreset`,
+and export. `tests/calculated-datetime-ui.test.js` (15 tests): the
+manager-modal editor above, including that Incremented Behavior is what
+actually ticks a datetime and that no separate tick UI exists. Every rule
+across all revisions was verified by deliberately breaking it and confirming
+the suite catches the break (mutation testing); the consolidation itself
+surfaced a real regression on its first attempt - the new jump-suppression
+check added to the shared deterministic-increment loop broke every OTHER
+suite exercising a datetime increment, since the test harness's simplified
+`calculated-engine.js` mock had no `consumeDatetimeJump` export at all -
+caught by running the full suite (not just this feature's own tests) before
+calling the change done, fixed by adding a no-op fallback to that mock.
+
+SECTION 15 — INDEPENDENT PRESETS: SCHEDULING (2026-09-22)
+
+**15.0 What it is**
+
+Time-based automatic execution for independent presets (Section 13):
+interval, atTime, delay and repeat modes. `src/core/schedule-engine.js`
+(pure calendar math, no identity/preset concept at all) + two new
+`stateEngine.*` functions in `src/api/independent-presets.js`.
+
+```
+updateIndependentPresetSchedule(extensionId, instanceId, namespace, name, schedule)
+  -> the stored schedule (with nextRun), or null on a validation failure
+checkAndRunDueSchedules(chatId)
+  -> the number of presets that ran (engine-internal - not called by an
+     extension in normal use; exposed on stateEngine only because every
+     other independent-preset function already is)
+```
+
+`schedule`: `{ enabled?, mode?, value?, calendar?, repeat? }` - merges into
+the stored schedule like `configureIndependentPreset`'s config patch
+(Section 13.1) does, so disabling never requires repeating mode/value.
+`nextRun` (ms since epoch) is never accepted from a caller - engine-managed,
+the same reason `independentStatus` (13.7) is read-only.
+
+**15.1 The four modes**
+
+`mode`: `"interval"` (run every N units, always reschedules) | `"atTime"`
+(run once at an absolute/relative moment, disables after unless `repeat:
+true`) | `"delay"` (run once after a duration, always disables after) |
+`"repeat"` (always stays enabled, always recomputes the next future
+occurrence). `value` is an NL time expression, parsed through the SAME
+calendar-engine functions Section 10/11 and requirements spec 1.22.4/1.31
+already expose (`resolveInstruction`), fed `Date.now()` as the calendar's
+own "current scalar" instead of a datetime variable's stored value - see
+requirements spec 1.32 for the full reasoning, the confirmed
+"dawn"/"midnight"/"sunrise"/"sunset" gap, and the per-mode `nextRun` rules.
+
+**15.2 Execution**
+
+`checkAndRunDueSchedules(chatId)` is what actually runs a due preset - an
+extension never calls it directly in normal use; it is reached by
+`src/events/event-engine.js` on every message and from a real 30-second
+`setInterval` (`startIndependentPresetScheduler()`, started once from
+`index.js`). Scheduling only ever runs for whichever chat is open in this
+browser tab right now - there is no background or server-side execution in
+this extension.
+
+**15.3 Deferred: threshold mode**
+
+The original request's fifth mode - run when a datetime VARIABLE crosses a
+value ("when date >= harvestSeason") - is not built. It needs a small
+variable-comparison expression language no field in this schema defines,
+and it is the one mode with a real cycle risk (a run that writes the very
+variable it watches could re-trigger itself through `recalculateDependents()`
+- Section 13/requirements spec 1.31). Event-driven triggers (run on any
+variable change) remain deferred from Section 13.10 for the same reasons.
+
+**15.4 Verification**
+
+`tests/schedule-engine.test.js` (28), `tests/api/independent-presets-
+schedule.test.js` (22), `tests/independent-presets-schedule-ui.test.js` (8)
+- see requirements spec 1.32 for what each covers. Every rule was verified
+by deliberately breaking it and confirming the suite catches the break.

@@ -1,9 +1,12 @@
-// Calculated-datetime extension (requirements spec 1.31): fixedIncrement/
-// tickUnit ticking, deltaSource jump consumption, the accumulate master
-// switch, and the delta-suppresses-the-next-tick interaction, all as
-// optional fields on the existing 'datetime' type - no new variable type,
-// no change to a plain datetime variable that sets none of them (see
-// tests/datetime.test.js for that unchanged behavior).
+// Calculated-datetime extension (requirements spec 1.31, revised 2026-09-22):
+// deltaSource jump consumption, and its cooperation with a datetime's own
+// automatic advancement - which is the SAME behaviors.increment/
+// increment.delta mechanism every other type already has (an earlier
+// version had a separate fixedIncrement/tickUnit/accumulate tick just for
+// datetime; removed for being redundant with, and confusingly positioned
+// relative to, that existing mechanism - see variable-schema.js). No change
+// to a plain datetime variable that sets neither (see tests/datetime.test.js
+// for that unchanged behavior).
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -21,10 +24,10 @@ import { getVar, setVar } from '../src/core/chat-state.js';
 import { exportPreset } from '../src/core/preset-export.js';
 
 // The harness replaces calculated-engine.js with a simplified mock (no
-// datetime-trigger logic, no consumeDatetimeJump) for every other suite;
-// this one needs the real thing. chat-state.js/preset-manager.js stay
-// mocked - the mock's applyIncrement already steps datetime through the
-// real calendar engine (see chat-state.mock.js), which is all this needs.
+// datetime-trigger logic, no real consumeDatetimeJump) for every other
+// suite; this one needs the real thing. chat-state.js/preset-manager.js
+// stay mocked - the mock's applyIncrement already steps datetime through
+// the real calendar engine (see chat-state.mock.js), which is all this needs.
 vi.mock('../src/core/calculated-engine.js', async () => vi.importActual('../src/core/calculated-engine.js'));
 vi.mock('../src/core/background-llm.js', () => ({ callBackgroundLLM: vi.fn() }));
 vi.mock('../src/ui/settings-panel-ui.js', () => ({ setStatus: vi.fn() }));
@@ -38,6 +41,13 @@ let instanceId;
 
 const createDatetime = (name, extra = {}) => stateEngine.createVariable('pp', instanceId, {
     namespace: 'pp', presetName: 'Demo', name, type: 'datetime', ...extra,
+});
+// A datetime that also ticks automatically - the SAME legacy mechanism
+// every other type uses, not a datetime-specific field.
+const createTickingDatetime = (name, delta, extra = {}) => createDatetime(name, {
+    behaviors: { increment: true, prompted: false },
+    increment: { delta, triggers: 'ai' },
+    ...extra,
 });
 const createDeltaSource = (name, extra = {}) => stateEngine.createVariable('pp', instanceId, {
     namespace: 'pp', presetName: 'Demo', name, type: 'string', defaultValue: '',
@@ -56,22 +66,13 @@ beforeEach(() => {
 });
 
 describe('calculated-datetime extension', () => {
-    describe('schema defaults', () => {
-        it('a plain datetime variable gets the new fields at their inert defaults', () => {
+    describe('schema defaults and validation', () => {
+        it('a plain datetime variable gets deltaSource at its inert default', () => {
             const def = createDatetime('clock');
-            expect(def).toMatchObject({ fixedIncrement: false, tickUnit: '1 day', deltaSource: '', accumulate: false });
-        });
-    });
-
-    describe('validation (createVariable/updateVariable)', () => {
-        it('rejects fixedIncrement: true with a tickUnit the calendar cannot parse', () => {
-            expect(createDatetime('clock', { fixedIncrement: true, tickUnit: 'banana' })).toBeNull();
-            expect(live('clock')).toBeUndefined();
-        });
-
-        it('accepts fixedIncrement: true with a valid tickUnit, even without accumulate', () => {
-            const def = createDatetime('clock', { fixedIncrement: true, tickUnit: '1h' });
-            expect(def).toMatchObject({ fixedIncrement: true, tickUnit: '1h', accumulate: false });
+            expect(def).toMatchObject({ deltaSource: '' });
+            expect(def.fixedIncrement).toBeUndefined();
+            expect(def.tickUnit).toBeUndefined();
+            expect(def.accumulate).toBeUndefined();
         });
 
         it('rejects a deltaSource that does not exist in the preset', () => {
@@ -99,59 +100,46 @@ describe('calculated-datetime extension', () => {
             expect(def.deltaSource).toBe('pp__jump');
         });
 
-        it('updateVariable applies the same rules', () => {
+        it('updateVariable applies the same rules, alongside the ordinary legacy increment fields', () => {
             createDatetime('clock');
             const ref = { namespace: 'pp', presetName: 'Demo', variableName: 'clock' };
-            expect(stateEngine.updateVariable('pp', instanceId, ref, { fixedIncrement: true, tickUnit: 'nonsense' })).toBeNull();
-            expect(live('clock').fixedIncrement).toBe(false);
+            expect(stateEngine.updateVariable('pp', instanceId, ref, { deltaSource: 'pp__ghost' })).toBeNull();
+            expect(live('clock').deltaSource).toBe('');
 
             createDeltaSource('jump');
-            const updated = stateEngine.updateVariable('pp', instanceId, ref, { deltaSource: 'pp__jump', fixedIncrement: true, tickUnit: '1h', accumulate: true });
-            expect(updated).toMatchObject({ deltaSource: 'pp__jump', fixedIncrement: true, tickUnit: '1h', accumulate: true });
+            const updated = stateEngine.updateVariable('pp', instanceId, ref, {
+                deltaSource: 'pp__jump', behaviors: { increment: true, prompted: false }, increment: { delta: '1h', triggers: 'ai' },
+            });
+            expect(updated).toMatchObject({ deltaSource: 'pp__jump', behaviors: { increment: true, prompted: false }, increment: { delta: '1h' } });
         });
     });
 
-    describe('fixedIncrement ticking (deterministic engine)', () => {
-        it('does NOT tick when accumulate is false, even though fixedIncrement is true', () => {
-            createDatetime('clock', { defaultValue: 0, fixedIncrement: true, tickUnit: '1d', accumulate: false });
-            runDeterministicIncrements('chat-1', 'ai');
-            expect(stored('clock')).toBe(0);
-        });
-
-        it('does NOT tick when fixedIncrement is false, even though accumulate is true', () => {
-            createDatetime('clock', { defaultValue: 0, fixedIncrement: false, tickUnit: '1d', accumulate: true });
-            runDeterministicIncrements('chat-1', 'ai');
-            expect(stored('clock')).toBe(0);
-        });
-
-        it('ticks by tickUnit when both fixedIncrement and accumulate are true', () => {
-            createDatetime('clock', { defaultValue: 0, fixedIncrement: true, tickUnit: '1d', accumulate: true });
+    describe('automatic ticking uses the ordinary legacy increment mechanism, unchanged', () => {
+        it('a datetime with behaviors.increment ticks by increment.delta on its configured trigger', () => {
+            createTickingDatetime('clock', '1d', { defaultValue: 0 });
             runDeterministicIncrements('chat-1', 'ai');
             expect(stored('clock')).toBe(86400);
         });
 
-        it('ticks on every deterministic pass regardless of trigger type (no triggers config of its own)', () => {
-            createDatetime('clock', { defaultValue: 0, fixedIncrement: true, tickUnit: '1h', accumulate: true });
-            runDeterministicIncrements('chat-1', 'user');
-            expect(stored('clock')).toBe(3600);
+        it('respects the trigger selector (user/ai/both), same as every other type', () => {
+            createTickingDatetime('clock', '1h', { defaultValue: 0, increment: { delta: '1h', triggers: 'ai' } });
+            runDeterministicIncrements('chat-1', 'user'); // wrong trigger - no tick
+            expect(stored('clock')).toBe(0);
             runDeterministicIncrements('chat-1', 'ai');
-            expect(stored('clock')).toBe(7200);
+            expect(stored('clock')).toBe(3600);
         });
 
-        it('is calendar-aware (month/leap-year arithmetic), same as the legacy increment path', () => {
-            createDatetime('clock', { defaultValue: ts(2026, 1, 31), fixedIncrement: true, tickUnit: '1mo', accumulate: true });
+        it('is calendar-aware (month/leap-year arithmetic)', () => {
+            createTickingDatetime('clock', '1mo', { defaultValue: ts(2026, 1, 31) });
             runDeterministicIncrements('chat-1', 'ai');
             expect(stored('clock')).toBe(ts(2026, 2, 28));
         });
 
-        it('a plain (legacy) datetime increment variable is completely unaffected', () => {
-            createDatetime('legacy', {
-                defaultValue: ts(2026, 9, 18, 22),
-                behaviors: { increment: true, prompted: false },
-                increment: { delta: '1h', triggers: 'ai' },
-            });
+        it('an invalid delta is skipped with a warning, same as before this feature existed', () => {
+            createTickingDatetime('clock', 'banana', { defaultValue: 500 });
             runDeterministicIncrements('chat-1', 'ai');
-            expect(stored('legacy')).toBe(ts(2026, 9, 18, 23));
+            expect(stored('clock')).toBe(500);
+            expect(console.warn).toHaveBeenCalledWith(expect.any(String), expect.stringContaining('datetime increment skipped'));
         });
     });
 
@@ -230,16 +218,16 @@ describe('calculated-datetime extension', () => {
         });
     });
 
-    describe('combined behavior: a jump suppresses the next fixedIncrement tick once', () => {
+    describe('combined behavior: a jump suppresses the next automatic tick once', () => {
         it('a tick that happens with no prior jump is unaffected', () => {
-            createDatetime('clock', { defaultValue: 0, fixedIncrement: true, tickUnit: '1d', accumulate: true });
+            createTickingDatetime('clock', '1d', { defaultValue: 0 });
             runDeterministicIncrements('chat-1', 'ai');
             expect(stored('clock')).toBe(86400);
         });
 
         it('a jump right before a tick suppresses that one tick (no double-stepping)', () => {
             createDeltaSource('jump');
-            createDatetime('clock', { defaultValue: 0, fixedIncrement: true, tickUnit: '1d', accumulate: true, deltaSource: 'pp__jump' });
+            createTickingDatetime('clock', '1d', { defaultValue: 0, deltaSource: 'pp__jump' });
             setDelta('jump', '3 days');
             expect(stored('clock')).toBe(3 * 86400);
 
@@ -249,23 +237,34 @@ describe('calculated-datetime extension', () => {
 
         it('suppression is one-shot: the tick after the suppressed one fires normally again', () => {
             createDeltaSource('jump');
-            createDatetime('clock', { defaultValue: 0, fixedIncrement: true, tickUnit: '1d', accumulate: true, deltaSource: 'pp__jump' });
+            createTickingDatetime('clock', '1d', { defaultValue: 0, deltaSource: 'pp__jump' });
             setDelta('jump', '3 days');
             runDeterministicIncrements('chat-1', 'ai'); // suppressed
             runDeterministicIncrements('chat-1', 'ai'); // normal
             expect(stored('clock')).toBe(4 * 86400);
         });
 
-        it('a jump on a variable WITHOUT fixedIncrement never sets a suppression flag (nothing to consume)', () => {
+        it('a jump on a variable with no automatic tick configured never sets a suppression flag (nothing to consume)', () => {
             createDeltaSource('jump');
             createDatetime('clock', { defaultValue: 0, deltaSource: 'pp__jump' });
             setDelta('jump', '1 day');
             expect(consumeDatetimeJump('chat-1', 'pp__clock')).toBe(false);
         });
 
+        it('a jump on a PROMPTED (not deterministic) increment also never sets a suppression flag', () => {
+            createDeltaSource('jump');
+            createDatetime('clock', {
+                defaultValue: 0, deltaSource: 'pp__jump',
+                behaviors: { increment: true, prompted: true },
+                increment: { delta: '1d', triggers: 'ai' },
+            });
+            setDelta('jump', '1 day');
+            expect(consumeDatetimeJump('chat-1', 'pp__clock')).toBe(false);
+        });
+
         it('consumeDatetimeJump is one-shot: a second read after the first returns false', () => {
             createDeltaSource('jump');
-            createDatetime('clock', { defaultValue: 0, fixedIncrement: true, tickUnit: '1d', accumulate: true, deltaSource: 'pp__jump' });
+            createTickingDatetime('clock', '1d', { defaultValue: 0, deltaSource: 'pp__jump' });
             setDelta('jump', '1 day');
             expect(consumeDatetimeJump('chat-1', 'pp__clock')).toBe(true);
             expect(consumeDatetimeJump('chat-1', 'pp__clock')).toBe(false);
@@ -357,23 +356,26 @@ describe('calculated-datetime extension', () => {
     });
 
     describe('export/import', () => {
-        it('exportPreset serializes the new fields as plain data', () => {
+        it('exportPreset serializes deltaSource and the ordinary legacy increment fields as plain data', () => {
             createDeltaSource('jump');
-            createDatetime('clock', { fixedIncrement: true, tickUnit: '1h', accumulate: true, deltaSource: 'pp__jump' });
+            createTickingDatetime('clock', '1h', { deltaSource: 'pp__jump' });
             const presetId = Object.keys(settings.get().presets).find((id) => settings.get().presets[id].name === 'Demo');
 
             const data = exportPreset(presetId);
             const clock = Object.values(data.variables).find((v) => v.name === 'pp__clock');
-            expect(clock).toMatchObject({ fixedIncrement: true, tickUnit: '1h', accumulate: true, deltaSource: 'pp__jump' });
+            expect(clock).toMatchObject({ deltaSource: 'pp__jump', behaviors: { increment: true, prompted: false }, increment: { delta: '1h' } });
+            expect(clock.fixedIncrement).toBeUndefined();
+            expect(clock.tickUnit).toBeUndefined();
+            expect(clock.accumulate).toBeUndefined();
         });
     });
 
     describe('spec', () => {
         const spec = readFileSync(SPEC_PATH, 'utf8');
-        it('has a "1.31 Calculated Datetime Extension" section documenting the fields and mechanisms', () => {
+        it('has a "1.31 Calculated Datetime Extension" section documenting deltaSource and its interaction with the legacy increment mechanism', () => {
             expect(spec).toMatch(/^1\.31 Calculated Datetime Extension/m);
             const section = spec.slice(spec.indexOf('1.31 Calculated Datetime Extension'), spec.indexOf('SECTION 2'));
-            for (const phrase of ['fixedIncrement', 'tickUnit', 'deltaSource', 'accumulate', 'recalculateDependents', 'cycle']) {
+            for (const phrase of ['deltaSource', 'behaviors.increment', 'recalculateDependents', 'cycle', 'consumeDatetimeJump']) {
                 expect(section, phrase).toContain(phrase);
             }
         });

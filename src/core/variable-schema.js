@@ -88,23 +88,24 @@ export function blankDefinition() {
         calendar: DEFAULT_CALENDAR_ID,
         unit: 'seconds',
 
-        // Calculated-datetime extension (requirements spec 1.31, only
-        // meaningful when type === 'datetime'): fixedIncrement ticks this
-        // variable by tickUnit on every deterministic pass (deterministic-
-        // engine.js), but ONLY when accumulate is also true - accumulate is
-        // the deliberate master switch, not a synonym for fixedIncrement.
-        // deltaSource names another (normal, prompted, type: 'string')
-        // variable in the same preset; whenever THAT variable's value
-        // changes, its text is parsed as a calendar instruction and applied
-        // to this variable, then the source is reset to '' - see
-        // calculated-engine.js's applyDatetimeDeltaTriggers(). Both
-        // mechanisms are optional and independent of each other; a plain
-        // datetime variable that sets neither behaves exactly as it always
-        // has.
-        fixedIncrement: false,
-        tickUnit: '1 day',
+        // Calculated-datetime extension (requirements spec 1.31, revised
+        // 2026-09-22 - only meaningful when type === 'datetime'): deltaSource
+        // names another (normal, prompted, type: 'string') variable in the
+        // same preset; whenever THAT variable's value changes, its text is
+        // parsed as a calendar instruction and applied to this variable,
+        // then the source is reset to '' - see calculated-engine.js's
+        // applyDatetimeDeltaTriggers(). A datetime that ALSO ticks on its
+        // own (fixed, per-message advancement) uses the SAME
+        // behaviors.increment/increment.delta every other type already has
+        // - there is no separate "automatic time flow" toggle. An earlier
+        // version of this feature added fixedIncrement/tickUnit/accumulate
+        // as a second, parallel tick mechanism; it was removed (2026-09-22)
+        // for being functionally redundant with behaviors.increment and,
+        // in the UI, genuinely confusing - two controls for nearly the same
+        // thing, one of them oddly separated from the other. See
+        // deterministic-engine.js's datetime branch for how a tick now
+        // cooperates with a deltaSource jump (consumeDatetimeJump).
         deltaSource: '',
-        accumulate: false,
 
         // Default value
         defaultValue: 0,

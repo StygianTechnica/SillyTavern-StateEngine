@@ -89,3 +89,14 @@ export const recalculateAllForChat = vi.fn((chatId) => {
     const { byName, calcNames } = graph(chatId);
     for (const name of order(byName, calcNames)) evaluateCalculatedVariable(chatId, byName[name]);
 });
+
+// Calculated-datetime extension (requirements spec 1.31): the real module's
+// one-shot "did a deltaSource jump just land on this datetime variable"
+// flag, read by deterministic-engine.js's main increment loop for every
+// datetime variable it ticks - this mock has no deltaSource-trigger concept
+// at all (that lives only in the real calculated-engine.js, opted into via
+// vi.importActual by the suites that actually test it, e.g.
+// tests/calculated-datetime.test.js), so it always answers "no jump
+// pending" - a plain, real-module-accurate default for every other suite
+// that never touches deltaSource.
+export const consumeDatetimeJump = vi.fn(() => false);

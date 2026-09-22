@@ -145,7 +145,10 @@ function warnCyclic(cyclic) {
 
 // Calculated-datetime extension (requirements spec 1.31): datetime.value has
 // just jumped via its deltaSource, keyed "chatId::datetimeVarName". Read
-// (and cleared) once by deterministic-engine.js's fixedIncrement tick, so a
+// (and cleared) once by deterministic-engine.js's own deterministic-increment
+// loop (behaviors.increment - the SAME mechanism every other type uses; an
+// earlier version of this feature had a separate fixedIncrement tick for
+// datetime specifically, removed 2026-09-22 as redundant/confusing), so a
 // jump that lands the same round a tick would otherwise fire suppresses that
 // one tick rather than both landing on top of each other. Best-effort, not a
 // hard guarantee: the prompted update that writes a deltaSource is fire-and-
@@ -222,7 +225,14 @@ function applyDatetimeDeltaTriggers(chatId, sourceVarName, allDefs) {
                 continue;
             }
             setVar(chatId, def.name, next, def);
-            if (def.fixedIncrement === true) recentDatetimeJumps.set(jumpKey(chatId, def.name), true);
+            // Only marked when this datetime ALSO has a deterministic tick
+            // configured (behaviors.increment, not prompted) - nothing to
+            // suppress otherwise, and setting the flag for every jump
+            // regardless would just leak entries in recentDatetimeJumps for
+            // datetime variables that never tick.
+            if (def.behaviors?.increment === true && def.behaviors?.prompted !== true) {
+                recentDatetimeJumps.set(jumpKey(chatId, def.name), true);
+            }
             touched.push(def.name);
             anyApplied = true;
         } catch (err) {

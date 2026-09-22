@@ -13,6 +13,47 @@ import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
 import { refreshManagerButtonLater } from '../ui/wand-ui.js';
 import { renderNotificationUi } from '../ui/notification-ui.js';
 import { populateConnectionProfileDropdown } from '../ui/connection-profile-ui.js';
+import { checkAndRunDueSchedules } from '../api/independent-presets.js';
+
+// Independent Preset scheduling (requirements spec 1.32): fire-and-forget,
+// like runPromptedStateUpdate's own background LLM call - checkAndRunDueSchedules
+// is async (it may await an LLM call per due preset) and nothing here can
+// block SillyTavern's own event dispatch waiting on it. .catch() (not a
+// try/catch) is required specifically because this is never awaited: a
+// rejected promise with no handler is an unhandled-rejection, not a
+// synchronous throw a try/catch would catch.
+function runScheduleCheck(chatId) {
+    try {
+        checkAndRunDueSchedules(chatId).catch((err) => {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        });
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+    }
+}
+
+// Independent Preset scheduling (requirements spec 1.32): the request's own
+// "add a scheduler pass to deterministic-engine" (Section 4A), reached from
+// here instead of deterministic-engine.js itself so src/core/ never imports
+// src/api/ (see checkAndRunDueSchedules' own header comment) - same effect,
+// correct layering. This alone only checks on a chat message, which cannot
+// deliver "every 10 minutes" if the user goes quiet for an hour - paired
+// with startIndependentPresetScheduler()'s real timer below for that reason.
+// Exported so index.js can start the real timer once at page load, the same
+// pattern extension-updates.js's initExtensionUpdateNotifier() already
+// uses for a different periodic-ish check.
+let schedulerTimer = null;
+export function startIndependentPresetScheduler() {
+    if (schedulerTimer !== null) return; // already running - never double-started
+    const INTERVAL_MS = 30000; // real wall-clock seconds, not a message-driven tick
+    schedulerTimer = setInterval(() => {
+        try {
+            runScheduleCheck(SillyTavern.getContext().chatId);
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
+    }, INTERVAL_MS);
+}
 
 export function registerEvents() {
     const context = SillyTavern.getContext();
@@ -163,6 +204,8 @@ export function registerEvents() {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
         }
 
+        runScheduleCheck(chatId);
+
         try {
             runPromptedStateUpdate('user');
         } catch (err) {
@@ -178,6 +221,8 @@ export function registerEvents() {
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
         }
+
+        runScheduleCheck(chatId);
 
         try {
             runPromptedStateUpdate('ai');
