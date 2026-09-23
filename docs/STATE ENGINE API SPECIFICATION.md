@@ -1284,7 +1284,7 @@ formatDateTimePartial(..., 'gregorian', t, ['month', 'day'])          { month: "
 - **Identity.** The requested `validateCallerIdentity(extensionId,
   instanceId)` cannot be called with two arguments - it requires a target
   namespace and throws without one. These signatures carry none, so, like
-  `assignBatch`/`declareCapabilities`, they use `resolveCallerRecord`: the
+  `declareCapabilities`/`notify`, they use `resolveCallerRecord`: the
   `instanceId` must match, and the extension must already own a namespace
   (`createNamespace()` first). Calendar data is not namespaced, so no
   further ownership is checked.
@@ -1582,12 +1582,18 @@ Unchanged fields from Section 6: `connectionProfileId`, `temperature`,
 matching global settings, composed onto `callBackgroundLLM` via a shallow
 settings copy - the real settings object is never touched). New fields:
 
-- `batch` (string, default `"core"` = `DEFAULT_BATCH`) - request Section 5:
-  which variable batch (1.20) this preset's independent run operates on,
-  selected with the exact `selectBatchVariables()` `prompted-engine.js`'s own
-  main loop uses. **Fixes a real gap**: before this pass, `runIndependentPreset`
-  used EVERY prompted/incrementable variable in the preset with no batch
-  filtering at all - never matched the rest of the batching system.
+- ~~`batch`~~ **REMOVED (requirements spec 1.20, rewritten 2026-09-22).**
+  Originally: which variable batch this preset's independent run operated
+  on. The named-batch system itself was removed entirely - not just here -
+  after the user who requested it clarified it was never what she'd asked
+  for ("I wanted the variable prompts to 'batch' out the variables ... to
+  avoid overloading the context ... I don't even know how it got turned
+  into what it became"). `runIndependentPreset` now always operates on
+  EVERY prompted/incrementable variable in the preset itself (its own
+  membership is already a meaningful scope, needing no separate field), and
+  automatically splits an oversized set into several sequential calls
+  (`src/core/prompt-chunking.js`) instead of ever needing to be manually
+  narrowed. See requirements spec 1.20 for the full account.
 - `enabled` (boolean, default `true`) - request Section 7's toggle. `false`
   makes `runIndependentPreset` refuse immediately (before the concurrency
   lock, before any LLM call) whether triggered manually, by an extension, or
@@ -1633,15 +1639,17 @@ follow-up (a fourth call, or a `deleteIndependentPresetContext`).
 **13.5 Prompt construction** (request Section 6)
 
 Verified, not just asserted: the prompt is built from ONLY the header/rules
-text, the context section (13.4), and this preset's own selected-batch
-variable lines - no WI, calendar or image-variable metadata, no other
-preset's variables, no SillyTavern chat system message (the independent
+text, the context section (13.4), and this preset's OWN variable lines
+(requirements spec 1.20, rewritten 2026-09-22: every prompted/incrementable
+variable in the preset, automatically chunked across several calls if too
+large - no other preset's variables, ever) - no WI, calendar or image-
+variable metadata, no SillyTavern chat system message (the independent
 pipeline builds its own two-message `[system, user]` array, never reusing
 anything from SillyTavern's own chat-completion prompt).
 
 **13.6 Status** (request Sections 7/8)
 
-`getIndependentPresetStatus(namespace, name)` -> `{ enabled, batch,
+`getIndependentPresetStatus(namespace, name)` -> `{ enabled,
 contextMode, lastRunAt, lastOutcome, lastError, changedVariables }` or `null`
 for a missing/non-independent preset. Read-only, no identity - same
 convention as `getVariable()`/`getDependents()`. `lastOutcome` is one of
@@ -1654,8 +1662,9 @@ summary" / "variable changes from last run."
 
 **13.7 Export / import**
 
-`independentPreset`, `independentConfig` (batch/prompt/model/context - request
-Section 9's own list) are plain preset fields and round-trip through
+`independentPreset`, `independentConfig` (prompt/model/context - request
+Section 9's own list, minus `batch`, removed 1.20 rewrite 2026-09-22) are
+plain preset fields and round-trip through
 `exportPreset`/`importPresetDetailed` with zero extra code, exactly like
 `itemType` or `currentKeyVariable` already do. Two things are deliberately
 NOT carried across:
@@ -1711,7 +1720,7 @@ convention rather than inventing new ones:
   (a live connection-profile `<select>`, via the new `listConnectionProfiles()`
   in `connection-profile-ui.js` - refactored out of that file's two existing
   jQuery-populated dropdowns so all three share one profile-reading function),
-  temperature, max tokens, batch, and a new **history limit** field
+  temperature, max tokens, and a new **history limit** field
   (`independentConfig.historyLimit`, overriding the global message count in
   chat-history mode only - a small addition to `runIndependentPreset` itself,
   covered in 13.10's test count). Clearing a number field stores `null` (not
@@ -1728,7 +1737,7 @@ convention rather than inventing new ones:
 - **Deviation: triggers/schedule show an honest "not available yet" note**
   instead of a non-functional control - per Section 11, a fake dropdown that
   saves a value nothing reads yet would be worse than admitting the gap.
-- Status (13.6) is shown inline: enabled/context mode/batch/last outcome in
+- Status (13.6) is shown inline: enabled/context mode/last outcome in
   the row's own summary line, and last-run time/error/changed-variables in
   the expanded editor, refreshed after every Run Now click.
 
@@ -1762,8 +1771,9 @@ check every box:
 
 **13.11 Verification**
 
-`tests/api/independent-presets.test.js` (54 tests: the original Section-6
-pipeline tests plus CRUD, all three context modes, batching, the history-limit
+`tests/api/independent-presets.test.js` (54 tests as of this pass - later
+grown further by 1.20's rewrite, below: the original Section-6 pipeline
+tests plus CRUD, all three context modes, variable scoping, the history-limit
 override, enabled/disabled, status, export/import, write-path/flag-mode
 interaction, and compliance checks for 13.5) and `tests/independent-presets-ui.test.js`
 (19 tests: subtabs, create/rename/delete, clone/export reuse, every editor
@@ -2046,3 +2056,58 @@ needed to get a mode-appropriate string.
 manager-modal save path), `tests/calculated-datetime.test.js` (one
 deltaSource-interaction test). Every rule was verified by deliberately
 breaking it and confirming the suite catches the break (mutation testing).
+
+SECTION 18 — AUTOMATIC PROMPT CHUNKING (2026-09-22)
+
+**18.0 What changed, and why**
+
+Section 13.3 originally documented `independentConfig.batch` (a per-preset
+variable-scoping field), on top of a whole separate `src/api/batching.js`
+surface (`assignBatch`, `removeBatch`, `getBatch`, `getBatches`,
+`batchPrompt`) requirements spec 1.20 specified. Both are REMOVED. Asked
+directly why, after this document described the batching system as settled:
+"I had suggested that I wanted the variable prompts to 'batch' out the
+variables (in other words chunking) to avoid overloading the context. I
+don't even know how it got turned into what it became." The system that got
+built - manual, named, per-variable tagging, with no relationship to actual
+prompt size - was never what was asked for. See requirements spec 1.20 for
+the full account.
+
+**18.1 What replaced it: nothing to call**
+
+There is no new API surface for a caller to learn. `createVariable`/
+`updateVariable` no longer accept or return a `batch` field at all (it is
+simply gone from the definition shape); `independentConfig` no longer has a
+`batch` field either (Section 13.3). The main prompted update and
+`runIndependentPreset` (Section 13) both now operate on their full,
+unscoped variable pool automatically - the main update across every active
+preset for the chat, an independent preset across its own preset's
+variables only (replacing the old batch-selection with the preset's own,
+already-meaningful membership) - and silently split that pool into several
+sequential LLM calls if it would be too large for one, governed by
+`settings.maxPromptedVariableChars` (a plain settings field, not part of the
+namespaced API surface - there is no `stateEngine.*` call to read or write
+it).
+
+**18.2 For an extension that called `assignBatch`/`getBatch`/etc.**
+
+There is no migration path or compatibility shim - the functions are gone.
+An extension that depended on excluding some of its own variables from the
+main prompted update has no direct replacement for that specific behavior;
+the closest available lever is `behaviors.prompted: false` (excluding a
+variable from prompted updates entirely) or moving it to its own
+independent preset (Section 13), which now always gets its own preset's
+full variable set with no further configuration.
+
+**18.3 Verification**
+
+`tests/prompt-chunking.test.js` (the pure packer, `chunkPromptUnits`, and
+the settings-default derivation), `tests/prompted-engine-chunking.test.js`
+(the main update), and `tests/api/independent-presets.test.js`'s own
+"1.20 automatic scoping and chunking" describe block. Every rule was
+verified by deliberately breaking it and confirming the suite catches the
+break (mutation testing) - including a genuine gap this pass found and
+closed in its own tests, not assumed: a partially-successful multi-chunk
+independent-preset run must report `'updated'` with its real
+`changedVariables`, never `'skipped-parse-error'`, just because one OTHER
+chunk among several failed to parse.

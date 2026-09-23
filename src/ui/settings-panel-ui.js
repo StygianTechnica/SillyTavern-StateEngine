@@ -1,6 +1,6 @@
 // State Engine — UI settings panel
 
-import { LOG_PREFIX, EXT_TEMPLATE_PATH, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED_VARIABLE_RULES, getSettings, persistSettings, computeDefaultMaxPromptHistoryMessages } from '../core/settings-core.js';
+import { LOG_PREFIX, EXT_TEMPLATE_PATH, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED_VARIABLE_RULES, getSettings, persistSettings, computeDefaultMaxPromptHistoryMessages, computeDefaultMaxPromptedVariableChars } from '../core/settings-core.js';
 import { runPromptedStateUpdate } from '../core/prompted-engine.js';
 import { seedVariablesForChat, clearMacroVarsForChat } from '../core/chat-state.js';
 import { recalculateAllForChat } from '../core/calculated-engine.js';
@@ -33,6 +33,7 @@ export function loadGeneralSettingsIntoForm() {
     $('#se_response_length').val(settings.responseLength);
     $('#se_max_prompt_history').val(settings.maxPromptHistoryMessages ?? '');
     $('#se_max_message_length').val(settings.maxMessageLength ?? '');
+    $('#se_max_prompted_variable_chars').val(settings.maxPromptedVariableChars ?? '');
     $('#se_prompted_header').val(settings.promptedHeader || DEFAULT_PROMPTED_HEADER);
     $('#se_prompted_variable_rules').val(settings.promptedRules || DEFAULT_UNIFIED_VARIABLE_RULES);
     populateConnectionProfileDropdown();
@@ -114,6 +115,15 @@ export function bindPanelEvents() {
         const raw = $(this).val();
         const settings = getSettings();
         settings.maxMessageLength = raw === '' ? null : Math.max(1, Math.round(Number(raw)) || 1);
+        persistSettings();
+    });
+    $('#se_max_prompted_variable_chars').on('change', function () {
+        const raw = $(this).val();
+        const settings = getSettings();
+        settings.maxPromptedVariableChars = raw === ''
+            ? computeDefaultMaxPromptedVariableChars(SillyTavern.getContext())
+            : Math.max(1, Math.round(Number(raw)) || 1);
+        $(this).val(settings.maxPromptedVariableChars);
         persistSettings();
     });
 

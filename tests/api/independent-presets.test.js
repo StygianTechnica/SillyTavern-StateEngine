@@ -143,7 +143,7 @@ describe('independent-presets (identity-enforced)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 1.29: CRUD, context modes, batching, enabled/disabled, status, export/import.
+// 1.29: CRUD, context modes, automatic scoping/chunking (1.20), enabled/disabled, status, export/import.
 // ---------------------------------------------------------------------------
 
 import { getSettings } from '../../src/core/settings-core.js';
@@ -425,6 +425,12 @@ describe('1.20 automatic scoping and chunking (rewritten 2026-09-22)', () => {
         const values = [0, 1, 2, 3, 4, 5].map((i) => getVar('chat-1', `se__v${i}`).value);
         expect(values).toContain('calm'); // the failed chunk's variable(s)
         expect(values.some((v) => v !== 'calm')).toBe(true); // the rest still wrote
+        // A partially-successful run is reported as 'updated', with the real
+        // changed-variable list - never 'skipped-parse-error' (which would
+        // misleadingly discard changedVariables even though real writes
+        // happened) just because ONE chunk among several failed.
+        expect(status()).toMatchObject({ lastOutcome: 'updated', lastError: null });
+        expect(status().changedVariables.length).toBeGreaterThan(0);
     });
 });
 
@@ -593,7 +599,7 @@ describe('1.29 export / import', () => {
         const result = importPresetDetailed(data);
         const imported = getSettings().presets[result.presetId];
         expect(imported.independentPreset).toBe(true);
-        expect(imported.independentConfig).toEqual({ batch: 'extra' });
+        expect(imported.independentConfig).toEqual({ temperature: 0.6 });
         expect(imported.independentStatus).toBeUndefined();
         // the calculated variable's expression follows the renamed sibling, exactly as clonePreset/import already guarantee for any preset
         const importedCalc = Object.values(imported.variables).find((v) => v.type === 'calculated');

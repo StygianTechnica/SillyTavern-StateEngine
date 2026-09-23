@@ -67,6 +67,12 @@
             </div>
 
             <div class="se-row">
+                <label for="se_max_prompted_variable_chars">Max variable prompt size (chars)</label>
+                <input id="se_max_prompted_variable_chars" type="number" class="text_pole" min="1" step="1" placeholder="auto" />
+                <small>When the prompted-update variable list for one LLM call would exceed this, it is automatically split into several sequential calls instead. Leave blank to auto-derive from SillyTavern's context size.</small>
+            </div>
+
+            <div class="se-row">
                 <div class="se-header-row">
                     <label for="se_prompted_header">Prompted update header prompt</label>
                     <button id="se_prompted_header_reset" class="menu_button menu_button_icon" type="button" title="Revert to default">

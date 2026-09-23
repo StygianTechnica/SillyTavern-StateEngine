@@ -37,11 +37,7 @@ export function getVar(chatId, varName) {
 export const setVar = vi.fn((chatId, varName, value, def) => {
     const state = loadChatState(chatId);
     const previous = state.variables[varName]?.def;
-    let snapshot = def ?? previous ?? null;
-    // Mirrors the real snapshot rule (src/core/chat-state.js keepSnapshotBatch):
-    // a def with no `batch` keeps the batch the previous snapshot recorded.
-    // The REAL function is tested directly in batching.test.js via importActual.
-    if (snapshot && snapshot.batch === undefined && typeof previous?.batch === 'string') snapshot = { ...snapshot, batch: previous.batch };
+    const snapshot = def ?? previous ?? null;
     // Datetime mode (requirements spec 1.36): mirrors the real setVar()'s own
     // normalization, the same reason incrementScalar (below) already mirrors
     // the real applyIncrement()'s datetime branch - every OTHER suite that

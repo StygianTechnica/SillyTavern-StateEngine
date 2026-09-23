@@ -999,132 +999,114 @@ Reserved-name protection is inherited from variable creation itself
 (isReservedVariable already blocks creating a variable named after a known
 SillyTavern built-in), not re-validated here.
 
-1.20 Variable Batching System (2026-09-18)
+1.20 Automatic Prompt Chunking (2026-09-18, rewritten 2026-09-22)
 
-Batching controls WHICH VARIABLES APPEAR IN A PROMPT. It exists so that a
-large set of variables does not bloat the one prompt the main prompted update
-sends, and so independent presets can build small prompts of their own
-instead of inheriting everything.
+REWRITE, not a revision: the named-batch system this section originally
+specified (every variable manually assigned to a "batch", the main update
+reading only "core"/"time", an assignBatch/removeBatch/getBatch/getBatches/
+batchPrompt API) is REMOVED entirely. Asked directly why, in plain language,
+after noticing the built docs described it as settled: "I had suggested that
+I wanted the variable prompts to 'batch' out the variables (in other words
+chunking) to avoid overloading the context. I don't even know how it got
+turned into what it became." The two designs solve visibly different
+problems - one is automatic, size-driven splitting with nothing to
+configure; the other is a manual, per-variable tagging system a user (or
+extension) has to maintain by hand, with no relationship to how large a
+prompt actually is - and the built one was explicitly not what was asked
+for. See docs/API SPECIFICATION.md Section 9 (rewritten to match) and
+src/api/batching.js / src/api/batch-rules.js (deleted).
 
-Rules:
+What replaces it: every prompted/incrementable variable is now classified
+with NO manual scoping at all - the main update reads every one across every
+active preset for the chat (exactly the full pool "core" used to mean, with
+no "time" special-case needed - see 1.21's own updated entry below), and an
+independent preset reads every one in its OWN preset (replacing its former
+"batch" config field with the preset's own membership, already a meaningful
+scope that needs no separate field). When that pool would produce a single
+LLM call too large for the model's context, it is automatically split into
+several right-sized, SEQUENTIAL calls instead - never named, never assigned,
+never configured per variable.
 
-- Every variable belongs to exactly one batch. The default batch is "core".
-- Batch membership is variable metadata: `batch` on the variable definition
-  (variable-schema.js). blankDefinition() sets `batch: 'core'`, and
-  variable-schema.js exports DEFAULT_BATCH ('core') and batchOf(def).
-  batchOf() returns def.batch when it is a non-empty string and "core"
-  otherwise, so a definition that predates batching - no `batch` field at all
-  - is in "core" with NO data migration, and every existing variable behaves
-  exactly as it did. getDefaultValue(), clampNumber() and every other schema
-  helper never read or alter `batch`.
-- Batch membership is snapshotted per chat, inside entry.def in chat-state.js,
-  like every other definition field (Section 6: entry.def is a per-write
-  snapshot for inspection only and must never source a live decision).
-  Because setVar() and resetValueIfTypeChanged() snapshot the whole def they
-  are handed, `batch` travels with it automatically. The one gap this closes:
-  a caller that hands over a def with NO `batch` field (a legacy def, or the
-  minimal { name, type } stand-in applyIncrement() falls back to) would
-  replace the snapshot and silently drop the batch it previously recorded.
-  chat-state.js's keepSnapshotBatch() carries the previous snapshot's batch
-  forward in exactly that case, and only that case - a def that has its own
-  batch is stored as the very same object it always was, and the caller's def
-  is never copied or altered. The snapshot changes when the variable is next
-  WRITTEN, not when its batch is reassigned.
-- Batches are NOT presets. A preset is an arbitrary folder a user groups
-  variables into; a batch is a prompt scope. One preset's variables can sit in
-  any mix of batches, and a batch spans every preset (and every extension's
-  namespace) active in a chat. Nothing about batching creates, renames,
-  moves or binds a preset.
-- Which batch a prompt uses is decided from the LIVE definitions of the
-  presets active for the chat (getPresetsForChat / getAllVariablesFromPresets),
-  never from entry.def.
+- src/core/prompt-chunking.js: chunkPromptUnits(units, maxChars) - the one
+  pure, shared size-packing primitive. `units` is an array of
+  { def, kind: 'update'|'increment', line, size }; `size` is whatever the
+  caller measured (both current callers use their own rendered line's
+  character length). Greedy first-fit-in-order: fills the current chunk
+  until the NEXT unit would push it over budget, then starts a new one.
+  Never reorders units and never drops one - a single unit larger than the
+  whole budget still gets its own (oversized) chunk. Deliberately NOT the
+  one place that also builds the prompt-line TEXT: prompted-engine.js and
+  independent-presets.js keep their own separate, deliberately-duplicated
+  line-rendering (per this codebase's existing "don't share classification/
+  write logic between the two" convention - see independent-presets.js's own
+  header comment), each building its own `units` array and handing it to
+  this one shared packer.
+- The budget: settings.maxPromptedVariableChars (settings-core.js), the
+  character budget for ONE call's variable list. null means "not yet
+  computed" - getSettings() backfills it via
+  computeDefaultMaxPromptedVariableChars(context), which derives a default
+  from SillyTavern's configured context size exactly the way
+  computeDefaultMaxPromptHistoryMessages already does for chat-history
+  length (context.maxContext, tokens, converted with a rough ~4 chars/token
+  heuristic; only a THIRD of the window is budgeted to the variable list
+  itself, since chat history/header/rules/the model's own response share the
+  rest), clamped to [2000, 20000] characters so a tiny or huge context size
+  still yields something usable. A user override, once set, is never
+  recomputed.
+- Main prompted update (prompted-engine.js): classifyPromptedVariables()
+  (exported; the SAME update/increment/deterministic classification 1.20
+  used to gate by batch, now gating on nothing but the variable's own
+  behaviors) replaces selectBatchVariables() entirely - there is no batch
+  filter of any kind left. chunkPromptedVariables() builds the units, chunks
+  them, and runPromptedChunksSequentially() awaits each chunk's LLM call
+  before starting the next (never in parallel, avoiding several concurrent
+  background calls per message and keeping a predictable order). A chunk
+  that fails (a network error, an unparseable response) is logged and
+  contributes nothing to the totals, but never stops the remaining chunks
+  from still running. The overwhelming common case - everything fits in one
+  chunk - behaves byte-for-byte like the single-call flow always has: the
+  exact same status text, no "part 1 of 1" framing; that framing
+  ("Updating state (part N of M)…") only appears once chunking actually
+  produces more than one chunk, alongside one combined final status covering
+  every chunk's totals.
+- Independent presets (src/api/independent-presets.js): the SAME chunking
+  primitive, built from this file's own (deliberately still-separate) line
+  format. `config.batch` is gone from CONFIG_FIELDS and
+  getIndependentPresetStatus()'s returned shape; a run now reads
+  `Object.values(preset.variables || {})` - every variable in the preset
+  itself, unfiltered - instead of `selectBatchVariables(preset.variables,
+  batch)`. A genuine, incidental improvement this consolidation surfaced:
+  independent-presets.js's own classification never excluded image types
+  the way prompted-engine.js's always has, so an image variable with
+  behaviors.prompted somehow set (unreachable through the manager-modal UI,
+  which always forces it off for image types, but reachable through the raw
+  API) could previously have been asked about by an independent preset's
+  run and never by the main one - independent-presets.js's classification is
+  still its own separate copy (untouched, per the "don't share
+  classification" convention above), so this asymmetry was not fixed here
+  and remains a known, pre-existing gap, not something this pass closed.
+- No effect on anything else: deterministic increments, calculated-variable
+  evaluation, macros, and seeding are all untouched - chunking only ever
+  changes how many LLM calls a prompted update's variable pool becomes, never
+  which variables exist or how their values are written.
+- Manager modal: the independent-preset editor's "Batch" text field is
+  removed (src/ui/manager-modal/ui-templates.js), along with the status
+  line's `batch "..."` fragment - there is nothing left to configure.
 
-Main prompted update (prompted-engine.js):
-
-- The main prompted update asks the model only about variables in batch
-  "core" (and, since 1.21, "time" - where datetime variables live).
-  prompted-engine.js's selectBatchVariables(variables, batch = 'core') picks
-  them (`batch` may be a name or a list of names), and the existing classification (update / prompted increment /
-  deterministic) runs over that selection unchanged. A prompted variable in
-  any other batch is left out of the prompt, and is never updated by that
-  update even if the model answers for it. When every prompted variable is in
-  another batch, no LLM call is made at all.
-- Batching governs prompts only. It does not affect deterministic increments,
-  calculated-variable evaluation, macros, or seeding.
-- The main prompt is NOT assembled from batchPrompt("core"), and this is
-  deliberate. batchPrompt emits value-only lines (`name = JSON`), but each
-  line the main prompt sends the model also carries that variable's
-  constraint description, its current value, its instructions, and - for a
-  prompted increment - the "[true or false]" framing the response parsing
-  depends on. Swapping in batchPrompt would drop all of that and change what
-  the model is told, i.e. regress the prompted update, which 1.5 forbids. Only
-  the SELECTION of variables uses batching; the per-variable wording is
-  untouched. batchPrompt is for callers that want a compact state view -
-  independent presets are the intended consumer.
-- Independent presets (Section 3 / src/api/independent-presets.js) are what
-  batching is for: each is meant to build its prompt from batchPrompt() of its
-  own batch rather than from all variables. They do not do so yet.
-
-API (src/api/batching.js; exposed on stateEngine):
-
-  assignBatch(extensionId, instanceId, variableName, batchName)
-  removeBatch(extensionId, instanceId, variableName)
-  getBatch(batchName, chatId)
-  getBatches(chatId)
-  batchPrompt(batchName, chatId)
-
-- assignBatch moves one of the caller's variables into batchName and returns
-  the stored (whitespace-trimmed) name. removeBatch puts it back in "core".
-  Both replace the variable's definition object with a copy carrying the new
-  batch (never mutating it in place - the same rule updateVariable follows,
-  since a chat's entry.def can be the same object) and persist settings.
-- Validation, all before anything is written, all thrown as errors (never a
-  silent null): identity is enforced (a wrong, missing or non-string
-  instanceId throws `State Engine API call rejected: wrong instance`, checked
-  first); neither signature carries a namespace, so the target is the
-  caller's OWN namespace, and an extension that owns none throws `Extension
-  '<id>' does not own a namespace - call createNamespace() first`; the
-  variable must exist in the caller's namespace (given as the local name or
-  the stored `namespace__name`) - a variable in another namespace does not
-  exist as far as the caller is concerned, so one extension can never move
-  another's; batchName must be a non-empty string that is not whitespace-only
-  and contains no line break (it is written into a prompt heading, and a line
-  break would let a name start a new prompt line).
-- The same batch-name rule applies when `batch` arrives inside a definition
-  passed to createVariable() or a patch passed to updateVariable(); there an
-  invalid batch fails the call the way that module's other bad payloads do
-  (warn, return null) and nothing is written.
-- getBatch(batchName, chatId) returns [{ name, value, def }] for every
-  variable in that batch that is active for the chat - value is the stored
-  value (getVar), or the type default if it has not been seeded, and def is a
-  copy. getBatches(chatId) returns { batchName: [variableName, ...] } for
-  every active variable; only non-empty batches appear, and every active
-  variable appears in exactly one. batchPrompt(batchName, chatId) returns
-  `### <BATCH NAME>` (upper-cased) followed by one `name = JSON.stringify(value)`
-  line per variable in definition order - no chat transcript, no instructions,
-  and no variable from any other batch - or '' when the batch is empty so a
-  caller can skip it. A JSON-encoded value can never contain a raw line
-  break, so a value cannot start a new prompt line. Invalid arguments return
-  []/{}/'' rather than throwing.
-- The three read functions take no identity and are keyed by chat, not by
-  namespace: they expose every active variable's name and value, across all
-  namespaces, to any caller. That is inherent to a per-chat prompt scope and
-  differs from getVariable()/listVariables(), which are namespace-scoped.
-- No side effects: assigning, removing or reading a batch does not touch the
-  variable dependency graph (no recalculation, no edge changes), presets
-  (nothing created, renamed, deleted, bound or moved), chat-state values
-  (no setVar/seed/increment/delete; stored values and existing snapshots are
-  unchanged), macros, events, extension registration, or the capability
-  graph. The only change is one variable definition's `batch` field.
-
-Manager modal (src/ui/manager-modal/ui-events.js):
-
-- The inline editor has no batch field, and the definition it saves is built
-  as blankDefinition() plus the form's values - which would set `batch` back
-  to "core" on every edit and silently pull a variable that was assigned
-  elsewhere into the main prompt. The save handler therefore carries the
-  stored definition's batch over onto the rebuilt one. Batches are assigned
-  through the API; the editor neither shows nor changes them.
+Tests: tests/prompt-chunking.test.js (the pure packer, plus
+computeDefaultMaxPromptedVariableChars and getSettings()'s backfill of it),
+tests/prompted-engine-chunking.test.js (the main update: single-chunk
+fidelity, splitting, sequential ordering, per-chunk failure isolation,
+interim/final status text, increment variables chunking alongside update
+variables, the setting actually driving the split point), and a new describe
+block in tests/api/independent-presets.test.js (preset-scoped selection, no
+cross-preset leakage, the same chunking/isolation guarantees, including a
+genuine gap this pass found and closed in its OWN tests: a partially-
+successful multi-chunk run must report 'updated' with its real
+changedVariables list, never 'skipped-parse-error', just because one OTHER
+chunk among several failed - caught by mutation testing, not assumed).
+Every rule was verified by deliberately breaking it and confirming the
+suite catches the break (mutation testing) before being called done.
 
 1.21 Datetime Variables (2026-09-18)
 
@@ -1142,9 +1124,8 @@ Rules:
   are earlier dates.
 - A datetime variable references its calendar by ID: `calendar` on the
   definition (blankDefinition() sets "gregorian"). `unit` is "seconds" (the
-  only unit this engine stores). Both fields exist on every definition,
-  exactly as `batch` does, and mean nothing for any other type. The default
-  calendar is "gregorian".
+  only unit this engine stores). Both fields exist on every definition, and
+  mean nothing for any other type. The default calendar is "gregorian".
 - Calendar definitions live in settings.calendars (settings-core.js,
   DEFAULT_CALENDARS), keyed by id. getSettings() guarantees the "gregorian"
   entry exists, so the default reference can never dangle. A definition
@@ -1195,18 +1176,10 @@ Rules:
   prompted INCREMENT (the boolean-conditional kind) simply calls
   applyIncrement(), i.e. incrementScalar() with the configured delta. The
   prompt shows the model the current value as "YYYY-MM-DD HH:MM:SS".
-- Batch: datetime variables belong to batch "time" (variable-schema.js
-  TIME_BATCH). createVariable() puts them there unless the caller names a
-  batch, updateVariable() does so when a variable BECOMES a datetime without
-  the patch naming one, and the inline editor does the same for a variable
-  that becomes a datetime while still in "core".
-  CHANGE TO 1.20: 1.20 said the main prompted update asks only about batch
-  "core", which would have left every prompted datetime variable (in "time")
-  unreachable by the main update and made the prompted-increment rule above
-  pointless. The main update now selects batches "core" AND "time"
-  (selectBatchVariables accepts a batch name or a list of them; its default is
-  still just "core"). Any other batch is still excluded, so a datetime the
-  caller moved to another batch is left out.
+- No separate scope: a prompted or prompted-increment datetime variable is
+  reachable by the main update on exactly the same terms as any other type
+  (1.20, rewritten 2026-09-22 - there is no "batch" concept left at all for
+  a datetime, or anything else, to belong to or be excluded from).
 - Validation and coercion (variable-validation.js): validateValueStrict() and
   coerceValue() accept a finite number, a numeric string ("3600" - the
   tracker's text field supplies numbers as text) as that number, and an ISO
@@ -1239,8 +1212,8 @@ Rules:
   on a typo would be a silent loss). The manager-modal inline editor shows the
   default as an ISO string and saves it as scalar seconds; it offers a "Date
   & time" type and an "Advance by" field for the delta. The editor has no
-  unit field - the stored one is carried over on save, the same way `batch`
-  is. Since 1.22 it has a calendar selector while the type is datetime.
+  unit field - the stored one is carried over on save. Since 1.22 it has a
+  calendar selector while the type is datetime.
 
 Fantasy calendars (bones only in 1.21, implemented in 1.22):
 
@@ -1931,18 +1904,19 @@ variable-api.js (createVariable/updateVariable validation).
 
 Formalizes "independent preset" (a preset whose prompted update runs on its own
 call, `runIndependentPreset`, instead of the per-message trigger flow) with a
-first-class flag, per-preset enabled/disabled, variable batch selection, the
+first-class flag, per-preset enabled/disabled, variable scoping, the
 independent-context modes, and run status. Code: src/api/independent-presets.js.
 Full design, every deviation from the request, and what is deferred:
 docs/STATE ENGINE API SPECIFICATION.md Section 13.
 
 - preset.independentPreset (boolean, default false) - a plain flag, not a
   parallel storage system; a preset already has everything one needs.
-- preset.independentConfig gains batch (which variable batch - 1.20 - this
-  preset's run selects from, default "core"; FIXES a real gap where every
-  prompted/incrementable variable in the preset was used with no batch
-  filtering at all) and enabled (false suspends every execution path,
-  checked before the concurrency lock).
+- preset.independentConfig gains enabled (false suspends every execution
+  path, checked before the concurrency lock). It originally also gained
+  `batch` (which named batch - 1.20's ORIGINAL design - this preset's run
+  selected from); 1.20's 2026-09-22 rewrite removed batching entirely, and
+  with it this field - a run now always operates on EVERY prompted/
+  incrementable variable in the preset itself, with nothing to configure.
 - Independent context (context: any | undefined, request Section 3): three
   modes derived from whether/how updateIndependentPresetContext() was called -
   never called -> chat-history (the existing transcript, unchanged); called
@@ -1954,7 +1928,7 @@ docs/STATE ENGINE API SPECIFICATION.md Section 13.
   deleteIndependentPreset/listIndependentPresets/toggleIndependentPreset) all
   require preset.independentPreset === true and compose preset-api.js's
   existing, already-tested preset CRUD - never a second implementation.
-  getIndependentPresetStatus() (open read) reports enabled/batch/contextMode/
+  getIndependentPresetStatus() (open read) reports enabled/contextMode/
   lastRunAt/lastOutcome/lastError/changedVariables, written on every exit path
   of runIndependentPreset (including early refusals), not just a successful run.
 - Deviation: runIndependentPreset itself is NOT gated on independentPreset -
@@ -1968,10 +1942,10 @@ docs/STATE ENGINE API SPECIFICATION.md Section 13.
   context is dropped from an export with a warning rather than failing it.
 - Manager modal UI (2026-09-21, second pass, API spec Section 13.9): the
   Presets tab gained "Regular Presets" / "Independent Presets" subtabs. Each
-  independent-preset row shows its enabled state, context mode, batch and
+  independent-preset row shows its enabled state, context mode and
   last-run summary; its editor has enabled toggle, model (a live connection-
   profile picker), temperature, max tokens, a new per-preset history-limit
-  override, batch, a prompt textarea, a READ-ONLY context indicator (context
+  override, a prompt textarea, a READ-ONLY context indicator (context
   is extension-owned - not something the UI lets a human set), an honest
   "not available yet" note where triggers/schedule will go, Run Now, and the
   status block. Clone and Export reuse the regular-preset buttons unchanged -
@@ -2688,8 +2662,7 @@ write‑path (setVar, applyIncrement)
 
 macro mirroring
 
-carrying a snapshot's batch forward when a def with no batch replaces it
-(keepSnapshotBatch, 1.20) - nothing else about batching lives here
+datetime mode normalization on write (normalizeForDatetimeMode, 1.36)
 
 macro-store.js
 macro store operations (getMacroValue, setMacroValue, deleteMacroValue,
@@ -2698,13 +2671,13 @@ macroStore). Named "macro", not "var", deliberately - this is the
 outside chat-state.js should call these directly.
 
 prompted-engine.js
-selecting only batch "core" and "time" variables for the main prompted update
-(selectBatchVariables, 1.20/1.21)
+classifying every prompted/incrementable variable across the chat's active
+presets, with no batch/scope filtering of any kind (classifyPromptedVariables,
+1.20 rewritten 2026-09-22), and splitting an oversized set into several
+sequential LLM calls (chunkPromptedVariables, prompt-chunking.js, 1.20)
 
 turning a datetime variable's answer into a scalar via calendar-engine.js
 (1.21)
-
-classification of prompted variables
 
 LLM‑driven updates
 

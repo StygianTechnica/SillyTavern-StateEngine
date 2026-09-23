@@ -23,14 +23,11 @@ const GUARDED = [
     'registerExtension', 'createNamespace',
     // capability graph writers (target namespace = the caller's own record)
     'declareCapabilities', 'declareDependencies',
-    // variable batching writers (target namespace = the caller's own record)
-    'assignBatch', 'removeBatch',
 ];
 // Public, unguarded: the registry itself, and read-only introspection.
 const UNGUARDED = [
     'unregisterExtension', 'getRegisteredExtensions', 'getExtensionRegistration', 'getNamespaces',
     'getCapabilityGraph', 'getExtensionsProviding', 'getExtensionCapabilities', 'getExtensionDependencies',
-    'getBatch', 'getBatches', 'batchPrompt',
     'validateNamespace', 'ownsNamespace', 'getDependencies', 'getDependents',
 ];
 
@@ -238,65 +235,6 @@ describe('state-engine-api facade', () => {
             expect(Object.keys(stateEngine.getCapabilityGraph())).toEqual(['se']);
             expect(stateEngine.getExtensionsProviding('ui.panel')).toEqual([]);
             expect(stateEngine.getExtensionCapabilities('pp')).toEqual([]);
-        });
-    });
-
-    describe('batch discovery', () => {
-        const setup = () => {
-            registerNamespaces('pp', 'zz');
-            stateEngine.createPreset('pp', instanceId, { namespace: 'pp', name: 'Demo' });
-            stateEngine.activatePreset('pp', instanceId, 'chat-1', 'pp', 'Demo');
-            stateEngine.createVariable('pp', instanceId, { namespace: 'pp', presetName: 'Demo', name: 'hp', type: 'number', defaultValue: 10 });
-            stateEngine.createVariable('pp', instanceId, { namespace: 'pp', presetName: 'Demo', name: 'mood', type: 'string', defaultValue: 'calm' });
-            stateEngine.createPreset('zz', instanceId, { namespace: 'zz', name: 'Other' });
-            stateEngine.activatePreset('zz', instanceId, 'chat-1', 'zz', 'Other');
-            stateEngine.createVariable('zz', instanceId, { namespace: 'zz', presetName: 'Other', name: 'gold', type: 'number', defaultValue: 5 });
-        };
-
-        it('every variable starts in "core", and getBatches discovers them across namespaces', () => {
-            setup();
-            expect(stateEngine.getBatches('chat-1')).toEqual({ core: ['pp__hp', 'pp__mood', 'zz__gold'] });
-        });
-
-        it('an extension assigns its own variables to a batch; any caller can then discover and prompt it', () => {
-            setup();
-            stateEngine.assignBatch('pp', instanceId, 'mood', 'flavor');
-            stateEngine.assignBatch('zz', instanceId, 'gold', 'flavor');
-
-            expect(stateEngine.getBatches('chat-1')).toEqual({ core: ['pp__hp'], flavor: ['pp__mood', 'zz__gold'] });
-            expect(stateEngine.getBatch('flavor', 'chat-1').map((v) => [v.name, v.value])).toEqual([['pp__mood', 'calm'], ['zz__gold', 5]]);
-            expect(stateEngine.batchPrompt('flavor', 'chat-1')).toBe('### FLAVOR\npp__mood = "calm"\nzz__gold = 5');
-            expect(stateEngine.batchPrompt('core', 'chat-1')).toBe('### CORE\npp__hp = 10');
-        });
-
-        it('batch discovery is open but assignment is private: one extension cannot move another\'s variable', () => {
-            setup();
-            expect(() => stateEngine.assignBatch('pp', instanceId, 'zz__gold', 'flavor')).toThrow(/does not exist in namespace 'pp'/);
-            expect(stateEngine.getBatches('chat-1').core).toContain('zz__gold');
-        });
-
-        it('removeBatch returns a variable to "core"', () => {
-            setup();
-            stateEngine.assignBatch('pp', instanceId, 'mood', 'flavor');
-            stateEngine.removeBatch('pp', instanceId, 'mood');
-            expect(stateEngine.getBatches('chat-1')).toEqual({ core: ['pp__hp', 'pp__mood', 'zz__gold'] });
-        });
-
-        it('unregistering an extension takes its variables (and so its batches) out of discovery', () => {
-            setup();
-            stateEngine.assignBatch('zz', instanceId, 'gold', 'flavor');
-            stateEngine.unregisterExtension('zz');
-            expect(stateEngine.getBatches('chat-1')).toEqual({ core: ['pp__hp', 'pp__mood'] });
-            expect(stateEngine.getBatch('flavor', 'chat-1')).toEqual([]);
-        });
-
-        it('batching is independent of extension registration and the capability graph', () => {
-            setup();
-            stateEngine.registerExtension('pp', instanceId, { namespace: 'pp', variables: ['pp__hp'], capabilities: ['stats'] });
-            const graph = JSON.stringify(stateEngine.getCapabilityGraph());
-            stateEngine.assignBatch('pp', instanceId, 'hp', 'vitals');
-            expect(JSON.stringify(stateEngine.getCapabilityGraph())).toBe(graph);
-            expect(stateEngine.getExtensionRegistration('pp').variables).toEqual(['pp__hp']);
         });
     });
 

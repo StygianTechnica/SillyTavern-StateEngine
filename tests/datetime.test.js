@@ -1340,12 +1340,22 @@ describe('datetime variables', () => {
                 'HOW to convert scalar time to structured time',
                 'incrementScalar', 'toStructured', 'fromStructured', 'getCalendar',
                 'Deterministic increments', 'Prompted increments',
-                'batch "time"',
                 'sees a datetime as a number', 'no datetime',
                 'UI', 'calendar.toStructured()',
             ]) {
                 expect(section, phrase).toContain(phrase);
             }
+        });
+
+        // Requirements spec 1.20 (rewritten 2026-09-22): datetime variables
+        // no longer have a separate "batch" scope to belong to - the whole
+        // named-batching system was removed and replaced with automatic
+        // prompt chunking (tests/prompt-chunking.test.js,
+        // tests/prompted-engine-chunking.test.js). A datetime is reachable
+        // by the main update on the exact same terms as any other type.
+        it('no longer mentions a datetime-specific batch, now that batching itself is gone', () => {
+            expect(section).not.toMatch(/batch\s+"time"/);
+            expect(section).not.toContain('TIME_BATCH');
         });
 
         it('documents that fantasy calendars are pluggable and points to 1.22 for their implementation', () => {
@@ -1355,8 +1365,7 @@ describe('datetime variables', () => {
             expect(fantasy).toMatch(/still\s+refused/);
         });
 
-        it('records the 1.20 batching change and lists calendar-engine.js among the modules', () => {
-            expect(section).toContain('CHANGE TO 1.20');
+        it('lists calendar-engine.js among the modules', () => {
             expect(spec).toMatch(/^calendar-engine\.js$/m);
         });
     });

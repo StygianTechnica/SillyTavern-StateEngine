@@ -154,7 +154,7 @@ describe('the Scheduling section', () => {
     // way tests/calculated-datetime-ui.test.js's "the editor template" block
     // tests a template function in isolation from the full render pipeline.
     describe('the Calendar dropdown (template-level, isolated from the always-present built-ins)', () => {
-        const statusFor = () => ({ enabled: true, batch: 'core', contextMode: 'chat-history', lastRunAt: null, lastOutcome: 'never-run', lastError: null, changedVariables: [] });
+        const statusFor = () => ({ enabled: true, contextMode: 'chat-history', lastRunAt: null, lastOutcome: 'never-run', lastError: null, changedVariables: [] });
         const presetFor = () => ({ name: 'Indy', description: '', independentConfig: {} });
 
         it('is absent when only the built-in Gregorian calendar exists', () => {
