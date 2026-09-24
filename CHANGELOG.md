@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased — Variable Value API, cross-namespace activation
+
+**Added**
+
+- **Variable Value API** (`src/api/variable-value-api.js`; API Reference 6.5, spec Section 19),
+  for extensions that display State Engine state:
+  - `listAllVariables(extensionId, instanceId, chatId?)` — every preset in every namespace,
+    grouped, with display-only variable definitions and (given a chat) whether each preset is
+    active there.
+  - `getVariableValue` / `getVariableValues` — current values by qualified name, any namespace.
+  - `setVariableValue` — write a value for one of your OWN variables (refuses calculated ones).
+- **`state_engine_variables_changed`** is emitted on SillyTavern's `eventSource` whenever
+  variable values are saved (one event per chat per burst of writes), so displays can stay
+  live without polling.
+
+**Changed**
+
+- **`activatePreset` / `deactivatePreset` work on any namespace's preset.** Binding a preset to
+  a chat changes nothing about the preset, so it no longer requires owning its namespace — only
+  a registered caller on the right instance. Editing presets and variables stays owner-only.
+
+**Tests:** 42 files, 1811 tests (new: `tests/api/variable-value-api.test.js`,
+`tests/variable-change-signal.test.js`; identity tests updated for cross-namespace activation).
+
 ## Unreleased — Choose how a new chat starts
 
 **Changed**
