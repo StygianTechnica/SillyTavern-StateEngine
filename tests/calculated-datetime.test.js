@@ -239,16 +239,21 @@ describe('calculated-datetime extension', () => {
         });
 
         // Datetime mode (requirements spec 1.36): a deltaSource jump writes
-        // through the SAME setVar() every write path shares, so a
-        // dateOnly/timeOnly target normalizes exactly like any other write -
-        // confirmed here rather than assumed, since this deltaSource path is
-        // otherwise untouched by 1.36 (no code in calculated-engine.js
-        // changed for this feature at all).
+        // through the SAME setVar() every write path shares, so a timeOnly
+        // target normalizes exactly like any other write, and a dateOnly
+        // target keeps the time it accumulated.
         it('a deltaSource jump normalizes for the target\'s datetimeMode, same as any other write', () => {
+            createDeltaSource('jump');
+            createDatetime('clock', { defaultValue: ts(1970, 1, 1, 10), datetimeMode: 'timeOnly', deltaSource: 'pp__jump' });
+            setDelta('jump', '30 hours');
+            expect(stored('clock')).toBe(ts(1970, 1, 1, 16)); // time advanced, date pinned
+        });
+
+        it('a deltaSource jump on a "Date only" target keeps its accumulated time', () => {
             createDeltaSource('jump');
             createDatetime('clock', { defaultValue: ts(2026, 9, 18), datetimeMode: 'dateOnly', deltaSource: 'pp__jump' });
             setDelta('jump', '30 hours');
-            expect(stored('clock')).toBe(ts(2026, 9, 19)); // rolled forward a day, time truncated
+            expect(stored('clock')).toBe(ts(2026, 9, 19, 6));
         });
 
         it('each datetime keeps its own calendar for parsing (fantasy calendar delta)', () => {

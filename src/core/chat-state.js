@@ -378,9 +378,9 @@ export function setVar(chatId, varName, value, def, { manual = false } = {}) {
         // strings (sanitizeImageValue) - "must be strings", nothing more.
         // Datetime mode (requirements spec 1.36): every write path in this
         // codebase funnels through setVar (this function's own header
-        // comment), so normalizing here - a dateOnly/timeOnly variable's
-        // value ALWAYS gets its irrelevant half truncated away, "after each
-        // update" per the request - covers every caller (prompted-engine.js's
+        // comment), so normalizing here - a timeOnly variable's date is
+        // ALWAYS pinned back to the reference day (dateOnly is display-only
+        // and passes through untouched) - covers every caller (prompted-engine.js's
         // direct write, calculated-engine.js's deltaSource jump, the
         // tracker's manual edit, seeding) for free, with no change needed at
         // any of them. Only applies to an already-numeric scalar - every

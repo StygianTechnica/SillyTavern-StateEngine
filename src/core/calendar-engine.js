@@ -275,35 +275,29 @@ export function formatScalar(calendarId, scalarTime, style = 'full') {
 // ---------------------------------------------------------------------------
 // Datetime mode (requirements spec 1.36): a datetime variable can be
 // restricted to only its date ('dateOnly') or only its time-of-day
-// ('timeOnly') instead of the default 'full'. Rather than restricting what
-// deltas/answers are accepted (which would need the delta parser above to
-// track day-magnitude and time-magnitude contributions separately - it
-// currently doesn't; "3 days" and "72 hours" both collapse into the same
-// `parsed.seconds`, see parseDeltaFor), every existing input path (a
-// relative delta, an absolute date/time answer, a semantic time-of-day
-// phrase) is left completely unchanged and simply run through the ordinary
-// engine as it always has; the RESULT is then normalized here - the single
-// post-processing step every write path (chat-state.js's setVar/
-// applyIncrement) applies right before storing. This is symmetric and
-// mirror-imaged between the two modes: 'dateOnly' truncates the time-of-day
-// to 00:00:00, keeping the date whatever it resolved to (so "advance 30
-// hours" naturally rolls the date forward by a day, via ordinary scalar
-// arithmetic, before the truncation drops the leftover 6 hours - no special
-// "roll over 24h" logic needed, it falls out of applying the full delta
-// first); 'timeOnly' truncates the DATE back to the calendar's own
-// reference moment (day 0 - 1970-01-01 for Gregorian, year 1 month 1 day 1
-// for a fantasy calendar), keeping whatever time-of-day resolved (so "the
-// next morning"'s day-advance component has no visible effect, exactly as
-// "ignore day/week/month/year deltas" describes, without needing to reject
-// those units at parse time).
+// ('timeOnly') instead of the default 'full'. Every input path (a relative
+// delta, an absolute date/time answer, a semantic time-of-day phrase) is
+// left unchanged and run through the ordinary engine; the RESULT is then
+// normalized here - the single post-processing step every write path
+// (chat-state.js's setVar/applyIncrement) applies right before storing.
+//
+// 'dateOnly' is a DISPLAY choice only and is never normalized: the stored
+// moment keeps its time-of-day, so small deltas ("advance 1 hour" every
+// message) accumulate and roll the date forward once they add up to a day,
+// instead of being truncated back to midnight after every write. Displays
+// (tracker, macros, extensions) show just the date.
+//
+// 'timeOnly' truncates the DATE back to the calendar's own reference moment
+// (day 0 - 1970-01-01 for Gregorian, year 1 month 1 day 1 for a fantasy
+// calendar), keeping whatever time-of-day resolved (so "the next morning"'s
+// day-advance component has no visible effect, exactly as "ignore
+// day/week/month/year deltas" describes, without needing to reject those
+// units at parse time).
 export function normalizeForDatetimeMode(calendarId, scalarTime, datetimeMode) {
-    if (datetimeMode !== 'dateOnly' && datetimeMode !== 'timeOnly') return scalarTime;
+    if (datetimeMode !== 'timeOnly') return scalarTime;
     if (typeof scalarTime !== 'number' || !Number.isFinite(scalarTime)) return scalarTime;
     try {
         const s = toStructured(calendarId, scalarTime);
-        if (datetimeMode === 'dateOnly') {
-            return fromStructured(calendarId, { year: s.year, month: s.month, day: s.day, hour: 0, minute: 0, second: 0 });
-        }
         const ref = toStructured(calendarId, 0);
         return fromStructured(calendarId, { year: ref.year, month: ref.month, day: ref.day, hour: s.hour, minute: s.minute, second: s.second });
     } catch {

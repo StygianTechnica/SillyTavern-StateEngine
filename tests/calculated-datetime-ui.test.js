@@ -276,15 +276,27 @@ describe('the manager modal: saving a datetime\'s datetimeMode', () => {
         $('#se-manager-new-variable').trigger('click');
         editor().find('[data-field="name"]').val('clock');
         editor().find('[data-field="type"]').val('datetime').trigger('change');
+        editor().find('[data-field="datetimeMode"]').val('timeOnly');
+        editor().find('[data-field="defaultValue"]').val('2026-09-18 22:00:00');
+        editor().find('.se-manager-save-variable-inline').trigger('click');
+
+        expect(stored('se__clock')).toMatchObject({ datetimeMode: 'timeOnly' });
+        // The date portion is pinned in the DEFAULT itself at save time,
+        // not just on the next write (schema/validation, tests/datetime.test.js).
+        expect(stored('se__clock').defaultValue).toBe(22 * 3600);
+        expect(globalThis.alert).not.toHaveBeenCalled();
+    });
+
+    it('"Date only" keeps the default\'s time - it is a display choice only', () => {
+        $('#se-manager-new-variable').trigger('click');
+        editor().find('[data-field="name"]').val('clock');
+        editor().find('[data-field="type"]').val('datetime').trigger('change');
         editor().find('[data-field="datetimeMode"]').val('dateOnly');
         editor().find('[data-field="defaultValue"]').val('2026-09-18 22:00:00');
         editor().find('.se-manager-save-variable-inline').trigger('click');
 
         expect(stored('se__clock')).toMatchObject({ datetimeMode: 'dateOnly' });
-        // The time portion is dropped from the DEFAULT itself at save time,
-        // not just on the next write (schema/validation, tests/datetime.test.js).
-        expect(stored('se__clock').defaultValue).toBe(Date.UTC(2026, 8, 18) / 1000);
-        expect(globalThis.alert).not.toHaveBeenCalled();
+        expect(stored('se__clock').defaultValue).toBe(Date.UTC(2026, 8, 18, 22) / 1000);
     });
 
     it('defaults to "full" when left untouched', () => {
@@ -296,25 +308,15 @@ describe('the manager modal: saving a datetime\'s datetimeMode', () => {
         expect(stored('se__clock')).toMatchObject({ datetimeMode: 'full' });
     });
 
-    // The "Semantic time of day" section only re-renders when the TYPE field
-    // changes (not datetimeMode - no live-narrowing UI for this pass), so
-    // switching datetimeMode to "dateOnly" within the same edit session
-    // leaves a now-stale, still-visible timeSemanticMode select in the DOM.
-    // The save handler must still force it off regardless of what that
-    // stale control holds - proving the fix does not depend on the DOM
-    // having already hidden the field.
-    it('switching to "Date only" forces timeSemanticMode off at save time, even from a stale visible control', () => {
+    it('"Date only" keeps a chosen timeSemanticMode - its time-of-day still advances', () => {
         addVar('clock', { name: 'se__clock', type: 'datetime', datetimeMode: 'full', timeSemanticMode: 'semanticTimeOfDay' });
         rerenderVariablesTab();
 
         $('.se-manager-edit-variable[data-var-id="clock"]').trigger('click');
-        expect(editor().find('[data-field="timeSemanticMode"]').val()).toBe('semanticTimeOfDay');
         editor().find('[data-field="datetimeMode"]').val('dateOnly');
-        // The stale control is still present and still says "on" - not reset by the DOM itself.
-        expect(editor().find('[data-field="timeSemanticMode"]').val()).toBe('semanticTimeOfDay');
         editor().find('.se-manager-save-variable-inline').trigger('click');
 
-        expect(stored('se__clock')).toMatchObject({ datetimeMode: 'dateOnly', timeSemanticMode: 'none' });
+        expect(stored('se__clock')).toMatchObject({ datetimeMode: 'dateOnly', timeSemanticMode: 'semanticTimeOfDay' });
     });
 
     it('"Time only" and "full" keep whatever timeSemanticMode was chosen', () => {

@@ -96,8 +96,8 @@ function imageMapKeyValue(def, variables, context) {
 // format() refuses is shown as stored rather than breaking the panel.
 // Datetime mode (requirements spec 1.36): "dateOnly" suppresses the time
 // portion of the tracker's display, "timeOnly" suppresses the date - the
-// stored scalar is already normalized (chat-state.js's setVar), so this is
-// purely a display choice, matching formatValueForDisplay's own gate.
+// stored scalar keeps its time for dateOnly and is date-normalized for
+// timeOnly (chat-state.js's setVar), so this is purely a display choice, matching formatValueForDisplay's own gate.
 function datetimeText(def, scalar) {
     const style = def.datetimeMode === 'dateOnly' ? 'date' : def.datetimeMode === 'timeOnly' ? 'time' : 'full';
     try {
@@ -110,15 +110,14 @@ function datetimeText(def, scalar) {
 // What the tracker edit box starts with. Always the numeric ISO form, which
 // every calendar can read back (a fantasy calendar's own pattern - an era, a
 // month name - need not be parseable), so committing an untouched box never
-// fails. "Date only"/"Time only" (1.36) show just their meaningful half,
-// so the box never invites editing the part that gets normalized away
-// anyway; resolveTrackerEdit()'s BARE_TIME handling is what lets a bare
-// "timeOnly" box round-trip back through the same, unmodified ISO parser.
+// fails. "Time only" (1.36) shows just the time - its date is normalized
+// away anyway; resolveTrackerEdit()'s BARE_TIME handling is what lets that
+// bare box round-trip back through the same, unmodified ISO parser. "Date
+// only" shows the full moment: its time is hidden but still stored (and
+// still advancing), so editing just the date must not silently drop it.
 function datetimeEditText(def, scalar) {
     try {
-        const pattern = def.datetimeMode === 'dateOnly' ? 'YYYY-MM-DD'
-            : def.datetimeMode === 'timeOnly' ? 'HH:mm:ss'
-                : 'YYYY-MM-DD HH:mm:ss';
+        const pattern = def.datetimeMode === 'timeOnly' ? 'HH:mm:ss' : 'YYYY-MM-DD HH:mm:ss';
         return format(def.calendar || DEFAULT_CALENDAR_ID, Number(scalar), { style: 'custom', pattern });
     } catch {
         return scalar ?? '';

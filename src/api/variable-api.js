@@ -89,10 +89,10 @@ function checkedDatetime(def, fnName, preset) {
     // Datetime mode (requirements spec 1.36): validated the same way
     // timeSemanticMode is (a fixed choice, not free text). The default
     // itself is normalized here too, not just at runtime writes (chat-
-    // state.js's setVar/applyIncrement) - so a dateOnly/timeOnly variable
-    // never even STARTS with an inconsistent stored default (a defaultValue
-    // typed as "2026-09-18 22:00" for a dateOnly variable becomes
-    // "2026-09-18 00:00" on save, not just on its first update).
+    // state.js's setVar/applyIncrement) - so a timeOnly variable never even
+    // STARTS with an inconsistent stored default (a defaultValue typed as
+    // "2026-09-18 22:00" becomes "1970-01-01 22:00" on save). dateOnly is
+    // display-only and keeps the default as typed.
     if (def.datetimeMode !== undefined && def.datetimeMode !== 'full' && def.datetimeMode !== 'dateOnly' && def.datetimeMode !== 'timeOnly') {
         return { ok: false, error: `${fnName}: datetimeMode must be "full", "dateOnly" or "timeOnly" (got ${JSON.stringify(def.datetimeMode)})` };
     }
@@ -141,16 +141,9 @@ function checkedDatetime(def, fnName, preset) {
     }
     def.timeSemanticMode = def.timeSemanticMode === 'semanticTimeOfDay' ? 'semanticTimeOfDay' : 'none';
 
-    // "Add optional semantic time of day support for timeOnly and full
-    // modes" (1.36) - a dateOnly variable has no time-of-day to interpret a
-    // semantic phrase INTO (it is normalized away, above), and the request
-    // is explicit that dateOnly must "ignore semantic time of day phrases"
-    // outright, not merely have them resolve to a no-op. Forced off here
-    // (the one place both fields are validated together), not just gated at
-    // the prompted-engine.js call site, so the stored definition is never
-    // self-contradictory (an "on" toggle the UI would otherwise still show
-    // as active for a mode that can never actually use it).
-    if (def.datetimeMode === 'dateOnly') def.timeSemanticMode = 'none';
+    // Semantic time of day works in every datetime mode: a dateOnly
+    // variable still stores (and accumulates) its time-of-day, it just
+    // doesn't show it, so "the next morning" moves it to the next day.
 
     return { ok: true };
 }

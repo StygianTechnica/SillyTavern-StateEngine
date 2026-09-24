@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased — "Date only" datetimes keep advancing
+
+**Changed**
+
+- **Datetime mode "Date only" is now display-only.** It used to truncate the stored value to
+  midnight after every write, so a small tick ("1h" per message) or a prompted "advance 2 hours"
+  was thrown away and the date never moved. The stored moment now keeps its time-of-day and
+  accumulates normally; the tracker, `{{getvar}}` display and extensions show just the date.
+  "Time only" is unchanged (its date is still pinned to the calendar's reference day).
+- "Semantic time of day" is now offered for "Date only" variables too ("the next morning" moves
+  to the next day).
+- The tracker's edit box for a "Date only" variable shows the full date and time, so an edit
+  never silently drops the hidden time.
+
 ## Unreleased — Number limits in the editor; image resolution API
 
 **Added**

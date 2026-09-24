@@ -523,11 +523,20 @@ describe('datetime variables', () => {
             // every other test in this describe block for datetime mode
             // exercises (tests/harness/chat-state.mock.js mirrors this same
             // rule, for those other suites).
-            it('normalizes a "dateOnly" tick, exactly like setVar does', () => {
-                const d = { ...def(), datetimeMode: 'dateOnly' };
-                realChatState.setVar('chat-1', 'when', ts(2026, 9, 18), d);
+            it('normalizes a "timeOnly" tick, exactly like setVar does', () => {
+                const d = { ...def(), datetimeMode: 'timeOnly' };
+                realChatState.setVar('chat-1', 'when', ts(1970, 1, 1, 10), d);
                 realChatState.applyIncrement('chat-1', 'when', '30h', d);
+                expect(realChatState.loadChatState('chat-1').variables.when.value).toBe(ts(1970, 1, 1, 16));
+            });
+
+            it('lets a "dateOnly" tick accumulate its time-of-day', () => {
+                const d = { ...def(), datetimeMode: 'dateOnly' };
+                realChatState.setVar('chat-1', 'when', ts(2026, 9, 18, 23), d);
+                realChatState.applyIncrement('chat-1', 'when', '1h', d);
                 expect(realChatState.loadChatState('chat-1').variables.when.value).toBe(ts(2026, 9, 19));
+                realChatState.applyIncrement('chat-1', 'when', '1h', d);
+                expect(realChatState.loadChatState('chat-1').variables.when.value).toBe(ts(2026, 9, 19, 1));
             });
         });
 
@@ -895,15 +904,12 @@ describe('datetime variables', () => {
 
     describe('datetime mode (spec 1.36)', () => {
         describe('calendar-engine.normalizeForDatetimeMode', () => {
-            it('"full" (and anything not "dateOnly"/"timeOnly") is a pure no-op', () => {
+            it('"full", "dateOnly" (display-only) and anything but "timeOnly" are a pure no-op', () => {
                 const t = ts(2026, 9, 18, 22, 55, 30);
                 expect(normalizeForDatetimeMode('gregorian', t, 'full')).toBe(t);
+                expect(normalizeForDatetimeMode('gregorian', t, 'dateOnly')).toBe(t);
                 expect(normalizeForDatetimeMode('gregorian', t, undefined)).toBe(t);
                 expect(normalizeForDatetimeMode('gregorian', t, 'bogus')).toBe(t);
-            });
-
-            it('"dateOnly" truncates the time-of-day to 00:00:00, keeping the date', () => {
-                expect(normalizeForDatetimeMode('gregorian', ts(2026, 9, 18, 22, 55, 30), 'dateOnly')).toBe(ts(2026, 9, 18));
             });
 
             it('"timeOnly" pins the date to the calendar\'s reference moment (day 0), keeping the time', () => {
@@ -921,20 +927,10 @@ describe('datetime variables', () => {
                 expect(toStructured('fantasy', normalized)).toMatchObject({ year: 1, month: 1, day: 1, hour: 14, minute: 0, second: 0 });
             });
 
-            it('rolls the date forward naturally when a "dateOnly" scalar already carries more than 24h worth of seconds - no special-cased rollover logic needed', () => {
-                // Applying a 30-hour delta first (ordinary scalar arithmetic,
-                // unrestricted - 1.36's own design note) already lands on
-                // day+1 at 06:00; normalizing then just drops that leftover
-                // 6 hours, which is what "roll the date forward when
-                // accumulated time exceeds 24 hours" describes as an outcome.
-                const advanced = incrementScalar('gregorian', ts(2026, 9, 18), '30h');
-                expect(normalizeForDatetimeMode('gregorian', advanced, 'dateOnly')).toBe(ts(2026, 9, 19));
-            });
-
             it('a non-number scalar or an unknown calendar passes through unchanged rather than throwing', () => {
-                expect(normalizeForDatetimeMode('gregorian', NaN, 'dateOnly')).toBeNaN();
-                expect(normalizeForDatetimeMode('gregorian', undefined, 'dateOnly')).toBeUndefined();
-                expect(normalizeForDatetimeMode('nope', 1000, 'dateOnly')).toBe(1000);
+                expect(normalizeForDatetimeMode('gregorian', NaN, 'timeOnly')).toBeNaN();
+                expect(normalizeForDatetimeMode('gregorian', undefined, 'timeOnly')).toBeUndefined();
+                expect(normalizeForDatetimeMode('nope', 1000, 'timeOnly')).toBe(1000);
             });
         });
 
@@ -955,22 +951,17 @@ describe('datetime variables', () => {
                 expect(console.warn).toHaveBeenCalledWith(expect.any(String), expect.stringContaining('datetimeMode'));
             });
 
-            it('normalizes defaultValue at save time - "Date only"/"Time only" never even START inconsistent', () => {
-                expect(create('a', { datetimeMode: 'dateOnly', defaultValue: '2026-09-18 22:00' }).defaultValue).toBe(ts(2026, 9, 18));
+            it('normalizes a "Time only" defaultValue at save time; "Date only" keeps it as typed', () => {
+                expect(create('a', { datetimeMode: 'dateOnly', defaultValue: '2026-09-18 22:00' }).defaultValue).toBe(ts(2026, 9, 18, 22));
                 expect(create('b', { datetimeMode: 'timeOnly', defaultValue: '2026-09-18 22:00' }).defaultValue).toBe(ts(1970, 1, 1, 22));
-                expect(stored('a')).toBe(ts(2026, 9, 18)); // seeded from the already-normalized default
-                expect(stored('b')).toBe(ts(1970, 1, 1, 22));
+                expect(stored('a')).toBe(ts(2026, 9, 18, 22));
+                expect(stored('b')).toBe(ts(1970, 1, 1, 22)); // seeded from the already-normalized default
             });
 
-            it('"Date only" forces timeSemanticMode to "none", even if both were requested together - it can never use it', () => {
-                const def = create('clock', { datetimeMode: 'dateOnly', timeSemanticMode: 'semanticTimeOfDay' });
-                expect(def.timeSemanticMode).toBe('none');
-                expect(live('clock').timeSemanticMode).toBe('none');
-            });
-
-            it('"Time only" and "full" may combine freely with timeSemanticMode', () => {
+            it('every mode may combine freely with timeSemanticMode', () => {
                 expect(create('a', { datetimeMode: 'timeOnly', timeSemanticMode: 'semanticTimeOfDay' }).timeSemanticMode).toBe('semanticTimeOfDay');
                 expect(create('b', { datetimeMode: 'full', timeSemanticMode: 'semanticTimeOfDay' }).timeSemanticMode).toBe('semanticTimeOfDay');
+                expect(create('c', { datetimeMode: 'dateOnly', timeSemanticMode: 'semanticTimeOfDay' }).timeSemanticMode).toBe('semanticTimeOfDay');
             });
 
             it('updateVariable can toggle it, and an unrelated update leaves it alone', () => {
@@ -982,29 +973,18 @@ describe('datetime variables', () => {
                 const toggled = stateEngine.updateVariable('pp', instanceId, ref, { datetimeMode: 'full' });
                 expect(toggled.datetimeMode).toBe('full');
             });
-
-            // The prompted-engine.js write path re-checks the same rule at
-            // runtime (defense in depth: the manager-modal's own inline
-            // editor writes preset.variables directly, bypassing
-            // checkedDatetime - same reason deltaSource is re-checked there
-            // too), so it never depends solely on save-time validation having
-            // run. Confirmed structurally, the same way this codebase's own
-            // calendar-format.test.js/fantasy-calendar.test.js already check
-            // a source-level guarantee rather than fabricate bypassed state.
-            it('prompted-engine.js re-gates semantic parsing on datetimeMode, not just on the stored timeSemanticMode', () => {
-                const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'core', 'prompted-engine.js'), 'utf8');
-                expect(src).toMatch(/datetimeMode\s*!==\s*'dateOnly'\s*&&\s*def\.timeSemanticMode\s*===\s*'semanticTimeOfDay'/);
-            });
         });
 
         describe('write-path normalization (chat-state.js: setVar and applyIncrement)', () => {
-            it('a deterministic tick on a "dateOnly" variable applies the full delta then truncates the time', () => {
+            it('deterministic hourly ticks on a "dateOnly" variable accumulate and roll the date over', () => {
                 create('clock', {
-                    datetimeMode: 'dateOnly', defaultValue: ts(2026, 9, 18),
-                    behaviors: { increment: true, prompted: false }, increment: { delta: '30h', triggers: 'ai' },
+                    datetimeMode: 'dateOnly', defaultValue: ts(2026, 9, 18, 22),
+                    behaviors: { increment: true, prompted: false }, increment: { delta: '1h', triggers: 'ai' },
                 });
                 runDeterministicIncrements('chat-1', 'ai');
-                expect(stored('clock')).toBe(ts(2026, 9, 19)); // rolled forward a day, time truncated
+                expect(stored('clock')).toBe(ts(2026, 9, 18, 23));
+                runDeterministicIncrements('chat-1', 'ai');
+                expect(stored('clock')).toBe(ts(2026, 9, 19)); // next day
             });
 
             it('a deterministic tick on a "timeOnly" variable with a pure day/week/month/year delta has NO visible effect - "ignored"', () => {
@@ -1026,11 +1006,11 @@ describe('datetime variables', () => {
             });
 
             it('the manual tracker edit path (setVar) normalizes too - not just the automatic paths', () => {
-                const def = create('clock', { datetimeMode: 'dateOnly', defaultValue: ts(2026, 9, 18) });
+                const def = create('clock', { datetimeMode: 'timeOnly', defaultValue: ts(1970, 1, 1, 10) });
                 const edit = resolveTrackerEdit(def, '2026-09-20 15:30:00');
                 expect(edit.ok).toBe(true);
                 realChatState.setVar('chat-1', 'pp__clock', edit.value, def, { manual: true });
-                expect(stored('clock')).toBe(ts(2026, 9, 20)); // time dropped by setVar itself
+                expect(stored('clock')).toBe(ts(1970, 1, 1, 15, 30)); // date pinned by setVar itself
             });
         });
 
@@ -1046,18 +1026,18 @@ describe('datetime variables', () => {
                 ...extra,
             });
 
-            it('"Date only": "advance 30 hours" rolls the date forward and normalizes the time away', async () => {
+            it('"Date only": "advance 30 hours" rolls the date forward and keeps the accumulated time', async () => {
                 modeClock({ datetimeMode: 'dateOnly' });
                 callBackgroundLLM.mockResolvedValue('{"pp__clock":"advance 30 hours"}');
                 await runAi()();
-                await vi.waitFor(() => expect(stored('clock')).toBe(ts(2026, 9, 19)));
+                await vi.waitFor(() => expect(stored('clock')).toBe(ts(2026, 9, 19, 18)));
             });
 
-            it('"Date only": an absolute date/time answer keeps only the date', async () => {
+            it('"Date only": an absolute date/time answer is stored in full', async () => {
                 modeClock({ datetimeMode: 'dateOnly' });
                 callBackgroundLLM.mockResolvedValue('{"pp__clock":"set time to 2026-10-01 08:30"}');
                 await runAi()();
-                await vi.waitFor(() => expect(stored('clock')).toBe(ts(2026, 10, 1)));
+                await vi.waitFor(() => expect(stored('clock')).toBe(ts(2026, 10, 1, 8, 30)));
             });
 
             it('"Time only": an ordinary hour delta advances the time and stays pinned to the reference date', async () => {
@@ -1074,20 +1054,11 @@ describe('datetime variables', () => {
                 await vi.waitFor(() => expect(stored('clock')).toBe(ts(1970, 1, 1, 8)));
             });
 
-            it('"Date only" ignores a semantic phrase outright, even though it reads as ordinary text - skipped like any other unparseable answer', async () => {
-                // checkedDatetime() already forces timeSemanticMode to 'none'
-                // for a dateOnly variable at save time (schema/validation
-                // above); this confirms the real, END-TO-END user-visible
-                // behavior that guarantee is for: the model's own natural
-                // phrase is simply not understood, not silently turned into
-                // a no-op or a partial jump.
+            it('"Date only" with timeSemanticMode enabled understands "the next morning"', async () => {
                 modeClock({ datetimeMode: 'dateOnly', timeSemanticMode: 'semanticTimeOfDay' });
                 callBackgroundLLM.mockResolvedValue('{"pp__clock":"the next morning"}');
                 await runAi()();
-                await vi.waitFor(() => expect(console.warn).toHaveBeenCalledWith(expect.any(String), expect.stringContaining('could not understand')));
-                // Unchanged from its own already-normalized default - dateOnly
-                // dropped the "12:00" at creation time (schema/validation above).
-                expect(stored('clock')).toBe(ts(2026, 9, 18));
+                await vi.waitFor(() => expect(stored('clock')).toBe(ts(2026, 9, 19, 8)));
             });
 
             it('"full" mode is a complete no-op for this feature - unchanged from before it existed', async () => {
@@ -1308,14 +1279,8 @@ describe('datetime variables', () => {
                 expect(buildInlineVariableEditor(timeOnly, true, [])).toContain('<option value="timeOnly" selected>');
             });
 
-            it('hides the "Semantic time of day" section for "Date only" - it can never use it', () => {
-                const dateOnly = { ...variableUiSchema.mergeDefinition(blankDefinition(), dt({ datetimeMode: 'dateOnly' })) };
-                const html = buildInlineVariableEditor(dateOnly, true, []);
-                expect(html).not.toContain('data-field="timeSemanticMode"');
-            });
-
-            it('still offers "Semantic time of day" for "full" and "Time only"', () => {
-                for (const datetimeMode of ['full', 'timeOnly']) {
+            it('offers "Semantic time of day" in every mode', () => {
+                for (const datetimeMode of ['full', 'dateOnly', 'timeOnly']) {
                     const d = { ...variableUiSchema.mergeDefinition(blankDefinition(), dt({ datetimeMode })) };
                     expect(buildInlineVariableEditor(d, true, []), datetimeMode).toContain('data-field="timeSemanticMode"');
                 }

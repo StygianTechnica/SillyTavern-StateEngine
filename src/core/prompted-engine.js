@@ -179,24 +179,14 @@ function applyPromptedResponse(chatId, updateVars, incrementVars, parsed) {
                 // interpretation, so a semantic phrase works simply
                 // because it happens to also read as natural language,
                 // the same way "advance 3 hours" already does.
-                // Datetime mode (requirements spec 1.36): a
-                // dateOnly variable "ignores semantic time of
-                // day phrases" outright - checkedDatetime()
-                // (variable-api.js) already forces
-                // timeSemanticMode to 'none' for it at save
-                // time, but that path is bypassed by the
-                // manager-modal's own inline editor (same
-                // reason deltaSource is re-checked there too),
-                // so it is re-gated here as well, the one
-                // place that actually turns semantic parsing
-                // on. The resulting scalar - from ANY path
-                // (semantic, duration, absolute date) - is
-                // then normalized for dateOnly/timeOnly by
-                // setVar() below, the single choke point
-                // every write already goes through.
+                // Datetime mode (requirements spec 1.36): the
+                // resulting scalar - from ANY path (semantic,
+                // duration, absolute date) - is normalized for
+                // timeOnly by setVar() below, the single choke
+                // point every write already goes through.
                 const calendarId = def.calendar || DEFAULT_CALENDAR_ID;
                 const stored = getVar(chatId, def.name)?.value ?? getDefaultValue(def);
-                const semanticTimeOfDay = def.datetimeMode !== 'dateOnly' && def.timeSemanticMode === 'semanticTimeOfDay';
+                const semanticTimeOfDay = def.timeSemanticMode === 'semanticTimeOfDay';
                 const next = resolveInstruction(calendarId, toScalar(calendarId, stored) ?? 0, rawValue, { semanticTimeOfDay });
                 if (next === null) {
                     console.warn(LOG_PREFIX, `prompted datetime update skipped for "${def.name}": could not understand ${JSON.stringify(rawValue)}`);

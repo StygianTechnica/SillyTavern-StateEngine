@@ -2030,8 +2030,9 @@ ONE new optional field on the EXISTING `datetime` type (requirements spec
 datetimeMode: 'full' | 'dateOnly' | 'timeOnly'   // default 'full'
 ```
 
-`dateOnly` normalizes the time-of-day to 00:00:00 after every write;
-`timeOnly` normalizes the date to the calendar's own reference moment (day
+`dateOnly` is display-only: the stored moment keeps its time-of-day (so
+small deltas accumulate and roll the date over), and displays show just the
+date. `timeOnly` normalizes the date to the calendar's own reference moment (day
 0) after every write. `'full'` is a pure no-op, so an existing datetime
 variable is completely unaffected.
 
@@ -2049,10 +2050,8 @@ produces the right half of the value regardless.
 
 **17.2 Semantic time of day interaction**
 
-`dateOnly` never interprets a semantic phrase (Section 16) at all -
-`checkedDatetime()` forces `timeSemanticMode` to `'none'` whenever
-`datetimeMode` is `'dateOnly'`, on both `createVariable`/`updateVariable`.
-`timeOnly` and `'full'` may combine freely with `timeSemanticMode`.
+Every mode may combine freely with `timeSemanticMode`. (`dateOnly` used to
+force it off, back when its time-of-day was truncated away; it no longer is.)
 
 **17.3 Tracker display**
 
