@@ -113,6 +113,46 @@ describe('variable-value-api', () => {
         });
     });
 
+    describe('getVariableImage', () => {
+        beforeEach(() => {
+            stateEngine.createPreset('se', instanceId, { namespace: 'se', name: 'Art' });
+            stateEngine.createVariable('se', instanceId, { namespace: 'se', presetName: 'Art', name: 'portrait', type: 'image', defaultValue: 'https://x.test/p.png' });
+            stateEngine.createVariable('se', instanceId, { namespace: 'se', presetName: 'Art', name: 'gallery', type: 'imageList', defaultValue: '["/user/images/a.webp","/user/images/b.webp"]' });
+            stateEngine.createVariable('se', instanceId, { namespace: 'se', presetName: 'Art', name: 'place', type: 'string', defaultValue: 'forest' });
+            stateEngine.createVariable('se', instanceId, { namespace: 'se', presetName: 'Art', name: 'scenes', type: 'imageMap', defaultValue: '{"forest":"/bg/forest.png","town":"/bg/town.png"}', currentKeyVariable: 'se__place' });
+            stateEngine.activatePreset('se', instanceId, 'chat-1', 'se', 'Art');
+        });
+        const img = (name) => stateEngine.getVariableImage('pp', instanceId, 'chat-1', name);
+
+        it('an image: its value', () => {
+            expect(img('se__portrait')).toBe('https://x.test/p.png');
+        });
+
+        it('an image list: its current (first) entry', () => {
+            expect(img('se__gallery')).toBe('/user/images/a.webp');
+        });
+
+        it('an image map: the entry under its current-key variable, following the key', () => {
+            expect(img('se__scenes')).toBe('/bg/forest.png');
+            setVar('chat-1', 'se__place', 'town', null);
+            expect(img('se__scenes')).toBe('/bg/town.png');
+            setVar('chat-1', 'se__place', 'nowhere', null);
+            expect(img('se__scenes')).toBeNull();
+        });
+
+        it('refuses unsafe references and non-image variables', () => {
+            setVar('chat-1', 'se__portrait', 'javascript:alert(1)', null);
+            expect(img('se__portrait')).toBeNull();
+            expect(img('se__hp')).toBeNull();
+            expect(img('se__nope')).toBeNull();
+            expect(stateEngine.getVariableImage('pp', instanceId, '', 'se__portrait')).toBeNull();
+        });
+
+        it('rejects a wrong instance', () => {
+            expect(() => stateEngine.getVariableImage('pp', 'nope', 'chat-1', 'se__portrait')).toThrow(WRONG_INSTANCE);
+        });
+    });
+
     it('re-exports the change event name', () => {
         expect(VARIABLES_CHANGED_EVENT).toBe('state_engine_variables_changed');
     });

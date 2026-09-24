@@ -1020,3 +1020,22 @@
     background: rgba(225, 138, 36, 0.18);
     border-radius: 4px;
 }
+
+/* Number variable limits (manager editor) */
+.se-manager-minmax {
+    display: flex;
+    gap: 10px;
+    margin-top: 6px;
+}
+
+.se-manager-minmax label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1 1 0;
+}
+
+.se-manager-minmax .text_pole {
+    margin: 0;
+    min-width: 0;
+}

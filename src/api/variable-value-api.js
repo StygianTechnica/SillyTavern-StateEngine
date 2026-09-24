@@ -7,6 +7,8 @@
 //                       variables - read-only discovery, grouped by preset
 //   getVariableValue    one variable's current value in one chat
 //   getVariableValues   several at once (one store read)
+//   getVariableImage    the image an image/imageList/imageMap variable is
+//                       showing, by the tracker's own rules - safe to display
 //   setVariableValue    write a value - OWNER-ONLY, like every other write
 //
 // Reads are open to any registered caller (resolveCallerRecord: right
@@ -26,6 +28,7 @@ import { findPresetEntry } from './preset-api.js';
 import { getPresetsForChat } from '../core/preset-manager.js';
 import { getVar, setVar } from '../core/chat-state.js';
 import { recalculateDependents } from '../core/calculated-engine.js';
+import { isImageType, activeImageRef, safeImageSrc } from '../core/image-variables.js';
 
 export { VARIABLES_CHANGED_EVENT } from '../core/variable-change-signal.js';
 
@@ -113,6 +116,28 @@ export function getVariableValues(extensionId, instanceId, chatId, names) {
         out[name] = getVariableValue(extensionId, instanceId, chatId, name);
     }
     return out;
+}
+
+// The image an image variable is showing in one chat, exactly as the
+// tracker picks it (activeImageRef: an image's value, an image list's
+// first entry, an image map's entry under its current-key variable), and
+// only if it is safe to display (safeImageSrc: http(s), data:image, or a
+// path). Any namespace. Returns the source string, or null.
+export function getVariableImage(extensionId, instanceId, chatId, name) {
+    resolveCallerRecord(extensionId, instanceId);
+    try {
+        if (!chatId || typeof name !== 'string' || !name) return null;
+        const found = findDefinition(name);
+        if (!found || !isImageType(found.def)) return null;
+        const entry = getVar(chatId, name);
+        if (!entry) return null;
+        const keyName = found.def.type === 'imageMap' ? found.def.currentKeyVariable : '';
+        const keyValue = keyName ? getVar(chatId, keyName)?.value : undefined;
+        return safeImageSrc(activeImageRef(found.def, entry.value, keyValue));
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'getVariableImage failed (gracefully handled)', err);
+        return null;
+    }
 }
 
 // Writes a value for a variable in the CALLER'S OWN namespace, addressed

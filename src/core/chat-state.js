@@ -20,7 +20,7 @@
 import { LOG_PREFIX, getSettings, persistSettings } from './settings-core.js';
 import { setMacroValue, deleteMacroValue } from './macro-store.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
-import { getDefaultValue } from './variable-schema.js';
+import { getDefaultValue, clampNumber } from './variable-schema.js';
 import { coerceValue } from './variable-validation.js';
 import { isImageType, sanitizeImageValue } from './image-variables.js';
 import { DEFAULT_CALENDAR_ID } from './settings-core.js';
@@ -330,6 +330,11 @@ export function getVar(chatId, varName) {
 }
 
 
+function isNumeric(value) {
+    if (typeof value === 'number') return Number.isFinite(value);
+    return typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value));
+}
+
 // Updates variables[varName].value and writes the state back — AND mirrors
 // the same value into the macro-visible var store ({{getvar::name}}) via
 // the existing setMacroValue()/macroStore() mechanism from macro-store.js.
@@ -388,7 +393,15 @@ export function setVar(chatId, varName, value, def, { manual = false } = {}) {
             : (isImageType(effectiveDef) ? sanitizeImageValue(effectiveDef.type, value)
                 : (effectiveDef?.type === 'datetime'
                     ? normalizeForDatetimeMode(effectiveDef.calendar || DEFAULT_CALENDAR_ID, value, effectiveDef.datetimeMode)
-                    : value));
+                    // A number with optional min/max is kept within them here,
+                    // the one choke point every write shares (prompted updates,
+                    // extensions, seeding, manual edits). No limits: unchanged.
+                    // Numeric text (a prompted answer can arrive as "15") is
+                    // stored as the number it is, the same coercion the
+                    // tracker's manual edit already applies.
+                    : (effectiveDef?.type === 'number' && isNumeric(value)
+                        ? clampNumber(effectiveDef, Number(value))
+                        : value)));
 
         state.variables[varName] = {
             value: storedValue,
@@ -505,7 +518,9 @@ export function applyIncrement(chatId, varName, delta, def) {
                 console.warn(LOG_PREFIX, `applyIncrement: non-numeric value for "${varName}", defaulting to 0`);
                 current = 0;
             }
-            next = current + delta;
+            // Kept within the variable's optional min/max (this branch
+            // writes entry.value directly, bypassing setVar()).
+            next = def?.type === 'number' ? clampNumber(def, current + delta) : current + delta;
         }
 
         entry.value = next;

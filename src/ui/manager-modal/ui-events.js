@@ -531,6 +531,16 @@ export function wireEvents(managerApi, managerState) {
             }
         }
 
+        // Number limits: both optional, but a min above the max can never hold.
+        if (values.type === 'number') {
+            const min = variableSchema.normalizeCollectedValues({ min: values.min }).min;
+            const max = variableSchema.normalizeCollectedValues({ max: values.max }).max;
+            if (min !== null && max !== null && min > max) {
+                alert(`Min (${min}) cannot be greater than Max (${max}).`);
+                return;
+            }
+        }
+
         // Image map rows the editor could not turn into a map: say why, write nothing.
         if (values._keylessRow) {
             alert('Every image map entry needs a key. Fill in the key or remove the row.');

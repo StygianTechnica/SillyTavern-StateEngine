@@ -182,8 +182,15 @@ export function normalizeCollectedValues(values) {
     }
     if (values.expression !== undefined) out.expression = String(values.expression || '');
 
-    if (values.min !== undefined) out.min = values.min;
-    if (values.max !== undefined) out.max = values.max;
+    // Optional number limits: blank means no limit (null), like
+    // blankDefinition(); anything else must be a finite number.
+    const limit = (raw) => {
+        if (raw === null || raw === undefined || String(raw).trim() === '') return null;
+        const n = Number(raw);
+        return Number.isFinite(n) ? n : null;
+    };
+    if (values.min !== undefined) out.min = limit(values.min);
+    if (values.max !== undefined) out.max = limit(values.max);
 
     // Typed-array schema
     if (values.itemType !== undefined) out.itemType = values.itemType || 'any';

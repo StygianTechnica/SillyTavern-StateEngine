@@ -379,6 +379,19 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                     </label>
                     <div class="se-empty">When enabled, this boolean starts false and can be set to true by prompted updates, increments or extensions - but cannot be set back to false except manually (the tracker's edit pencil or reset button).</div>
                 ` : ''}
+                ${d.type === 'number' ? `
+                    <div class="se-manager-minmax">
+                        <label>Min
+                            <input type="number" step="any" class="text_pole se-manager-var-field" data-field="min"
+                                placeholder="no limit" value="${d.min === null || d.min === undefined ? '' : escapeHtml(d.min)}" />
+                        </label>
+                        <label>Max
+                            <input type="number" step="any" class="text_pole se-manager-var-field" data-field="max"
+                                placeholder="no limit" value="${d.max === null || d.max === undefined ? '' : escapeHtml(d.max)}" />
+                        </label>
+                    </div>
+                    <div class="se-empty">Optional limits - leave blank for none. When set, the value is kept within them on every change: manual edits, increments, prompted updates and extensions.</div>
+                ` : ''}
             `}
 
             <!-- Calculated variable: dependency selector + expression -->

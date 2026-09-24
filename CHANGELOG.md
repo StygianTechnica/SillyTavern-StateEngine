@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — Number limits in the editor; image resolution API
+
+**Added**
+
+- **Min / Max for number variables** in the manager's variable editor. Both are optional
+  (blank = no limit) and use the existing `min` / `max` definition fields - nothing is renamed
+  and no limits are added to existing variables.
+- `getVariableImage(extensionId, instanceId, chatId, name)` in the Variable Value API: the
+  image an image / image list / image map variable is showing, by the tracker's rules.
+
+**Fixed**
+
+- **Limits were not applied to the stored value on increments and prompted updates** (only
+  the `{{getvar}}` mirror was clamped). Now every write keeps a limited number within its
+  min/max; a prompted numeric answer given as text is stored as a number.
+
+**Tests:** 43 files, 1832 tests (new: `tests/number-limits.test.js`, `getVariableImage` cases).
+
 ## Unreleased — Variable Value API, cross-namespace activation
 
 **Added**

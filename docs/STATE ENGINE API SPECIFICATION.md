@@ -196,6 +196,7 @@ listVariables(namespace, presetName)
 listAllVariables(chatId?)                     // every namespace's presets + display defs, grouped by preset
 getVariableValue(chatId, qualifiedName)       // { value, def } | undefined - any namespace
 getVariableValues(chatId, qualifiedNames)     // { [name]: { value, def } | undefined }
+getVariableImage(chatId, qualifiedName)       // the image an image/imageList/imageMap shows, safe src | null
 setVariableValue(chatId, ref, value)          // OWN namespace only; refuses calculated
 
 // Calculated-variable support (added 2026-09-10, Section 7.3):
@@ -2193,3 +2194,34 @@ display; no per-variable diff is carried. The name is re-exported from
 (against the REAL `chat-state.js` via `vi.importActual`), and the
 `(cross-namespace)` activation block plus updated manager-modal adapter
 cases in `tests/api/identity.test.js`.
+
+SECTION 20 — NUMBER LIMITS AND IMAGE RESOLUTION (2026-09-24)
+
+**20.0 Number limits (`def.min` / `def.max`)**
+
+The two fields always existed on a number definition (`blankDefinition()`:
+`null`) and were already applied by `clampNumber()` to manual tracker edits
+and the macro-store mirror - but the manager editor never offered them, and
+the isolated store (what `getVar()`, calculated variables and extensions
+read) was never clamped on the prompted and increment paths. Now:
+
+- The inline editor shows optional **Min** and **Max** inputs for number
+  variables. Blank = no limit (`null`); there is no default. Saving with
+  Min above Max is refused.
+- `chat-state.js` `setVar()` keeps a number with limits within them (and
+  stores numeric text such as a prompted `"15"` as the number), and
+  `applyIncrement()`'s numeric branch clamps `current + delta`. A number
+  without limits is untouched.
+
+**20.1 `getVariableImage(extensionId, instanceId, chatId, name)`**
+
+Part of the Variable Value API (Section 19): resolves the image an image
+variable is showing through `image-variables.js` `activeImageRef()` (the
+tracker's rules, including an image map's `currentKeyVariable`) and
+`safeImageSrc()`. Any namespace; returns a source string or `null`.
+
+**20.2 Verification**
+
+`tests/number-limits.test.js` (editor, collection, and enforcement against
+the REAL `chat-state.js`), and a `getVariableImage` block in
+`tests/api/variable-value-api.test.js`.
