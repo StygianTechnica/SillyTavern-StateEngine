@@ -16,6 +16,7 @@ let instanceId;
 const GUARDED = [
     'createPreset', 'updatePreset', 'deletePreset', 'activatePreset', 'deactivatePreset', 'listPresets',
     'createVariable', 'updateVariable', 'deleteVariable', 'getVariable', 'listVariables',
+    'listAllVariables', 'getVariableValue', 'getVariableValues', 'setVariableValue',
     'validateCalculatedDefinition', 'applyCalculatedDefinition',
     'registerEventSource', 'fireEvent',
     'configureIndependentPreset', 'runIndependentPreset',

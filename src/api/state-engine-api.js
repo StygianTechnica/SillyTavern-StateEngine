@@ -3,6 +3,7 @@
 import * as ns from './namespace-manager.js';
 import * as presets from './preset-api.js';
 import * as vars from './variable-api.js';
+import * as values from './variable-value-api.js';
 import * as events from './event-api.js';
 import * as ext from './extension-registry.js';
 import * as reg from './extension-registration.js';
@@ -15,6 +16,7 @@ export const stateEngine = {
     ...ns,
     ...presets,
     ...vars,
+    ...values,
     ...events,
     ...ext,
     ...reg,

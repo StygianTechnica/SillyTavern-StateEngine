@@ -25,6 +25,7 @@ import { coerceValue } from './variable-validation.js';
 import { isImageType, sanitizeImageValue } from './image-variables.js';
 import { DEFAULT_CALENDAR_ID } from './settings-core.js';
 import { incrementScalar, toScalar, normalizeForDatetimeMode } from './calendar-engine.js';
+import { notifyVariablesChanged } from './variable-change-signal.js';
 
 const SCHEMA_VERSION = 1;
 
@@ -291,13 +292,15 @@ export function loadChatState(chatId) {
     }
 }
 
-// Writes the full state object back for <chatId>. Never throws.
+// Writes the full state object back for <chatId>, then signals the change
+// (variable-change-signal.js). Never throws.
 export function saveChatState(chatId, state) {
     try {
         if (!chatId) return;
         const store = getStore();
         store.chats[chatId] = state;
         persistSettings();
+        notifyVariablesChanged(chatId);
     } catch (err) {
         console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
     }
@@ -590,7 +593,10 @@ export function deleteVariableValueEverywhere(varName) {
             changed = true;
         }
 
-        if (changed) persistSettings();
+        if (changed) {
+            persistSettings();
+            notifyVariablesChanged(null);
+        }
 
         try {
             deleteMacroValue(context, { name: varName });

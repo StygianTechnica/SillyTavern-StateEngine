@@ -31,14 +31,13 @@ const ARGS = {
     createPreset: (t) => [{ namespace: t, name: 'P' }],
     updatePreset: (t) => [t, 'P', {}],
     deletePreset: (t) => [t, 'P'],
-    activatePreset: (t) => ['chat-1', t, 'P'],
-    deactivatePreset: (t) => ['chat-1', t, 'P'],
     listPresets: (t) => [t],
     createVariable: (t) => [{ namespace: t, presetName: 'P', name: 'v', type: 'number' }],
     updateVariable: (t) => [{ namespace: t, presetName: 'P', variableName: 'v' }, {}],
     deleteVariable: (t) => [{ namespace: t, presetName: 'P', variableName: 'v' }],
     getVariable: (t) => [{ namespace: t, presetName: 'P', variableName: 'v' }],
     listVariables: (t) => [t, 'P'],
+    setVariableValue: (t) => ['chat-1', { namespace: t, presetName: 'P', variableName: 'v' }, 1],
     registerExtension: (t) => [{ namespace: t, variables: [], capabilities: [], description: '' }],
     validateCalculatedDefinition: (t) => [{ type: 'calculated', expression: '1', namespace: t, presetName: 'P' }],
     applyCalculatedDefinition: (t) => [{ namespace: t, presetName: 'P', variableName: 'v' }, { name: 'x' }, []],
@@ -167,6 +166,46 @@ describe('identity', () => {
 
         it('allows the correct identity (it may still return null/false for missing data - but never throws)', () => {
             expect(() => invoke(name, 'se', instanceId, 'se')).not.toThrow();
+        });
+    });
+
+    // Binding a preset to a chat edits nothing about the preset, so these
+    // need a registered caller on the right instance but NOT ownership of
+    // the target namespace (preset-api.js header comment).
+    describe.each(['activatePreset', 'deactivatePreset'])('%s (cross-namespace)', (name) => {
+        const call = (ext, inst, target = 'se') => stateEngine[name](ext, inst, 'chat-1', target, 'Demo');
+
+        beforeEach(() => {
+            registerNamespaces('pp');
+            stateEngine.createPreset('se', instanceId, { namespace: 'se', name: 'Demo' });
+        });
+
+        it('rejects a wrong or missing instanceId', () => {
+            expect(() => call('pp', 'nope')).toThrow(WRONG_INSTANCE);
+            expect(() => call('pp', undefined)).toThrow(WRONG_INSTANCE);
+        });
+
+        it('rejects an extension that has not claimed a namespace', () => {
+            expect(() => call('ghost', instanceId)).toThrow(/does not own a namespace/);
+        });
+
+        it('lets a registered extension bind/unbind a preset it does not own', () => {
+            expect(call('pp', instanceId)).toBe(true);
+            const bound = settings.get().chatPresetBindings['chat-1']?.presetIds ?? [];
+            const demoId = Object.entries(settings.get().presets).find(([, p]) => p.name === 'Demo')[0];
+            expect(bound.includes(demoId)).toBe(name === 'activatePreset');
+        });
+
+        it('returns false (never throws) for a missing target namespace', () => {
+            expect(call('pp', instanceId, null)).toBe(false);
+        });
+
+        it('a rejected call has no side effects', () => {
+            const before = JSON.stringify(settings.snapshot());
+            vi.clearAllMocks();
+            expect(() => call('pp', 'nope')).toThrow();
+            expect(JSON.stringify(settings.snapshot())).toBe(before);
+            expect(context.saveSettingsDebounced).not.toHaveBeenCalled();
         });
     });
 
@@ -385,20 +424,24 @@ describe('identity', () => {
             it.each([
                 ['deletePresetAdapter', () => adapters.deletePresetAdapter(foreignId)],
                 ['renamePresetAdapter', () => adapters.renamePresetAdapter(foreignId, 'Mine now')],
-                ['addPresetToChatAdapter', () => adapters.addPresetToChatAdapter('chat-1', foreignId)],
-                ['removePresetFromChatAdapter', () => adapters.removePresetFromChatAdapter('chat-1', foreignId)],
             ])('%s reports the rejection through setStatus instead of throwing into the UI handler', (_name, act) => {
                 expect(act).not.toThrow();
                 expect(setStatus).toHaveBeenCalledWith("Extension 'se' does not own namespace 'pp'", true);
             });
 
-            it('and the other namespace\'s preset is untouched', () => {
+            it('and the other namespace\'s preset definition is untouched', () => {
                 adapters.deletePresetAdapter(foreignId);
                 adapters.renamePresetAdapter(foreignId, 'Mine now');
-                adapters.addPresetToChatAdapter('chat-1', foreignId);
 
                 expect(settings.get().presets[foreignId]).toMatchObject({ name: 'Theirs', namespace: 'pp' });
-                expect(settings.get().chatPresetBindings['chat-1']?.presetIds ?? []).not.toContain(foreignId);
+            });
+
+            it('but it CAN be activated/deactivated for a chat (binding is not an edit)', () => {
+                adapters.addPresetToChatAdapter('chat-1', foreignId);
+                expect(settings.get().chatPresetBindings['chat-1'].presetIds).toContain(foreignId);
+                adapters.removePresetFromChatAdapter('chat-1', foreignId);
+                expect(settings.get().chatPresetBindings['chat-1'].presetIds).not.toContain(foreignId);
+                expect(setStatus).not.toHaveBeenCalledWith(expect.stringMatching(/does not own/), true);
             });
         });
 

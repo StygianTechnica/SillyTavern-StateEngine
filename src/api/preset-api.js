@@ -5,14 +5,22 @@
 // checking on top, it never reimplements preset CRUD itself.
 //
 // Caller identity: every exported function takes (extensionId, instanceId)
-// first and calls validateCallerIdentity() (identity.js) before doing
-// anything - a wrong instance or a namespace the caller doesn't own throws,
-// it never silently no-ops. See docs/STATE ENGINE API SPECIFICATION.md
-// Section 7.4.
+// first and checks it before doing anything - a wrong instance or a
+// namespace the caller doesn't own throws, it never silently no-ops. See
+// docs/STATE ENGINE API SPECIFICATION.md Section 7.4.
+//
+// activatePreset()/deactivatePreset() are the deliberate exception to
+// namespace OWNERSHIP (2026-09-23): write isolation exists to stop one
+// extension changing another's definitions - a preset's variables, name,
+// triggers - and binding a preset to a chat changes none of those. A UI
+// extension (Pretty Panels) must be able to switch on the user's own `se`
+// presets that its layouts display. So these two only require a
+// registered caller on the right instance (resolveCallerRecord), and may
+// target any namespace. Everything that edits a preset stays owner-only.
 
 import { LOG_PREFIX, getSettings, persistSettings } from '../core/settings-core.js';
 import { validateNamespace } from './namespace-manager.js';
-import { validateCallerIdentity } from './identity.js';
+import { validateCallerIdentity, resolveCallerRecord } from './identity.js';
 import {
     createPreset as createPresetCore,
     renamePreset as renamePresetCore,
@@ -134,7 +142,8 @@ export function deletePreset(extensionId, instanceId, namespace, name) {
 }
 
 export function activatePreset(extensionId, instanceId, chatId, namespace, name) {
-    validateCallerIdentity(extensionId, instanceId, namespace);
+    // Any registered caller, any target namespace - see the header comment.
+    resolveCallerRecord(extensionId, instanceId);
     try {
         if (!chatId) return false;
         if (!validateNamespace(namespace)) {
@@ -158,7 +167,8 @@ export function activatePreset(extensionId, instanceId, chatId, namespace, name)
 }
 
 export function deactivatePreset(extensionId, instanceId, chatId, namespace, name) {
-    validateCallerIdentity(extensionId, instanceId, namespace);
+    // Any registered caller, any target namespace - see the header comment.
+    resolveCallerRecord(extensionId, instanceId);
     try {
         if (!chatId) return false;
         if (!validateNamespace(namespace)) {

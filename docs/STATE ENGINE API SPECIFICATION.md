@@ -109,11 +109,16 @@ through `getNamespaces()` and, once the owner declares it,
   `preset-manager.js`'s `isVariableNameTaken` comment (a same-named
   variable in a different preset silently colliding in the isolated
   store).
-- **Read access is namespace-scoped by default.** Cross-namespace *reads*
-  (e.g. Curator reading a Pretty Panels variable to display it) are an
-  explicitly optional, future capability — not part of this initial
-  surface. Until it's designed and implemented, `getVariable()` /
-  `listVariables()` calls are scoped to the caller's own namespace(s) only.
+- **Activation is not a write to the preset.** `activatePreset` /
+  `deactivatePreset` only bind a preset to a chat; they change nothing
+  about the preset or its variables, so they are open to any registered
+  caller for any namespace (Section 19). Everything that edits a
+  definition stays owner-only.
+- **Definition reads are namespace-scoped.** `getVariable()` /
+  `listVariables()` remain scoped to the caller's own namespace(s).
+  Cross-namespace *display* reads - every preset's variables, and current
+  values - go through the Variable Value API (Section 19), which returns
+  display fields only and can never be used to edit anything.
 
 **Events are namespaced the same way**, using `namespace.eventName`:
 
@@ -173,8 +178,8 @@ getExtensionDependencies(extensionId)                         // string[]
 createPreset(def)                          // def.namespace determines ownership
 updatePreset(namespace, name, patch)
 deletePreset(namespace, name)
-activatePreset(chatId, namespace, name)    // binds the preset to a chat
-deactivatePreset(chatId, namespace, name)
+activatePreset(chatId, namespace, name)    // binds the preset to a chat - ANY namespace (Section 19)
+deactivatePreset(chatId, namespace, name)  // ANY namespace (Section 19)
 listPresets(namespace)
 ```
 
@@ -186,6 +191,12 @@ updateVariable(ref, patch)
 deleteVariable(ref)
 getVariable(ref)
 listVariables(namespace, presetName)
+
+// Variable Value API (added 2026-09-23, Section 19, src/api/variable-value-api.js):
+listAllVariables(chatId?)                     // every namespace's presets + display defs, grouped by preset
+getVariableValue(chatId, qualifiedName)       // { value, def } | undefined - any namespace
+getVariableValues(chatId, qualifiedNames)     // { [name]: { value, def } | undefined }
+setVariableValue(chatId, ref, value)          // OWN namespace only; refuses calculated
 
 // Calculated-variable support (added 2026-09-10, Section 7.3):
 validateCalculatedDefinition(def)      // def.type/def.expression/def.namespace/def.presetName -> { ok, deps } | { ok, error }
@@ -2111,3 +2122,74 @@ closed in its own tests, not assumed: a partially-successful multi-chunk
 independent-preset run must report `'updated'` with its real
 `changedVariables`, never `'skipped-parse-error'`, just because one OTHER
 chunk among several failed to parse.
+
+SECTION 19 — VARIABLE VALUE API AND CROSS-NAMESPACE ACTIVATION (2026-09-23)
+
+**19.0 What changed, and why**
+
+Pretty Panels - the first external consumer - needs to show the user's own
+variables on HUD panels and switch on the presets a layout displays. The
+API had no way to read a value at all (`getVariable`/`listVariables` return
+definitions, own namespace only), no way to write one (`def.value` is
+refused, correctly), no change notification, and refused
+`activatePreset` on any preset the caller did not own - which is every
+user preset, since those live in `se`.
+
+Write isolation was always meant to stop one extension changing another's
+DEFINITIONS. Binding a preset to a chat changes no definition, so it was
+wrongly caught by the ownership check; that is corrected here rather than
+worked around.
+
+**19.1 Cross-namespace activation** (`src/api/preset-api.js`)
+
+`activatePreset` / `deactivatePreset` now check `resolveCallerRecord`
+(right instance, caller owns SOME namespace) instead of ownership of the
+target namespace. A wrong instance or an unregistered caller still throws
+before anything happens. Everything else in the module is unchanged and
+owner-only.
+
+**19.2 Variable Value API** (`src/api/variable-value-api.js`)
+
+```
+listAllVariables(extensionId, instanceId, chatId?)
+  -> [{ id, namespace, name, description, active?, variables: [def...] }]
+getVariableValue(extensionId, instanceId, chatId, qualifiedName)
+  -> { value, def } | undefined
+getVariableValues(extensionId, instanceId, chatId, qualifiedNames)
+  -> { [name]: { value, def } | undefined }
+setVariableValue(extensionId, instanceId, chatId, ref, value) -> boolean
+```
+
+- Reads are open to any registered caller and span every namespace. They
+  return copies and only DISPLAY fields of a definition (`name`, `label`,
+  `description`, `type`, `scope`, `min`, `max`, `enumValues`, `itemType`,
+  `calendar`, `datetimeMode`, `currentKeyVariable`) - never behaviours,
+  prompts, defaults or anything else.
+- `listAllVariables` is grouped by preset and sorted by namespace, then
+  preset name. With a `chatId`, each preset carries `active`.
+- `getVariableValue` is `undefined` when the chat holds no value for the
+  name (e.g. its preset was never activated there). `def` is `null` when no
+  preset defines that name any more.
+- `setVariableValue` is owner-only (`validateCallerIdentity` on
+  `ref.namespace`), writes through `chat-state.js` `setVar()` - the same
+  sanitizing and macro mirroring as any engine write - then runs
+  `recalculateDependents`. Calculated variables are refused.
+
+**19.3 Change notification** (`src/core/variable-change-signal.js`)
+
+Every value write funnels through `chat-state.js` `saveChatState()` (and
+`deleteVariableValueEverywhere()`), which now call
+`notifyVariablesChanged(chatId)`. That emits
+`VARIABLES_CHANGED_EVENT` (`'state_engine_variables_changed'`) on
+SillyTavern's own `eventSource`, with the chatId as its only argument
+(`null` = possibly every chat). Emits are coalesced per microtask: a burst
+of saves for one chat produces one event. Listeners re-read what they
+display; no per-variable diff is carried. The name is re-exported from
+`src/api/index.js`.
+
+**19.4 Verification**
+
+`tests/api/variable-value-api.test.js`, `tests/variable-change-signal.test.js`
+(against the REAL `chat-state.js` via `vi.importActual`), and the
+`(cross-namespace)` activation block plus updated manager-modal adapter
+cases in `tests/api/identity.test.js`.
