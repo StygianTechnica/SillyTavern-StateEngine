@@ -53,6 +53,7 @@ export function blankCalendarEditorValues() {
         isNew: true, id: '', label: '', leapYearRule: 'none',
         secondsPerMinute: 60, minutesPerHour: 60, hoursPerDay: 24,
         months: [{ name: '', days: 30 }], seasons: [], cycles: [],
+        daysPerWeek: '', weekdayNamesText: '', weekdayShortNamesText: '',
         era: '', monthAbbreviationLength: '',
         patternsText: '', monthNamesText: '', seasonNamesText: '',
         unitAliasesText: '', advanceVerbsText: '', rewindVerbsText: '', setVerbsText: '',
@@ -74,6 +75,9 @@ export function editorValuesFromDefinition(def) {
         months: (def?.months || []).map((m) => ({ name: m.name, days: m.days, ...(m.leap !== undefined ? { leap: m.leap } : {}) })),
         seasons: (def?.seasons || []).map((s) => ({ name: s.name, startDay: s.startDay, endDay: s.endDay })),
         cycles: (def?.cycles || []).map((c) => ({ name: c.name, length: c.length })),
+        daysPerWeek: def?.daysPerWeek ?? '',
+        weekdayNamesText: (def?.weekdayNames || []).join('\n'),
+        weekdayShortNamesText: (def?.weekdayShortNames || []).join('\n'),
         era: fr.era ?? '',
         monthAbbreviationLength: fr.monthAbbreviationLength ?? '',
         patternsText: formatPairs(fr.patterns),
@@ -117,6 +121,17 @@ export function definitionFromEditorValues(values) {
         .map((c) => ({ name: String(c.name).trim(), length: num(c.length) }));
     if (cycles.length) def.cycles = cycles;
 
+    // Weekdays: a blank week length means the calendar has no weekday concept,
+    // and the name lists are ignored (the editor disables them). Names are
+    // optional - without them the calendar has numeric weekdays only.
+    if (String(v.daysPerWeek ?? '').trim() !== '') {
+        def.daysPerWeek = num(v.daysPerWeek);
+        const weekdayNames = lines(v.weekdayNamesText);
+        if (weekdayNames.length) def.weekdayNames = weekdayNames;
+        const weekdayShortNames = lines(v.weekdayShortNamesText);
+        if (weekdayShortNames.length) def.weekdayShortNames = weekdayShortNames;
+    }
+
     const formattingRules = {};
     if (String(v.era ?? '').trim() !== '') formattingRules.era = String(v.era).trim();
     if (String(v.monthAbbreviationLength ?? '').trim() !== '') formattingRules.monthAbbreviationLength = num(v.monthAbbreviationLength);
@@ -143,7 +158,7 @@ export function definitionFromEditorValues(values) {
 // The optional fields calendar-engine's updateCalendar() treats as "remove
 // when null": a definition built from the editor simply omits an emptied
 // section, so an update must say so explicitly or the old section would be kept.
-const OPTIONAL_FIELDS = ['seasons', 'cycles', 'formattingRules', 'nlRules'];
+const OPTIONAL_FIELDS = ['seasons', 'cycles', 'formattingRules', 'nlRules', 'daysPerWeek', 'weekdayNames', 'weekdayShortNames'];
 
 export function updatePatchFromDefinition(def) {
     const patch = { ...def };

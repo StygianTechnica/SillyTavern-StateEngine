@@ -93,9 +93,9 @@ describe('fantasy calendar: definitions and CRUD', () => {
     it('the test calendar is valid, and the hand-built oracle agrees with the engine', () => {
         expect(validateCalendarDefinition(ALDORIA())).toEqual({ valid: true, errors: [] });
         expect(fromStructured('aldoria', { year: 1203, month: 8, day: 17, hour: 12 })).toBe(STORMFALL_17);
-        expect(toStructured('aldoria', STORMFALL_17)).toEqual({ year: 1203, month: 8, day: 17, hour: 12, minute: 0, second: 0 });
-        expect(toStructured('aldoria', 0)).toEqual({ year: 1, month: 1, day: 1, hour: 0, minute: 0, second: 0 });
-        expect(toStructured('aldoria', -1)).toEqual({ year: 0, month: 10, day: 30, hour: 19, minute: 49, second: 49 });
+        expect(toStructured('aldoria', STORMFALL_17)).toEqual({ year: 1203, month: 8, day: 17, hour: 12, minute: 0, second: 0, weekdayIndex: null, weekdayName: null, weekdayShortName: null });
+        expect(toStructured('aldoria', 0)).toEqual({ year: 1, month: 1, day: 1, hour: 0, minute: 0, second: 0, weekdayIndex: null, weekdayName: null, weekdayShortName: null });
+        expect(toStructured('aldoria', -1)).toEqual({ year: 0, month: 10, day: 30, hour: 19, minute: 49, second: 49, weekdayIndex: null, weekdayName: null, weekdayShortName: null });
     });
 
     describe('createCalendarDefinition', () => {

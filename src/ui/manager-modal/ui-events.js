@@ -909,6 +909,12 @@ export function wireEvents(managerApi, managerState) {
     $overlay.on('click', '.se-cal-add-cycle', function () {
         $('#se-manager-calendars-tab .se-cal-cycles').append(uiTemplates.buildCalendarCycleRow());
     });
+    // The weekday name lists only mean something once a week length is set.
+    $overlay.on('input', '#se-manager-calendars-tab [data-cal-field="daysPerWeek"]', function () {
+        const off = String($(this).val() ?? '').trim() === '';
+        $('#se-manager-calendars-tab [data-cal-field="weekdayNamesText"], #se-manager-calendars-tab [data-cal-field="weekdayShortNamesText"]')
+            .prop('disabled', off);
+    });
     $overlay.on('click', '#se-manager-calendars-tab .se-cal-remove-row', function () {
         $(this).closest('.se-cal-item-row').remove();
     });

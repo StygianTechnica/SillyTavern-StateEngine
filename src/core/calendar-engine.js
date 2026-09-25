@@ -131,12 +131,58 @@ function secondsPerDay(calendar) {
 }
 
 // ---------------------------------------------------------------------------
+// Weekdays
+// ---------------------------------------------------------------------------
+//
+// A calendar only has weekdays when its definition says so:
+//   weekdayNames set          - named weekdays; the week is weekdayNames.length
+//                               days (validation keeps daysPerWeek equal to it)
+//   daysPerWeek set, no names - numeric weekdays only (index, no name)
+//   neither                   - no weekday concept at all: every field is null
+// Gregorian-rule calendars use Tomohiko Sakamoto's algorithm (0 = Sunday);
+// fantasy calendars count whole days from their epoch (year 1, month 1, day 1
+// is weekday 0).
+
+const SAKAMOTO_OFFSETS = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
+
+function sakamotoWeekday(year, month, day) {
+    const y = month < 3 ? year - 1 : year;
+    const raw = y + Math.floor(y / 4) - Math.floor(y / 100) + Math.floor(y / 400) + SAKAMOTO_OFFSETS[month - 1] + day;
+    return ((raw % 7) + 7) % 7;
+}
+
+function weekLength(calendar) {
+    if (Array.isArray(calendar.weekdayNames) && calendar.weekdayNames.length > 0) return calendar.weekdayNames.length;
+    return Number.isInteger(calendar.daysPerWeek) && calendar.daysPerWeek > 0 ? calendar.daysPerWeek : null;
+}
+
+// { weekdayIndex, weekdayName, weekdayShortName } for the day `days` days from
+// the calendar's epoch (that day being year/month/day). Any of them may be null.
+function weekdayOf(calendar, days, year, month, day) {
+    const length = weekLength(calendar);
+    if (length === null) return { weekdayIndex: null, weekdayName: null, weekdayShortName: null };
+    const weekdayIndex = usesGregorianRule(calendar) && length === 7
+        ? sakamotoWeekday(year, month, day)
+        : ((days % length) + length) % length;
+    const names = Array.isArray(calendar.weekdayNames) && calendar.weekdayNames.length > 0 ? calendar.weekdayNames : null;
+    const shortNames = names && Array.isArray(calendar.weekdayShortNames) && calendar.weekdayShortNames.length === names.length
+        ? calendar.weekdayShortNames : null;
+    return {
+        weekdayIndex,
+        weekdayName: names ? names[weekdayIndex] : null,
+        weekdayShortName: shortNames ? shortNames[weekdayIndex] : null,
+    };
+}
+
+// ---------------------------------------------------------------------------
 // Scalar <-> structured
 // ---------------------------------------------------------------------------
 
-// Scalar seconds -> { year, month, day, hour, minute, second }. A fractional
-// scalar is floored to a whole second. Throws on a non-finite scalar or an
-// unusable calendar.
+// Scalar seconds -> { year, month, day, hour, minute, second, weekdayIndex,
+// weekdayName, weekdayShortName } (the weekday fields are null when the
+// calendar has no weekday concept - see weekdayOf). A fractional scalar is
+// floored to a whole second. Throws on a non-finite scalar or an unusable
+// calendar.
 export function toStructured(calendarId, scalarTime) {
     const calendar = requireCalendar(calendarId);
     if (typeof scalarTime !== 'number' || !Number.isFinite(scalarTime)) {
@@ -153,7 +199,31 @@ export function toStructured(calendarId, scalarTime) {
     rem -= hour * perHour;
     const minute = Math.floor(rem / calendar.secondsPerMinute);
     const second = rem - minute * calendar.secondsPerMinute;
-    return { year, month, day, hour, minute, second };
+    return { year, month, day, hour, minute, second, ...weekdayOf(calendar, days, year, month, day) };
+}
+
+// Everything a display needs to draw one moment, including an analog clock:
+//   { year, month, day, hour, minute, second, weekdayIndex, weekdayName,
+//     weekdayShortName,
+//     time: { hour, minute, second, fraction },
+//     calendar: { id, hoursPerDay, minutesPerHour, secondsPerMinute, daysPerWeek } }
+// time.fraction is the sub-second remainder of the scalar (0 <= fraction < 1),
+// so a second hand can sweep smoothly. calendar.daysPerWeek is null when the
+// calendar has no weekdays. Throws like toStructured().
+export function toDateTimeParts(calendarId, scalarTime) {
+    const calendar = requireCalendar(calendarId);
+    const s = toStructured(calendarId, scalarTime);
+    return {
+        ...s,
+        time: { hour: s.hour, minute: s.minute, second: s.second, fraction: scalarTime - Math.floor(scalarTime) },
+        calendar: {
+            id: calendarId,
+            hoursPerDay: calendar.hoursPerDay,
+            minutesPerHour: calendar.minutesPerHour,
+            secondsPerMinute: calendar.secondsPerMinute,
+            daysPerWeek: weekLength(calendar),
+        },
+    };
 }
 
 function requireInteger(value, label) {
@@ -407,6 +477,9 @@ function hasOwn(object, key) {
 //                   name) MMMM (full month name); fantasy calendars also get
 //                   D (day, unpadded) SEASON CYCLE (first cycle's name) CDAY
 //                   (day within that cycle) ERA (formattingRules.era)
+//                   A pattern containing "{" uses brace placeholders
+//                   instead (see formatTemplate), including {weekday},
+//                   {weekday_short} and {weekday_index}.
 //   options.locale  reserved; ignored for now
 //   Gregorian defaults: full "YYYY-MM-DD HH:mm:ss", date "YYYY-MM-DD", time
 //   "HH:mm:ss", month = month name, year = the year as a string.
@@ -454,7 +527,9 @@ export function format(calendarId, scalarTime, options = {}) {
 
 // "{monthName} {day}, Year {year} — {season}": brace placeholders, used by a
 // pattern that contains "{". monthName, month (number), day, year, HH, mm, ss,
-// season, dayOfSeason, era, cycle (the first cycle's name) and cycle:<name> -
+// season, dayOfSeason, era, weekday, weekday_short, weekday_index (each empty
+// when the calendar does not define it), cycle (the first cycle's name) and
+// cycle:<name> -
 // the day within the cycle whose name is, or starts with, <name> ("cycle:red"
 // finds "Red Moon"). An unknown placeholder is left as written.
 function formatTemplate(template, moment, rules) {
@@ -464,8 +539,10 @@ function formatTemplate(template, moment, rules) {
         HH: pad(t.hour), mm: pad(t.minute), ss: pad(t.second),
         season: moment.seasonName ?? '', dayOfSeason: moment.dayOfSeason === null ? '' : String(moment.dayOfSeason),
         era: rules.era ?? '', cycle: moment.cycleName ?? '',
+        weekday: t.weekdayName ?? '', weekday_short: t.weekdayShortName ?? '',
+        weekday_index: t.weekdayIndex === null ? '' : String(t.weekdayIndex),
     };
-    return template.replace(/\{([A-Za-z]+)(?::([^}]*))?\}/g, (whole, key, arg) => {
+    return template.replace(/\{([A-Za-z_]+)(?::([^}]*))?\}/g, (whole, key, arg) => {
         if (key === 'cycle' && arg !== undefined) {
             const want = arg.trim().toLowerCase();
             const found = moment.cycleDays.find((c) => c.name.toLowerCase() === want || c.name.toLowerCase().split(/\s+/)[0] === want);
@@ -475,14 +552,16 @@ function formatTemplate(template, moment, rules) {
     });
 }
 
-const PARTIAL_FIELDS = ['year', 'month', 'day', 'hour', 'minute', 'second', 'season', 'cycle', 'cycleDay'];
+const PARTIAL_FIELDS = ['year', 'month', 'day', 'hour', 'minute', 'second', 'season', 'cycle', 'cycleDay',
+    'weekdayIndex', 'weekdayName', 'weekdayShortName'];
 
 // formatPartial(calendarId, scalarTime, fields) -> an object holding only the
 // requested fields: year, day, hour, minute and second as numbers, month as
 // the calendar's month NAME. formatPartial("gregorian", t, ["month", "day"])
 // -> { month: "September", day: 18 }. Fantasy additions: season (the season's
 // name), cycle (the first cycle's name) and cycleDay (1-based day within it);
-// each is null when the calendar does not define one. Throws on an unknown
+// each is null when the calendar does not define one. weekdayIndex,
+// weekdayName and weekdayShortName likewise (see weekdayOf). Throws on an unknown
 // calendar, a bad scalar, or an unknown field name.
 export function formatPartial(calendarId, scalarTime, fields = []) {
     const calendar = requireCalendar(calendarId);
@@ -516,7 +595,8 @@ export function getCalendarDefinition(calendarId) {
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const TOP_LEVEL_KEYS = ['id', 'label', 'unit', 'secondsPerMinute', 'minutesPerHour', 'hoursPerDay', 'months',
-    'seasons', 'cycles', 'leapYearRule', 'formattingRules', 'nlRules', 'version'];
+    'seasons', 'cycles', 'leapYearRule', 'formattingRules', 'nlRules', 'version',
+    'daysPerWeek', 'weekdayNames', 'weekdayShortNames'];
 const FORMATTING_KEYS = ['patterns', 'monthNames', 'seasonNames', 'era', 'monthAbbreviationLength'];
 const NL_KEYS = ['unitAliases', 'advanceVerbs', 'rewindVerbs', 'setVerbs'];
 // Phrase lists (nlRules.nextSeason: ["next season"]): these fixed keys, plus next<CycleName> ("nextRedMoon") per cycle.
@@ -623,6 +703,30 @@ export function validateCalendarDefinition(def) {
         }
     }
 
+    // Weekdays: all optional; null means "not defined".
+    const present = (v) => v !== undefined && v !== null;
+    if (present(def.daysPerWeek) && !isPositiveInt(def.daysPerWeek, 1000)) {
+        errors.push('daysPerWeek must be a whole number from 1 to 1000 (or null for no weekdays)');
+    } else if (present(def.daysPerWeek) && gregorian && def.daysPerWeek !== 7) {
+        errors.push('leapYearRule "gregorian" needs a 7-day week (or no weekdays)');
+    }
+    if (present(def.weekdayNames)) {
+        if (!Array.isArray(def.weekdayNames) || def.weekdayNames.length === 0 || !def.weekdayNames.every(isText)) {
+            errors.push('weekdayNames must be a list of non-empty strings (or null)');
+        } else if (!present(def.daysPerWeek)) {
+            errors.push('weekdayNames needs daysPerWeek to be set');
+        } else if (def.weekdayNames.length !== def.daysPerWeek) {
+            errors.push(`weekdayNames must have exactly daysPerWeek (${def.daysPerWeek}) entries (got ${def.weekdayNames.length})`);
+        }
+    }
+    if (present(def.weekdayShortNames)) {
+        if (!Array.isArray(def.weekdayShortNames) || !def.weekdayShortNames.every(isText)) {
+            errors.push('weekdayShortNames must be a list of non-empty strings (or null)');
+        } else if (!Array.isArray(def.weekdayNames) || def.weekdayShortNames.length !== def.weekdayNames.length) {
+            errors.push('weekdayShortNames must have the same number of entries as weekdayNames');
+        }
+    }
+
     // formattingRules
     if (def.formattingRules !== undefined && def.formattingRules !== null) {
         const rules = def.formattingRules;
@@ -704,7 +808,8 @@ export function createCalendar(def) {
 
 // Merges `patch` onto calendar `calendarId`, re-validates the result, bumps its
 // version and returns a copy. A patch value of null/undefined removes an
-// optional field (seasons, cycles, formattingRules, nlRules, leapYearRule).
+// optional field (seasons, cycles, formattingRules, nlRules, leapYearRule,
+// daysPerWeek, weekdayNames, weekdayShortNames).
 // The id and version cannot be patched. Throws when the calendar is missing,
 // built in, or the merged definition is invalid - nothing is changed then.
 export function updateCalendar(calendarId, patch) {
@@ -793,7 +898,7 @@ export function previewCalendarDefinition(def, options = {}) {
                 ? `Could not read "${opts.scalarText}" as a moment - showing day 1 instead` : null,
             full: show(scalar),
             date: format(PREVIEW_ID, scalar, { style: 'date' }),
-            partial: formatPartial(PREVIEW_ID, scalar, ['month', 'season', 'cycle', 'cycleDay']),
+            partial: formatPartial(PREVIEW_ID, scalar, ['month', 'season', 'cycle', 'cycleDay', 'weekdayIndex', 'weekdayName', 'weekdayShortName']),
             incremented: null,
             resolved: null,
         };

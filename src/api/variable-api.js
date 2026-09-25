@@ -627,6 +627,15 @@ export function formatDateTimePartial(extensionId, instanceId, calendarId, scala
     return calendarEngine.formatPartial(calendarId, scalarTime, fields);
 }
 
+// Structured date + time primitives for one moment, for displays that draw
+// rather than print it (an analog clock): the date fields, weekday fields
+// (null when the calendar has none), time { hour, minute, second, fraction }
+// and the calendar's clock sizes. See calendar-engine's toDateTimeParts().
+export function getDateTimeParts(extensionId, instanceId, calendarId, scalarTime) {
+    resolveCallerRecord(extensionId, instanceId);
+    return calendarEngine.toDateTimeParts(calendarId, scalarTime);
+}
+
 // ---------------------------------------------------------------------------
 // Calendar definition API (requirements spec 1.22.1)
 // ---------------------------------------------------------------------------

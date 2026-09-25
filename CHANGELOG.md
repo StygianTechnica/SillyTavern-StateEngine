@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased — Weekdays and clock time primitives
+
+**Added**
+
+- **Weekdays, only for calendars that define them.** Calendar definitions take three optional
+  fields: `daysPerWeek`, `weekdayNames` and `weekdayShortNames` (null or absent = not defined).
+  With names, the week is `weekdayNames.length` days; with only `daysPerWeek`, weekdays are
+  numbered but unnamed; with neither, the calendar has no weekday concept. Fantasy calendars
+  count days from their epoch (year 1, month 1, day 1 is weekday 0). Gregorian-rule calendars
+  use Tomohiko Sakamoto's algorithm (0 = Sunday); the built-in `gregorian` calendar now names
+  its weekdays Sunday..Saturday (Sun..Sat) - saved settings are updated automatically.
+- Built-in fantasy calendars: **Faerûn-Inspired** has 10-day tendays (Firstday..Tenthday,
+  1st..10th); **Three-Moon** (lunar-driven) and **Solar-Cycle** (season-driven) explicitly have
+  no weekday concept.
+- Validation: `weekdayNames` needs `daysPerWeek` and exactly that many entries;
+  `weekdayShortNames` must match `weekdayNames` in length; a Gregorian-rule calendar's week
+  must be 7 days.
+- **Calendar editor**: a Weekdays section - Days per week (blank = no weekdays), weekday names
+  and short names (disabled until a week length is set). The preview shows the weekday.
+- Structured dates (`toStructured`, `formatPartial`) carry `weekdayIndex`, `weekdayName` and
+  `weekdayShortName` (each may be null). Brace patterns take `{weekday}`, `{weekday_short}`
+  and `{weekday_index}`, which output nothing when null.
+- `getDateTimeParts(extensionId, instanceId, calendarId, scalarTime)`: the structured date plus
+  `time: { hour, minute, second, fraction }` and
+  `calendar: { id, hoursPerDay, minutesPerHour, secondsPerMinute, daysPerWeek }` - what an
+  analog clock needs to place its hands for any calendar.
+
 ## Unreleased — "Date only" datetimes keep advancing
 
 **Changed**

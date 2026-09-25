@@ -92,6 +92,10 @@ export const DEFAULT_CALENDARS = deepFreeze({
             Object.freeze({ name: 'December', days: 31 }),
         ]),
         leapYearRule: 'gregorian',
+        // Weekday indexes come from Sakamoto's algorithm: 0 = Sunday.
+        daysPerWeek: 7,
+        weekdayNames: Object.freeze(['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']),
+        weekdayShortNames: Object.freeze(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']),
     }),
     faerun_inspired: {
         id: 'faerun_inspired',
@@ -122,6 +126,11 @@ export const DEFAULT_CALENDARS = deepFreeze({
             nextCycle: ['next cycle', 'advance cycle'],
             moveToDay: ['move to'],
         },
+        // Faerûn's week is the ten-day tenday.
+        daysPerWeek: 10,
+        weekdayNames: ['Firstday', 'Secondday', 'Thirdday', 'Fourthday', 'Fifthday',
+            'Sixthday', 'Seventhday', 'Eighthday', 'Ninthday', 'Tenthday'],
+        weekdayShortNames: ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th'],
         version: 1,
     },
     three_moons: {
@@ -147,6 +156,10 @@ export const DEFAULT_CALENDARS = deepFreeze({
             nextWhiteMoon: ['next white moon'],
             nextCycle: ['next cycle'],
         },
+        // Lunar-driven, not week-driven: no weekday concept.
+        daysPerWeek: null,
+        weekdayNames: null,
+        weekdayShortNames: null,
         version: 1,
     },
     solar_cycle: {
@@ -177,6 +190,10 @@ export const DEFAULT_CALENDARS = deepFreeze({
             moveToSeason: ['move to season'],
             moveToDay: ['move to'],
         },
+        // Seasons, not weeks: no weekday concept.
+        daysPerWeek: null,
+        weekdayNames: null,
+        weekdayShortNames: null,
         version: 1,
     },
 });
@@ -526,6 +543,13 @@ export function getSettings() {
     // variable's default calendar reference points at, so it can never dangle).
     for (const builtinId of BUILTIN_CALENDAR_IDS) {
         if (!settings.calendars[builtinId]) settings.calendars[builtinId] = structuredCloneSafe(DEFAULT_CALENDARS[builtinId]);
+        // Built-ins are read-only, so a copy saved before weekdays existed is
+        // brought up to date with the current defaults' weekday fields.
+        for (const key of ['daysPerWeek', 'weekdayNames', 'weekdayShortNames']) {
+            if (DEFAULT_CALENDARS[builtinId][key] !== undefined && settings.calendars[builtinId][key] === undefined) {
+                settings.calendars[builtinId][key] = structuredCloneSafe(DEFAULT_CALENDARS[builtinId][key]);
+            }
+        }
     }
 
 

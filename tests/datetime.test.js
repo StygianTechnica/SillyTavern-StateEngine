@@ -93,14 +93,14 @@ describe('datetime variables', () => {
 
     describe('conversion', () => {
         it('scalar -> structured', () => {
-            expect(toStructured('gregorian', 0)).toEqual({ year: 1970, month: 1, day: 1, hour: 0, minute: 0, second: 0 });
-            expect(toStructured('gregorian', ts(2026, 9, 18, 22, 55, 7))).toEqual({ year: 2026, month: 9, day: 18, hour: 22, minute: 55, second: 7 });
-            expect(toStructured('gregorian', ts(2024, 2, 29, 23, 59, 59))).toEqual({ year: 2024, month: 2, day: 29, hour: 23, minute: 59, second: 59 });
+            expect(toStructured('gregorian', 0)).toEqual({ year: 1970, month: 1, day: 1, hour: 0, minute: 0, second: 0, weekdayIndex: 4, weekdayName: 'Thursday', weekdayShortName: 'Thu' });
+            expect(toStructured('gregorian', ts(2026, 9, 18, 22, 55, 7))).toEqual({ year: 2026, month: 9, day: 18, hour: 22, minute: 55, second: 7, weekdayIndex: 5, weekdayName: 'Friday', weekdayShortName: 'Fri' });
+            expect(toStructured('gregorian', ts(2024, 2, 29, 23, 59, 59))).toEqual({ year: 2024, month: 2, day: 29, hour: 23, minute: 59, second: 59, weekdayIndex: 4, weekdayName: 'Thursday', weekdayShortName: 'Thu' });
             expect(toStructured('gregorian', ts(2000, 12, 31))).toMatchObject({ year: 2000, month: 12, day: 31 });
         });
 
         it('scalar -> structured before the epoch, and floors a fractional scalar', () => {
-            expect(toStructured('gregorian', -1)).toEqual({ year: 1969, month: 12, day: 31, hour: 23, minute: 59, second: 59 });
+            expect(toStructured('gregorian', -1)).toEqual({ year: 1969, month: 12, day: 31, hour: 23, minute: 59, second: 59, weekdayIndex: 3, weekdayName: 'Wednesday', weekdayShortName: 'Wed' });
             expect(toStructured('gregorian', 1.9)).toMatchObject({ year: 1970, second: 1 });
         });
 
@@ -120,6 +120,9 @@ describe('datetime variables', () => {
                 expect(s).toEqual({
                     year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate(),
                     hour: d.getUTCHours(), minute: d.getUTCMinutes(), second: d.getUTCSeconds(),
+                    weekdayIndex: d.getUTCDay(),
+                    weekdayName: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d.getUTCDay()],
+                    weekdayShortName: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()],
                 });
                 expect(fromStructured('gregorian', s)).toBe(scalar);
             }

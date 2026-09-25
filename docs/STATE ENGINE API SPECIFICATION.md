@@ -1262,8 +1262,34 @@ formatDateTime(extensionId, instanceId, calendarId, scalarTime, options)
 
 formatDateTimePartial(extensionId, instanceId, calendarId, scalarTime, fields)
   -> object with only the requested fields
-  fields: any of "year", "month", "day", "hour", "minute", "second"
+  fields: any of "year", "month", "day", "hour", "minute", "second",
+          "weekdayIndex", "weekdayName", "weekdayShortName"
+
+getDateTimeParts(extensionId, instanceId, calendarId, scalarTime)
+  -> { year, month, day, hour, minute, second,
+       weekdayIndex, weekdayName, weekdayShortName,
+       time: { hour, minute, second, fraction },
+       calendar: { id, hoursPerDay, minutesPerHour, secondsPerMinute, daysPerWeek } }
+  time.fraction is the sub-second part of scalarTime (0 <= fraction < 1).
+  Meant for displays that draw the moment (an analog clock): hand angles are
+  360 * hour / hoursPerDay (+ the minute's share), 360 * minute / minutesPerHour
+  and 360 * second / secondsPerMinute, for any calendar.
 ```
+
+**Weekdays.** A calendar only has weekdays when its definition says so
+(`daysPerWeek`, `weekdayNames`, `weekdayShortNames` - all optional, null or
+absent means "not defined"):
+
+- `weekdayNames` set: the week is `weekdayNames.length` days long;
+  `weekdayName` / `weekdayShortName` come from the lists.
+- `daysPerWeek` set without names: `weekdayIndex` only, the names are null.
+- neither: `weekdayIndex`, `weekdayName` and `weekdayShortName` are all null.
+
+Fantasy calendars count whole days from their epoch (year 1, month 1, day 1
+is weekday 0). Gregorian-rule calendars use Tomohiko Sakamoto's algorithm
+(0 = Sunday); the built-in `gregorian` calendar names them Sunday..Saturday.
+Brace patterns format them with `{weekday}`, `{weekday_short}` and
+`{weekday_index}`, each of which outputs nothing when its value is null.
 
 Examples, for scalar 2026-09-18 22:55:07 UTC:
 
@@ -1375,6 +1401,9 @@ and `formatDateTime` accepts any style named in the calendar's
   seasons: [{ name: 'Winter', startDay: 256, endDay: 30 }],   // wraps the year end
   cycles:  [{ name: 'Silver Moon', length: 28 }],
   leapYearRule: 'none',
+  daysPerWeek: 5,                                  // null = no weekdays
+  weekdayNames: ['Firstday', ...],                 // null = numeric only; else exactly daysPerWeek
+  weekdayShortNames: ['Fi', ...],                  // optional; same length as weekdayNames
   formattingRules: { era: 'AR', monthAbbreviationLength: 3,
                      patterns: { full: 'MMMM D, YYYY ERA HH:mm:ss' },
                      monthNames: [...], seasonNames: [...] },

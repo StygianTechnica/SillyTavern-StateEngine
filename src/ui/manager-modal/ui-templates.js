@@ -1244,9 +1244,9 @@ const calInput = (field, value, placeholder = '', extra = '') => `
     <input class="text_pole se-cal-field" data-cal-field="${field}" placeholder="${escapeHtml(placeholder)}"
         value="${escapeHtml(value ?? '')}" ${extra} />`;
 
-const calTextarea = (field, value, placeholder = '', rows = 3) => `
+const calTextarea = (field, value, placeholder = '', rows = 3, extra = '') => `
     <textarea class="text_pole se-cal-field" data-cal-field="${field}" rows="${rows}"
-        placeholder="${escapeHtml(placeholder)}">${escapeHtml(value ?? '')}</textarea>`;
+        placeholder="${escapeHtml(placeholder)}" ${extra}>${escapeHtml(value ?? '')}</textarea>`;
 
 export function buildCalendarMonthRow(month = {}) {
     return `
@@ -1279,6 +1279,7 @@ export function buildCalendarCycleRow(cycle = {}) {
 // The calendar editor. `v` is calendar-ui-schema.js's editor values.
 export function buildCalendarEditor(v) {
     const leapRule = v.leapYearRule === 'gregorian' ? 'gregorian' : 'none';
+    const weekdaysOff = String(v.daysPerWeek ?? '').trim() === '';
     return `
         <div class="se-manager-section se-cal-editor" data-editing-new="${v.isNew ? 'true' : 'false'}">
             <div class="se-manager-section-header">
@@ -1314,8 +1315,17 @@ export function buildCalendarEditor(v) {
             <div class="se-cal-cycles">${(v.cycles || []).map(buildCalendarCycleRow).join('')}</div>
             <button type="button" class="menu_button se-cal-add-cycle"><i class="fa-solid fa-plus"></i> Add cycle</button>
 
+            <h4>Weekdays</h4>
+            <small>Leave the week length blank for a calendar with no weekdays. Names are optional - without them weekdays are numbered only (0 is the first).</small>
+            <label class="se-manager-label">Days per week</label>
+            ${calInput('daysPerWeek', v.daysPerWeek, 'blank = no weekdays', 'type="number" min="1"')}
+            <label class="se-manager-label">Weekday names (optional, one per line - exactly one per day of the week)</label>
+            ${calTextarea('weekdayNamesText', v.weekdayNamesText, 'Moonday', 3, weekdaysOff ? 'disabled' : '')}
+            <label class="se-manager-label">Short weekday names (optional, one per line - one per weekday name)</label>
+            ${calTextarea('weekdayShortNamesText', v.weekdayShortNamesText, 'Mo', 3, weekdaysOff ? 'disabled' : '')}
+
             <h4>Formatting rules</h4>
-            <small>Tokens: YYYY MM DD HH mm ss MMM MMMM, plus D (day), SEASON, CYCLE, CDAY, ERA.</small>
+            <small>Tokens: YYYY MM DD HH mm ss MMM MMMM, plus D (day), SEASON, CYCLE, CDAY, ERA. Brace patterns ("{monthName} {day}") also take {weekday}, {weekday_short} and {weekday_index}.</small>
             <label class="se-manager-label">Era text (ERA)</label>
             ${calInput('era', v.era, 'e.g. AR')}
             <label class="se-manager-label">Short month name length (MMM)</label>
@@ -1355,7 +1365,9 @@ export function buildCalendarPreviewOutput(result) {
         return `<div class="se-cal-preview-errors">${(result?.errors || ['No preview available']).map((e) => `<div>${escapeHtml(e)}</div>`).join('')}</div>`;
     }
     const p = result.partial || {};
-    const extras = [p.season ? `Season: ${p.season}` : '', p.cycle ? `${p.cycle}: day ${p.cycleDay}` : ''].filter(Boolean);
+    const weekday = p.weekdayIndex === null || p.weekdayIndex === undefined ? ''
+        : `Weekday: ${p.weekdayName ?? `#${p.weekdayIndex}`}${p.weekdayShortName ? ` (${p.weekdayShortName})` : ''}`;
+    const extras = [weekday, p.season ? `Season: ${p.season}` : '', p.cycle ? `${p.cycle}: day ${p.cycleDay}` : ''].filter(Boolean);
     return `
         ${result.scalarError ? `<div><em>${escapeHtml(result.scalarError)}</em></div>` : ''}
         <div><strong>${escapeHtml(result.full)}</strong></div>
