@@ -11,6 +11,7 @@ import * as cap from './capability-graph.js';
 import * as deps from './dependency-graph.js';
 import * as indep from './independent-presets.js';
 import * as notifications from './notification-api.js';
+import * as images from './image-api.js';
 
 export const stateEngine = {
     ...ns,
@@ -24,4 +25,5 @@ export const stateEngine = {
     ...deps,
     ...indep,
     ...notifications,
+    ...images,
 };

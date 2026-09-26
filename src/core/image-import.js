@@ -21,6 +21,11 @@
 //   them back in the same folder (rewriting the paths if a name is taken by a
 //   different file), so a shared preset keeps its pictures.
 //
+// Other extensions use the same pipeline through the public API
+// (stateEngine.importImageFile, src/api/image-api.js) with a folder of their
+// own: every function below that touches the folder takes an optional `folder`
+// (a plain name, isImportFolderName), defaulting to State Engine's.
+//
 // Network access is through `deps` ({ fetchImpl, headers }) so it can be tested.
 
 import { LOG_PREFIX } from './settings-core.js';
@@ -29,6 +34,17 @@ import { isImageType } from './image-variables.js';
 export const IMPORT_FOLDER = 'state-engine-images';
 export const IMPORT_PATH_PREFIX = `user/images/${IMPORT_FOLDER}/`;
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+
+// A folder name another caller may import into: letters, digits, "_" and "-",
+// starting with a letter or digit - one folder under user/images/, never a path.
+export function isImportFolderName(folder) {
+    return typeof folder === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(folder);
+}
+
+// "user/images/<folder>/" - the relative prefix of every path in `folder`.
+export function importPathPrefix(folder = IMPORT_FOLDER) {
+    return `user/images/${folder}/`;
+}
 
 // The formats SillyTavern's upload endpoint accepts as images (its MEDIA_EXTENSIONS),
 // minus jfif. No SVG: an SVG opened directly runs scripts in SillyTavern's origin.
@@ -50,11 +66,13 @@ const defaultDeps = () => ({
 
 // ---- what a reference may be ----------------------------------------------------
 
-// A path State Engine itself produced: "user/images/state-engine-images/<file>",
-// one file name, no folders, no "..", no query or fragment.
-export function isManagedImagePath(ref) {
-    if (typeof ref !== 'string' || !ref.startsWith(IMPORT_PATH_PREFIX)) return false;
-    const name = ref.slice(IMPORT_PATH_PREFIX.length);
+// A path State Engine itself produced: "user/images/state-engine-images/<file>"
+// (or the same inside `folder`), one file name, no folders, no "..", no query or
+// fragment.
+export function isManagedImagePath(ref, folder = IMPORT_FOLDER) {
+    const prefix = importPathPrefix(folder);
+    if (typeof ref !== 'string' || !ref.startsWith(prefix)) return false;
+    const name = ref.slice(prefix.length);
     return name !== '' && !/[\\/?#\u0000-\u001f]/.test(name) && name !== '.' && name !== '..' && !name.includes('..');
 }
 
@@ -145,14 +163,14 @@ function readFileBase64(file) {
 
 // ---- the server folder -------------------------------------------------------------
 
-// The file names already in the import folder, as a Set of lower-cased names, or null
-// when the list could not be read.
-export async function listImportedNames(deps = defaultDeps()) {
+// The file names already in the import folder (or `folder`), as a Set of
+// lower-cased names, or null when the list could not be read.
+export async function listImportedNames(deps = defaultDeps(), folder = IMPORT_FOLDER) {
     try {
         const response = await deps.fetchImpl('/api/images/list', {
             method: 'POST',
             headers: deps.headers(),
-            body: JSON.stringify({ folder: IMPORT_FOLDER }),
+            body: JSON.stringify({ folder }),
         });
         if (!response.ok) return null;
         const names = await response.json();
@@ -162,11 +180,11 @@ export async function listImportedNames(deps = defaultDeps()) {
     }
 }
 
-async function uploadBase64(base64, ext, base, deps) {
+async function uploadBase64(base64, ext, base, deps, folder = IMPORT_FOLDER) {
     const response = await deps.fetchImpl('/api/images/upload', {
         method: 'POST',
         headers: deps.headers(),
-        body: JSON.stringify({ image: base64, format: ext, filename: `${base}.${ext}`, ch_name: IMPORT_FOLDER }),
+        body: JSON.stringify({ image: base64, format: ext, filename: `${base}.${ext}`, ch_name: folder }),
     });
     if (!response.ok) throw new Error(`the server refused the upload (${response.status})`);
     const body = await response.json();
@@ -175,7 +193,7 @@ async function uploadBase64(base64, ext, base, deps) {
     // answers with a LEADING slash ("/user/images/state-engine-images/a.png", checked
     // against a real server); the stored form is the relative one, without it.
     const path = typeof body?.path === 'string' ? body.path.replace(/^\/+/, '') : '';
-    if (!isManagedImagePath(path)) throw new Error('the server returned an unexpected path');
+    if (!isManagedImagePath(path, folder)) throw new Error('the server returned an unexpected path');
     return path;
 }
 
@@ -186,7 +204,9 @@ async function uploadBase64(base64, ext, base, deps) {
 //   not an image / not a format we accept / SVG / empty / too large / unreadable /
 //   upload failed. `alsoTaken` (a Set of lower-cased names) is names already used by
 //   earlier files of the same drop; the folder itself is listed for every file.
-export async function importImageFile(file, deps = defaultDeps(), alsoTaken = new Set()) {
+//   `folder` (default State Engine's own) is where the copy goes.
+export async function importImageFile(file, deps = defaultDeps(), alsoTaken = new Set(), folder = IMPORT_FOLDER) {
+    if (!isImportFolderName(folder)) throw new Error(`"${folder}" is not a usable image folder name`);
     if (!file || typeof file.name !== 'string') throw new Error('that is not a file');
     const originalExtension = (file.name.match(/\.([^.]+)$/) || [])[1]?.toLowerCase() || '';
     const mime = String(file.type || '').toLowerCase();
@@ -205,13 +225,14 @@ export async function importImageFile(file, deps = defaultDeps(), alsoTaken = ne
     const base = safeBaseName(file.name);
     // The server overwrites a same-named file silently, so the name must be unused. If
     // the folder cannot be listed, a timestamp makes a clash practically impossible.
-    const listed = await listImportedNames(deps);
+    const listed = await listImportedNames(deps, folder);
     const names = new Set([...(listed ?? []), ...alsoTaken]);
     const name = uniqueFileName(listed ? base : `${base}-${Date.now()}`, ext, names);
 
-    const path = await uploadBase64(base64, ext, name.slice(0, -(ext.length + 1)), deps);
-    alsoTaken.add(path.slice(IMPORT_PATH_PREFIX.length).toLowerCase());
-    return { path, name: path.slice(IMPORT_PATH_PREFIX.length) };
+    const path = await uploadBase64(base64, ext, name.slice(0, -(ext.length + 1)), deps, folder);
+    const prefix = importPathPrefix(folder);
+    alsoTaken.add(path.slice(prefix.length).toLowerCase());
+    return { path, name: path.slice(prefix.length) };
 }
 
 // Imports several dropped files one after another (so two files with the same name

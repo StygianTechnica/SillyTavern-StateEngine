@@ -199,6 +199,9 @@ getVariableValues(chatId, qualifiedNames)     // { [name]: { value, def } | unde
 getVariableImage(chatId, qualifiedName)       // the image an image/imageList/imageMap shows, safe src | null
 setVariableValue(chatId, ref, value)          // OWN namespace only; refuses calculated
 
+// Image API (added 2026-09-25, Section 21, src/api/image-api.js):
+importImageFile(file, { folder })             // async -> "user/images/<folder>/<file>"; throws with the reason
+
 // Calculated-variable support (added 2026-09-10, Section 7.3):
 validateCalculatedDefinition(def)      // def.type/def.expression/def.namespace/def.presetName -> { ok, deps } | { ok, error }
 applyCalculatedDefinition(ref, def, deps)  // stores deps, evaluates, cascades, refreshes macros
@@ -2253,3 +2256,35 @@ tracker's rules, including an image map's `currentKeyVariable`) and
 `tests/number-limits.test.js` (editor, collection, and enforcement against
 the REAL `chat-state.js`), and a `getVariableImage` block in
 `tests/api/variable-value-api.test.js`.
+
+SECTION 21 — IMAGE API (2026-09-25)
+
+**21.1 `importImageFile(extensionId, instanceId, file, { folder })`**
+
+Stores an image file the way State Engine stores image-variable files
+(`src/core/image-import.js`) - the same checks (format read from the file's
+bytes: png, jpg, gif, webp, bmp; no SVG; 20 MB at most), the same upload
+through SillyTavern's `/api/images/upload`, the same never-reused file names -
+into `data/<user>/user/images/<folder>/`, and resolves to the relative path
+`user/images/<folder>/<file>`. It is the only supported way for another
+extension to store images: callers must not reimplement the pipeline.
+
+- `folder`: letters, digits, `_` and `-`, starting with a letter or digit (one
+  folder under the user's images, never a path). Left out: State Engine's own
+  `state-engine-images`. Pretty Panels uses `pretty-panels-theme-assets`.
+- Open to any registered caller (`resolveCallerRecord`: right instance, owns a
+  namespace).
+- Async, and it THROWS on failure - identity, a bad folder name, or the
+  import's own reason ("SVG images cannot be imported ...", "the file is larger
+  than 20 MB", "the server refused the upload (500)") - so the caller can show
+  the user why.
+
+The pipeline's folder-touching functions (`isManagedImagePath`,
+`listImportedNames`, `importImageFile`) take an optional `folder` defaulting to
+State Engine's, so every existing caller behaves exactly as before.
+
+**21.2 Verification**
+
+`tests/api/image-api.test.js` (custom and default folder, unique names, State
+Engine's checks applied, bad folder names and identity refused before any
+upload); `tests/image-import.test.js` unchanged and passing.

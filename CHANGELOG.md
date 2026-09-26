@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — Image API
+
+**Added**
+
+- `stateEngine.importImageFile(extensionId, instanceId, file, { folder })`: other extensions
+  store images through State Engine's own image-variable pipeline (same checks, same
+  SillyTavern upload, unique names) into a folder of their choosing, and get back the relative
+  path `user/images/<folder>/<file>`. Throws with the reason on failure. The existing import
+  functions take an optional folder that defaults to `state-engine-images`, so State Engine's
+  own drops and preset import/export are unchanged.
+
 ## Unreleased — Weekdays and clock time primitives
 
 **Added**
