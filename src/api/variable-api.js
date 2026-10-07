@@ -191,6 +191,26 @@ function checkedFlagMode(def, fnName) {
     return { ok: true };
 }
 
+// increment.deltaVariable (requirements spec 1.37): the NAME of a variable
+// whose current value is the increment step instead of increment.delta.
+// Only checked for shape here - which variable it names is resolved at
+// increment time (chat-state.js incrementDelta), where a missing or
+// unusable one falls back to the fixed delta - but a variable can never be
+// its own step.
+function checkedDeltaVariable(def, fnName) {
+    const name = def.increment?.deltaVariable;
+    if (name === undefined || name === null || name === '') return { ok: true };
+    if (typeof name !== 'string') {
+        return { ok: false, error: `${fnName}: increment.deltaVariable must be a variable name (a string)` };
+    }
+    const trimmed = name.trim();
+    if (trimmed && trimmed === def.name) {
+        return { ok: false, error: `${fnName}: increment.deltaVariable cannot name the variable itself` };
+    }
+    def.increment = { ...def.increment, deltaVariable: trimmed };
+    return { ok: true };
+}
+
 function currentChatId() {
     try {
         return SillyTavern.getContext().chatId;
@@ -354,6 +374,11 @@ export function createVariable(extensionId, instanceId, def) {
             console.warn(LOG_PREFIX, flagCheck.error);
             return null;
         }
+        const deltaCheck = checkedDeltaVariable(fullDef, 'createVariable');
+        if (!deltaCheck.ok) {
+            console.warn(LOG_PREFIX, deltaCheck.error);
+            return null;
+        }
         if (fullDef.type === 'datetime') {
             const datetime = checkedDatetime(fullDef, 'createVariable', preset);
             if (!datetime.ok) {
@@ -472,6 +497,11 @@ export function updateVariable(extensionId, instanceId, ref, patch) {
         const flagCheck = checkedFlagMode(newDef, 'updateVariable');
         if (!flagCheck.ok) {
             console.warn(LOG_PREFIX, flagCheck.error);
+            return null;
+        }
+        const deltaCheck = checkedDeltaVariable(newDef, 'updateVariable');
+        if (!deltaCheck.ok) {
+            console.warn(LOG_PREFIX, deltaCheck.error);
             return null;
         }
 

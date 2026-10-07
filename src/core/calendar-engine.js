@@ -1252,21 +1252,45 @@ function customVerbPattern(calendar, key, allowTo) {
     return new RegExp(`^(?:${alternatives.join('|')})${allowTo ? '(?:\\s+to)?' : '(?:\\s+by)?'}\\s+(.+)$`);
 }
 
+// Every lowercase name a month answers to -> its 1-based number: its name,
+// its formattingRules display name, and any abbreviation of either (3+
+// letters, "sep"/"sept" for September) that names only that one month in
+// this calendar - a prefix two months share is left out rather than guessed
+// (spec 1.38).
+function monthNameLookup(calendar) {
+    const names = new Map();
+    const prefixes = new Map(); // prefix -> month number, or 0 when ambiguous
+    calendar.months.forEach((month, i) => {
+        const shown = calendar.formattingRules?.monthNames?.[i];
+        for (const full of [month.name, shown]) {
+            if (typeof full !== 'string' || !full.trim()) continue;
+            const lower = full.trim().toLowerCase();
+            names.set(lower, i + 1);
+            for (let n = 3; n < lower.length; n += 1) {
+                const prefix = lower.slice(0, n);
+                if (/\s$/.test(prefix)) break;
+                const seen = prefixes.get(prefix);
+                prefixes.set(prefix, seen === undefined || seen === i + 1 ? i + 1 : 0);
+            }
+        }
+    });
+    for (const [prefix, month] of prefixes) {
+        if (month && !names.has(prefix)) names.set(prefix, month);
+    }
+    return names;
+}
+
 // "Stormfall 17", "17 Stormfall", "Stormfall 17, 1203", "the 17th of
-// Stormfall 1203 at 14:30" -> scalar, or null. The year defaults to the
+// Stormfall 1203 at 14:30", "Sept. 5, 2025" -> scalar, or null. The year defaults to the
 // current moment's year and the time of day to 00:00:00; with a null
 // currentScalar the year is required instead (toScalar's absolute form).
 function resolveMonthDay(calendarId, calendar, currentScalar, phrase) {
-    const names = new Map();
-    calendar.months.forEach((month, i) => {
-        names.set(month.name.toLowerCase(), i + 1);
-        const shown = calendar.formattingRules?.monthNames?.[i];
-        if (shown) names.set(shown.toLowerCase(), i + 1);
-    });
+    const names = monthNameLookup(calendar);
     const alternation = [...names.keys()].sort((a, b) => b.length - a.length).map(escapeRegex).join('|');
     const tail = '(?:\\s*,?\\s*(?:year\\s+)?(-?\\d+))?(?:\\s+(?:at\\s+)?(\\d{1,2}):(\\d{2})(?::(\\d{2}))?)?';
-    const monthFirst = new RegExp(`^(${alternation})\\s+(\\d{1,4})(?:st|nd|rd|th)?${tail}$`, 'i').exec(phrase);
-    const dayFirst = monthFirst ? null : new RegExp(`^(?:the\\s+)?(\\d{1,4})(?:st|nd|rd|th)?\\s+(?:of\\s+)?(${alternation})${tail}$`, 'i').exec(phrase);
+    // An abbreviated month may carry a dot ("Sept. 5").
+    const monthFirst = new RegExp(`^(${alternation})\\.?\\s+(\\d{1,4})(?:st|nd|rd|th)?${tail}$`, 'i').exec(phrase);
+    const dayFirst = monthFirst ? null : new RegExp(`^(?:the\\s+)?(\\d{1,4})(?:st|nd|rd|th)?\\s+(?:of\\s+)?(${alternation})\\.?${tail}$`, 'i').exec(phrase);
     const match = monthFirst || dayFirst;
     if (!match) return null;
 
@@ -1363,7 +1387,7 @@ function resolvePhraseRule(calendarId, calendar, currentScalar, phrase) {
         return (yearIndex * yearLength(calendar) + calendar.seasons[index].startDay - 1) * secondsPerDay(calendar);
     }
     const target = withTarget('moveToDay');
-    if (target !== null) return toScalar(calendarId, target) ?? resolveMonthDay(calendarId, calendar, currentScalar, target);
+    if (target !== null) return keepTimeOfDay(calendarId, toScalar(calendarId, target) ?? resolveMonthDay(calendarId, calendar, currentScalar, target), currentScalar, target);
     return undefined;
 }
 
@@ -1374,8 +1398,12 @@ function resolvePhraseRule(calendarId, calendar, currentScalar, phrase) {
 //   "advance 1 season" / "next cycle"         -> a season / cycle later
 //   "previous month" / "last season"          -> one unit earlier
 //   "set time to 2026-09-18 22:00"            -> that exact moment
-//   "move to Stormfall 17" / "Stormfall 17"   -> that day (this year, 00:00)
+//   "move to Stormfall 17" / "Stormfall 17"   -> that day (this year), at the
+//                                                current time of day (1.38)
 //   "2026-09-18 22:00", "3600" or a number     -> that exact moment / scalar
+//   "2026-09-18", "Sept. 18, 2026"            -> that day, current time of day
+// A narrative lead-in ("it was ...", "the date is now ...") and a leading
+// weekday ("Friday, ...") are ignored (1.38, stripLeadIn).
 // The calendar's own nlRules add verbs (advanceVerbs, rewindVerbs, setVerbs)
 // and unit words (unitAliases) on top of these. `options.semanticTimeOfDay`
 // (requirements spec 1.35, default false) additionally recognizes semantic
@@ -1391,8 +1419,29 @@ export function resolveInstruction(calendarId, currentScalar, text, options = {}
         if (typeof text === 'number') return Number.isFinite(text) ? text : null;
         if (typeof text !== 'string') return null;
         const calendar = requireCalendar(calendarId);
-        const phrase = text.trim().toLowerCase().replace(/[.!]+$/, '');
+        const phrase = stripLeadIn(text.trim().toLowerCase().replace(/[.!]+$/, ''));
         if (!phrase) return null;
+        const result = resolvePhrase(calendarId, calendar, currentScalar, phrase, options);
+        if (result !== null) return result;
+        // A leading weekday is only dropped when the text does not resolve
+        // as written: a calendar's short weekday names can be ordinals
+        // ("1st" on the Faerun-inspired calendar) that a date also starts with.
+        const withoutWeekday = stripWeekday(calendar, phrase);
+        return withoutWeekday && withoutWeekday !== phrase
+            ? resolvePhrase(calendarId, calendar, currentScalar, withoutWeekday, options)
+            : null;
+    } catch {
+        return null;
+    }
+}
+
+// resolveInstruction()'s grammar for one prepared (trimmed, lowercased,
+// lead-in stripped) phrase. The scalar, or null. Never throws.
+function resolvePhrase(calendarId, calendar, currentScalar, phrase, options) {
+    try {
+        // A date given without a time of day keeps the current one (spec
+        // 1.38): "September 5, 2025" at 14:30 lands on 2025-09-05 14:30.
+        const keepTime = (result, dateText) => keepTimeOfDay(calendarId, result, currentScalar, dateText);
 
         if (options?.semanticTimeOfDay) {
             const semantic = resolveSemanticTimeOfDay(calendarId, currentScalar, phrase);
@@ -1400,14 +1449,14 @@ export function resolveInstruction(calendarId, currentScalar, text, options = {}
         }
 
         const absolute = toScalar(calendarId, phrase);
-        if (absolute !== null) return absolute;
+        if (absolute !== null) return keepTime(absolute, phrase);
 
         const phrased = resolvePhraseRule(calendarId, calendar, currentScalar, phrase);
         if (phrased !== undefined) return phrased;
 
         const customSet = customVerbPattern(calendar, 'setVerbs', true)?.exec(phrase);
         const set = customSet || SET_PATTERN.exec(phrase) || MOVE_TO_PATTERN.exec(phrase);
-        if (set) return toScalar(calendarId, set[1]) ?? resolveMonthDay(calendarId, calendar, currentScalar, set[1]);
+        if (set) return keepTime(toScalar(calendarId, set[1]) ?? resolveMonthDay(calendarId, calendar, currentScalar, set[1]), set[1]);
 
         const customAdvance = customVerbPattern(calendar, 'advanceVerbs', false)?.exec(phrase);
         const advance = customAdvance || ADVANCE_PATTERN.exec(phrase);
@@ -1423,8 +1472,43 @@ export function resolveInstruction(calendarId, currentScalar, text, options = {}
         const previous = PREVIOUS_PATTERN.exec(phrase);
         if (previous) return applyParsedDelta(calendarId, calendar, currentScalar, parseDeltaFor(calendar, `1 ${previous[1]}`), -1);
 
-        return resolveMonthDay(calendarId, calendar, currentScalar, phrase);
+        return keepTime(resolveMonthDay(calendarId, calendar, currentScalar, phrase), phrase);
     } catch {
         return null;
     }
+}
+
+// A narrative lead-in, which says nothing the date does not (spec 1.38):
+// "it was september 5, 2025", "the date is now ...", "today is ...".
+// `phrase` is already trimmed and lowercased.
+const LEAD_IN = /^(?:(?:and|so)\s+)?(?:(?:it\s+(?:is|was)|it's|today\s+(?:is|was)|(?:the\s+)?(?:current\s+)?(?:date|day)\s+(?:is|was))(?:\s+now)?|now)\s*[:,]?\s+/;
+function stripLeadIn(phrase) {
+    return phrase.replace(LEAD_IN, '').trim();
+}
+
+// `phrase` without a leading weekday (spec 1.38): "friday, september 5,
+// 2025", "on fri. 2025-09-05". Weekdays are the calendar's own weekdayNames /
+// weekdayShortNames - a calendar without them has nothing to strip.
+function stripWeekday(calendar, phrase) {
+    const weekdays = [...(calendar.weekdayNames || []), ...(calendar.weekdayShortNames || [])]
+        .filter((w) => typeof w === 'string' && w.trim())
+        .map((w) => w.trim().toLowerCase())
+        .sort((a, b) => b.length - a.length);
+    if (!weekdays.length) return phrase;
+    const prefix = new RegExp(`^(?:on\\s+)?(?:${weekdays.map(escapeRegex).join('|')})\\.?\\s*,?\\s+(?=\\S)`);
+    return phrase.replace(prefix, '').trim();
+}
+
+// `result` (a scalar from a date the text named) with the time of day of
+// `currentScalar`, when `dateText` gave a date but no time ("14:30") and is
+// not a bare number of seconds. Otherwise `result` unchanged (null included).
+function keepTimeOfDay(calendarId, result, currentScalar, dateText) {
+    if (result === null || result === undefined || !Number.isFinite(currentScalar)) return result;
+    if (PLAIN_NUMBER.test(String(dateText).trim()) || /\d{1,2}:\d{2}/.test(dateText)) return result;
+    const date = toStructured(calendarId, result);
+    const now = toStructured(calendarId, currentScalar);
+    return fromStructured(calendarId, {
+        year: date.year, month: date.month, day: date.day,
+        hour: now.hour, minute: now.minute, second: now.second,
+    });
 }

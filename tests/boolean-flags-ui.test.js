@@ -162,10 +162,29 @@ describe('the tracker: the manual reset path', () => {
         expect(rowFor('ready').querySelector('.se-tracker-edit-btn')).not.toBe(null);
     });
 
-    it('an ordinary prompted boolean still has NO edit pencil (the exception is flag-mode only)', () => {
+    it('an ordinary prompted boolean has an edit pencil too (1.14.3 - prompted values can be corrected by hand)', () => {
         add('mood', { flagMode: false, behaviors: { prompted: true, increment: false } });
         renderTrackerPanel();
-        expect(rowFor('mood').querySelector('.se-tracker-edit-btn')).toBe(null);
+        expect(rowFor('mood').querySelector('.se-tracker-edit-btn')).not.toBe(null);
+    });
+
+    it('a prompted number and an incremented number can both be corrected with the pencil (1.14.3)', () => {
+        const prompted = add('seith', { type: 'number', flagMode: false, defaultValue: 5, behaviors: { prompted: true, increment: false } });
+        const counted = add('turns', { type: 'number', flagMode: false, defaultValue: 0, behaviors: { prompted: false, increment: true } });
+        setVar('chat-1', prompted.name, 0, prompted);
+        setVar('chat-1', counted.name, 3, counted);
+        renderTrackerPanel();
+
+        for (const [label, d, text, expected] of [['seith', prompted, '5', 5], ['turns', counted, '10', 10]]) {
+            rowFor(label).querySelector('.se-tracker-edit-btn').click();
+            const input = rowFor(label).querySelector('input[type="text"].se-tracker-edit-input');
+            expect(input).not.toBe(null);
+            input.value = text;
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+            expect(getVar('chat-1', d.name).value).toBe(expected);
+        }
+        // An incremented variable keeps its Reset button alongside the pencil.
+        expect(rowFor('turns').querySelector('.se-tracker-reset-btn')).not.toBe(null);
     });
 
     it('clicking the pencil, unchecking the box and committing resets a true flag to false', () => {

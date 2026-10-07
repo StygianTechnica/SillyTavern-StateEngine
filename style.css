@@ -327,9 +327,14 @@
 /* document.body, so its rules are unscoped)                            */
 /* -------------------------------------------------------------------- */
 
+/* Above the chat (#sheld is 30) and above Pretty Panels' HUD panels
+   (100-199), but below every SillyTavern drawer and popup - those must stay
+   usable. Kept far below 1000 because some themes (e.g. Moonlit Echoes)
+   force .drawer-content - the Author's Note window, the side drawers - down
+   to z-index 1000. */
 #se_tracker_panel {
     position: fixed;
-    z-index: 3000;
+    z-index: 200;
     display: flex;
     flex-direction: column;
     min-width: 220px;

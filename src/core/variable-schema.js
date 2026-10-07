@@ -132,6 +132,7 @@ export function blankDefinition() {
         // Deterministic increment configuration
         increment: {
             delta: 1,           // arithmetic increment for numbers
+            deltaVariable: '',  // number/datetime: NAME of a variable whose current value is the step instead of delta (spec 1.37, chat-state.js incrementDelta); '' = use delta
             triggers: ['ai'],   // user | ai | both
             tick_mode: null,    // null or "per_message"
             tick_on: 'both',    // user | ai | both

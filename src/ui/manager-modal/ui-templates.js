@@ -196,6 +196,26 @@ function imageMapEntries(defaultValue) {
     return Object.entries(value).filter(([, ref]) => typeof ref === 'string');
 }
 
+// The "Delta from variable" dropdown of the increment section (spec 1.37):
+// increment.deltaVariable, offered from this preset's variables of `types`.
+// A stored name that is no longer offered stays selected and is marked, so
+// saving never silently drops it (same as deltaSource / currentKeyVariable).
+function deltaVariableSelect(d, otherVars, types, help) {
+    const current = d.increment?.deltaVariable || '';
+    const offered = otherVars.filter((v) => types.includes(v.type));
+    return `
+        <label>Delta from variable:</label>
+        <select class="text_pole se-manager-var-field" data-field="increment.deltaVariable">
+            <option value="" ${!current ? 'selected' : ''}>-- none (use the fixed amount) --</option>
+            ${offered.map((v) => `
+                <option value="${escapeHtml(v.name)}" ${current === v.name ? 'selected' : ''}>${escapeHtml(v.name)}${v.label ? ` (${escapeHtml(v.label)})` : ''} [${escapeHtml(v.type)}]</option>
+            `).join('')}
+            ${current && !offered.some((v) => v.name === current)
+                ? `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)} (not a suitable variable in this preset)</option>` : ''}
+        </select>
+        <div class="se-empty">${escapeHtml(help)}</div>`;
+}
+
 export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars = listCalendars()) {
     otherVars = Array.isArray(otherVars) ? otherVars : [];
     // enumValuesMultiline carries the live (possibly-unsaved) list-editor rows
@@ -553,6 +573,7 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                         <input class="text_pole se-manager-var-field"
                             data-field="increment.delta"
                             value="${escapeHtml(d.increment.delta)}" />
+                        ${deltaVariableSelect(d, otherVars, ['number', 'calculated'], "Use a number variable's current value (a calculated one works too) instead of the fixed amount. While it has no number, the fixed amount above is used.")}
                     ` : ''}
 
                     ${d.type === 'datetime' ? `
@@ -560,6 +581,7 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                         <input class="text_pole se-manager-var-field"
                             data-field="increment.delta"
                             value="${escapeHtml(d.increment.delta)}" />
+                        ${deltaVariableSelect(d, otherVars, ['number', 'string', 'enum', 'calculated'], "Use another variable's current value instead of the fixed step: a number of seconds, or a duration such as 3h or 2d. While it holds neither, the fixed step above is used.")}
                         <div class="se-empty">This is what makes the date/time move forward on its own, by this fixed amount, on the trigger selected above. If "Narrative jump source" is set (further up), a jump from it skips this step's next automatic advance so the two never stack on the same variable.</div>
                     ` : ''}
 

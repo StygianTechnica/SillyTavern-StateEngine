@@ -216,7 +216,7 @@ describe('built-in fantasy calendars: natural language', () => {
 
     it('"move to <month> <day>" on each calendar', () => {
         const from = at('faerun_inspired', 1203, 2, 3, 9);
-        expect(resolveInstruction('faerun_inspired', from, 'move to Starfall 17')).toBe(at('faerun_inspired', 1203, 10, 17));
+        expect(resolveInstruction('faerun_inspired', from, 'move to Starfall 17')).toBe(at('faerun_inspired', 1203, 10, 17, 9)); // keeps 09:00 (1.38)
         expect(resolveInstruction('three_moons', at('three_moons', 9, 1, 1), 'move to Moonrise 8')).toBe(at('three_moons', 9, 8, 8));
         expect(resolveInstruction('solar_cycle', at('solar_cycle', 7, 1, 1), 'move to Lowbloom 3')).toBe(at('solar_cycle', 7, 6, 3));
     });

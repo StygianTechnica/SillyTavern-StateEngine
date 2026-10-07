@@ -405,6 +405,24 @@ current chat's stored value - fully consistent with 1.12: it is a value
 write like a prompted update or a manual reset-button click already were,
 not a reseed.
 
+1.14.3 Tracker Edit: Prompted and Incremented Variables Too (2026-10-07)
+
+Supersedes 1.14.2's "a prompted/incremented variable already has its own
+owner" exclusion. In real use a prompted value can go wrong (the LLM
+misjudges it, or it was seeded from a default the user had not finished
+typing) and an incremented one can need correcting, and the pencil is the
+only manual write surface this extension has - without it the only fix was
+toggling the preset off and on, or Reset (increment only, and only back to
+the default). So the pencil is now offered for every variable except:
+
+- calculated (derived, read-only - 1.17.3), and
+- image / imageList / imageMap (shown as a picture only - 1.26).
+
+The write is unchanged from 1.14.2 (coerce, setVar with { manual: true },
+recalculateDependents, re-render). Prompted updates and increments simply
+continue from the corrected value. An incremented variable keeps its Reset
+button beside the pencil. tracker-panel-ui.js isTrackerEditable().
+
 1.15 Typed Arrays
 
 type "array" variables carry a declared itemType, constraining what the
@@ -2642,6 +2660,90 @@ aware display and editing).
   and confirming the suite catches each break (mutation testing) before
   being called done.
 
+1.37 Increment Delta From a Variable (2026-10-07)
+
+A fixed increment step is often not what a story needs (damage that depends
+on a weapon, time that passes by a computed amount). A number or datetime
+variable's increment can take its step from another variable instead:
+
+    increment.deltaVariable: string   // default '' - the FULLY-QUALIFIED
+                                      // name of the variable whose CURRENT
+                                      // stored value is the step
+
+- '' (the default, and every existing definition): increment.delta, exactly
+  as before.
+- number: the source's value must be a finite number (a numeric string, such
+  as a calculated or string result "4", counts). Typically a number or a
+  calculated variable - a calculated variable is how a computed step is
+  expressed; there is deliberately no second, inline expression field.
+- datetime: a number (seconds) or a duration string the variable's calendar
+  accepts ("3h", "2d" - isValidDelta). Typically a number, string, enum or
+  calculated variable.
+- Anything else (the source does not exist, has no value yet, or holds
+  something unusable): increment.delta is used and a console warning names
+  the variable - an increment never silently stops.
+- Other types (boolean, enum, array, imageList) do not step by an amount;
+  the field is ignored for them.
+
+Resolved at increment time by increment-delta.js incrementDelta(chatId,
+def), which deterministic-engine.js, prompted-engine.js and
+independent-presets.js all call in place of reading increment.delta
+directly. applyIncrement() itself is unchanged: it still receives the
+step as its delta argument.
+
+Validation (variable-api.js checkedDeltaVariable): a non-string is refused;
+a variable naming itself is refused. Which variable it names is NOT checked
+at save time (it may be in another active preset, or be created later) -
+the runtime fallback above covers it. Like deltaSource and
+currentKeyVariable, the reference is by name and is not rewritten when the
+named variable is renamed.
+
+Manager modal: a "Delta from variable" dropdown under the fixed amount, for
+number (offering number and calculated variables of the same preset) and
+datetime (also string and enum). A stored name no longer offered stays
+selected and marked, so saving never silently drops it. The editor summary
+says which variable supplies the step.
+
+Verification: tests/increment-delta-variable.test.js.
+
+1.38 Story Date Phrasing and Keeping the Time of Day (2026-10-07)
+
+A date a story states ("It was September 5, 2025") reaches a datetime
+variable through a narrative jump (deltaSource, 1.31) or a prompted answer,
+both read by calendar-engine.js resolveInstruction(). It now also accepts:
+
+- Narrative lead-ins, ignored: "it was", "it is", "it's", "today is", "the
+  (current) date is", each optionally followed by "now", a leading "now",
+  and an optional "and"/"so" before them (stripLeadIn).
+- Abbreviated month names: any prefix of 3+ letters of a month's name (or
+  its formattingRules display name) that names only that one month in the
+  calendar - "Sep", "Sept", "Sept." for September. A prefix two months share
+  is never guessed (monthNameLookup). This also applies wherever a
+  calendar's written date is read (toScalar).
+- A leading weekday, ignored: the calendar's own weekdayNames /
+  weekdayShortNames, optionally after "on", with an optional dot and comma
+  ("Friday, September 5, 2025", "Fri. 2025-09-05"). Only tried when the text
+  does not resolve as written, because a calendar's short weekday names can
+  be ordinals a date also starts with ("1st" on the Faerun-inspired calendar,
+  "1st of Rainswell"). A calendar without weekday names strips nothing.
+
+And a CHANGE of behavior: a date given WITHOUT a time of day now keeps the
+variable's current time of day instead of landing on 00:00:00
+(keepTimeOfDay). "September 5, 2025" at 14:30 gives 2025-09-05 14:30. A
+date WITH a time ("... at 08:15", "2025-09-05 08:00") uses that time; a bare
+number is still that exact scalar; relative instructions are unchanged;
+moveToSeason phrase rules (first day of a season) still land on midnight.
+Before this a story-stated date silently reset the clock to midnight.
+
+Not supported, deliberately: numeric dates with slashes ("9/5/2025") - the
+day/month order is ambiguous between US and most other usage, and a wrong
+guess would move the story by months.
+
+Verification: tests/date-phrasing.test.js; the midnight expectations in
+tests/datetime.test.js, tests/fantasy-calendar.test.js and
+tests/fantasy-calendar-seeds.test.js updated to the kept time of day. A
+calendar's own nlRules.moveToDay phrase keeps the time of day the same way.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 
@@ -2687,6 +2789,13 @@ deterministic-engine.js
 deterministic increments
 
 calling applyIncrement
+
+increment-delta.js
+the step an increment applies (incrementDelta, 1.37): the fixed
+increment.delta, or the current value of increment.deltaVariable. Reads
+through getVar (chat-state.js); every increment caller (deterministic,
+prompted, independent presets) asks it rather than reading
+increment.delta itself
 
 calendar-engine.js
 scalar time <-> structured time and datetime increments (getCalendar,

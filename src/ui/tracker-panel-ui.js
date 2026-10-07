@@ -14,25 +14,20 @@ import { isImageType, activeImageRef } from '../core/image-variables.js';
 import { thumbHtml } from './image-preview.js';
 import { setStatus } from './settings-panel-ui.js';
 
-// A variable is runtime-editable from the tracker when nothing else already
-// owns writing its value: not calculated (derived, read-only - 1.17.3),
-// not prompted (the LLM owns it), not incremented (the reset button and the
-// increment engine own it). There is no separate "static" schema type -
-// number/string/boolean/enum/array are all eligible here whenever neither
-// behavior flag is set; type itself doesn't matter.
+// A variable is runtime-editable from the tracker unless its value is not
+// the user's to set: calculated (derived, read-only - 1.17.3) or an image
+// type (shown as a picture only). Prompted and incremented variables ARE
+// editable (1.14.3): the LLM / increment engine keep updating them, but the
+// user must be able to correct a wrong value by hand - the pencil is the
+// only manual write surface this extension has. Each later prompted update
+// or increment simply carries on from the corrected value.
 //
-// A flag-mode boolean (1.28) is the one deliberate exception: it is ALWAYS
-// editable here, even when prompted or incremented, because the tracker's edit
-// pencil (and its reset button, below) is the only manual write surface this
-// extension actually has - without this override a flag that is also prompted
-// (the normal case: "set true by prompted updates") could never be reset at all.
-function isStaticVariable(def) {
-    if (def?.type === 'boolean' && def.flagMode === true) return true;
+// A flag-mode boolean (1.28) needs the pencil's { manual: true } write to be
+// reset to false at all (setVar refuses that from any automatic path).
+function isTrackerEditable(def) {
     return !!def
         && def.type !== 'calculated'
-        && !isImageType(def) // shown as a picture only - no editing from the tracker
-        && def.behaviors?.prompted !== true
-        && def.behaviors?.increment !== true;
+        && !isImageType(def);
 }
 
 // What a tracker edit of `def` means for the text the user committed:
@@ -292,13 +287,11 @@ export function renderTrackerPanel() {
         //$row.append($('<span></span>').addClass(`se-badge se-badge-${def.category} se-tracker-badge`).text(categoryLabel(def.category)));//111111111111
         $row.append($label, $value);
 
-        // Static variables (no prompted/increment behavior, not calculated)
-        // have no write-path after seeding otherwise - this is the runtime
-        // state edit surface. The inline manager-modal editor stays
-        // schema-only (name/type/dependencies/etc); this only ever changes
-        // the *stored value* for the current chat, never defaultValue, and
-        // never re-seeds anything.
-        if (isStaticVariable(def)) {
+        // The runtime state edit surface (1.14.2/1.14.3). The inline
+        // manager-modal editor stays schema-only (name/type/dependencies/
+        // etc); this only ever changes the *stored value* for the current
+        // chat, never defaultValue, and never re-seeds anything.
+        if (isTrackerEditable(def)) {
             const $editBtn = $('<button></button>')
                 .addClass('se-tracker-btn se-tracker-edit-btn')
                 .attr('title', 'Edit value')
@@ -509,12 +502,7 @@ export function buildTrackerPanel() {
         }
     });
 
-    $('#se_tracker_close').on('click', () => {
-        getSettings().showTrackerPanel = false;
-        persistSettings();
-        $panel.hide();
-        $('#se_show_tracker_panel').prop('checked', false);
-    });
+    $('#se_tracker_close').on('click', () => setTrackerPanelVisible(false));
 
     $('#se_tracker_debug_toggle').on('click', function () {
         const s = getSettings();
@@ -528,7 +516,16 @@ export function buildTrackerPanel() {
     renderTrackerPanel();
 }
 
+// Every way of showing or hiding the panel (the settings checkbox, the wand
+// menu, the panel's own × button) comes through here, so the choice is
+// remembered for the next page load whichever one was used.
 export function setTrackerPanelVisible(visible) {
+    const settings = getSettings();
+    if (!!settings.showTrackerPanel !== !!visible) {
+        settings.showTrackerPanel = !!visible;
+        persistSettings();
+    }
+    $('#se_show_tracker_panel').prop('checked', !!visible);
     if (visible) {
         buildTrackerPanel();
         $('#se_tracker_panel').show();

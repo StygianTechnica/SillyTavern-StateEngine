@@ -54,6 +54,7 @@ import { validateNamespace } from './namespace-manager.js';
 import { validateCallerIdentity } from './identity.js';
 import { findPresetEntry, createPreset, updatePreset, deletePreset, listPresets } from './preset-api.js';
 import { getVar, setVar, applyIncrement } from '../core/chat-state.js';
+import { incrementDelta } from '../core/increment-delta.js';
 import { recalculateDependents } from '../core/calculated-engine.js';
 import { callBackgroundLLM } from '../core/background-llm.js';
 import { extractJsonObject, describeConstraint, buildRecentMessagesSection } from '../ui/formatting-utils.js';
@@ -635,7 +636,7 @@ async function runIndependentPresetInternal(chatId, presetRef) {
                 for (const def of chunk.incrementVars) {
                     try {
                         if (parsed[def.name] === true) {
-                            applyIncrement(chatId, def.name, def.increment.delta, def);
+                            applyIncrement(chatId, def.name, incrementDelta(chatId, def), def);
                             recalculateDependents(chatId, def.name);
                             incrementedCount++;
                             changed.push(def.name);

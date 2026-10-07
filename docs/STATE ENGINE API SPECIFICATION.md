@@ -2288,3 +2288,30 @@ State Engine's, so every existing caller behaves exactly as before.
 `tests/api/image-api.test.js` (custom and default folder, unique names, State
 Engine's checks applied, bad folder names and identity refused before any
 upload); `tests/image-import.test.js` unchanged and passing.
+
+SECTION 22 — INCREMENT DELTA FROM A VARIABLE (2026-10-07)
+
+**22.1 `increment.deltaVariable`**
+
+A new optional field on a definition's `increment` block - no new
+`stateEngine.*` function. Set it through `createVariable` / `updateVariable`
+like any other field:
+
+```
+increment.deltaVariable: string   // default '' - the FULLY-QUALIFIED name
+                                  // (e.g. "ext__damage") of the variable
+                                  // whose current value is the step
+```
+
+For a `number` variable the source must hold a finite number; for a
+`datetime`, a number of seconds or a duration string its calendar accepts
+(`"3h"`, `"2d"`). Otherwise, or when it is `''`, `increment.delta` is used
+(with a console warning in the fallback case). Ignored for other types.
+Stored trimmed. Refused (the call returns `null` and warns): a non-string, or
+the variable's own name. The named variable is not required to exist at save
+time. Note that a `patch` with an `increment` object replaces the whole
+`increment` block, as it always has. Requirements spec 1.37.
+
+**22.2 Verification**
+
+`tests/increment-delta-variable.test.js`.

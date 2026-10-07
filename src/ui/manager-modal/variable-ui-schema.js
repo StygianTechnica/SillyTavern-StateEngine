@@ -264,6 +264,10 @@ export function normalizeCollectedValues(values) {
                 : Number(values.increment.delta);
         }
 
+        if (values.increment.deltaVariable !== undefined) {
+            out.increment.deltaVariable = String(values.increment.deltaVariable || '').trim();
+        }
+
         if (values.increment.triggers !== undefined) {
             out.increment.triggers = values.increment.triggers;
         }
@@ -348,7 +352,9 @@ export function describeVariable(d) {
 
         // Type-specific increment behavior
         if (d.type === 'number') {
-            out.push(`Each increment changes the value by ${d.increment?.delta ?? 1}.`);
+            out.push(d.increment?.deltaVariable
+                ? `Each increment changes the value by the current value of ${d.increment.deltaVariable} (or by ${d.increment?.delta ?? 1} while that has no number).`
+                : `Each increment changes the value by ${d.increment?.delta ?? 1}.`);
         } else if (d.type === 'boolean') {
             out.push(d.flagMode === true
                 ? `Each increment sets it to true (it cannot toggle back to false once true - only a manual reset in the tracker can).`
@@ -356,7 +362,9 @@ export function describeVariable(d) {
         } else if (d.type === 'enum') {
             out.push(`Each increment cycles through the enum values.`);
         } else if (d.type === 'datetime') {
-            out.push(`Each increment advances the time by ${d.increment?.delta ?? '1s'}.`);
+            out.push(d.increment?.deltaVariable
+                ? `Each increment advances the time by the current value of ${d.increment.deltaVariable} (or by ${d.increment?.delta ?? '1s'} while that holds no usable duration).`
+                : `Each increment advances the time by ${d.increment?.delta ?? '1s'}.`);
         } else if (d.type === 'imageList') {
             const op = d.increment?.operation;
             const what = { rotateNext: 'shows the next image', rotate: 'shows the previous image' }[op];

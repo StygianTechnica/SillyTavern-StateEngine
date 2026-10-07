@@ -6,6 +6,7 @@ import { getDefaultValue } from './variable-schema.js';
 import { isImageType } from './image-variables.js';
 import { format, resolveInstruction, toScalar } from './calendar-engine.js';
 import { getVar, setVar, applyIncrement, loadChatState } from './chat-state.js';
+import { incrementDelta } from './increment-delta.js';
 import { recalculateDependents } from './calculated-engine.js';
 import { callBackgroundLLM } from './background-llm.js';
 import { extractJsonObject, describeConstraint, buildRecentMessagesSection } from '../ui/formatting-utils.js';
@@ -210,7 +211,7 @@ function applyPromptedResponse(chatId, updateVars, incrementVars, parsed) {
     for (const def of incrementVars) {
         try {
             if (parsed[def.name] === true) {
-                applyIncrement(chatId, def.name, def.increment.delta, def);
+                applyIncrement(chatId, def.name, incrementDelta(chatId, def), def);
                 recalculateDependents(chatId, def.name);
                 incrementedCount++;
             }

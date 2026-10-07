@@ -67,10 +67,7 @@ export function bindPanelEvents() {
         persistSettings();
     });
     $('#se_show_tracker_panel').on('change', function () {
-        const checked = $(this).is(':checked');
-        getSettings().showTrackerPanel = checked;
-        persistSettings();
-        setTrackerPanelVisible(checked);
+        setTrackerPanelVisible($(this).is(':checked'));
     });
     $('#se_connection_profile').on('change', function () {
         getSettings().connectionProfileId = $(this).val() || '';

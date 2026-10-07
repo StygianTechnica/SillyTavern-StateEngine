@@ -9,6 +9,7 @@
 import { LOG_PREFIX, DEFAULT_CALENDAR_ID, getSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
 import { setVar, applyIncrement } from './chat-state.js';
+import { incrementDelta } from './increment-delta.js';
 import { recalculateDependents, consumeDatetimeJump } from './calculated-engine.js';
 import { isValidDelta } from './calendar-engine.js';
 
@@ -48,9 +49,12 @@ export function runDeterministicIncrements(chatId, triggerType) {
                 // warning) on one without. An unparseable delta is reported
                 // here, by variable, instead of silently doing nothing
                 // inside applyIncrement().
+                // The step: the fixed delta, or the current value of the
+                // variable named by increment.deltaVariable (spec 1.37).
+                const delta = incrementDelta(chatId, def);
                 if (def.type === 'datetime') {
-                    if (!isValidDelta(def.calendar || DEFAULT_CALENDAR_ID, def.increment.delta)) {
-                        console.warn(LOG_PREFIX, `datetime increment skipped for "${def.name}": invalid delta ${JSON.stringify(def.increment.delta)} for calendar "${def.calendar || DEFAULT_CALENDAR_ID}"`);
+                    if (!isValidDelta(def.calendar || DEFAULT_CALENDAR_ID, delta)) {
+                        console.warn(LOG_PREFIX, `datetime increment skipped for "${def.name}": invalid delta ${JSON.stringify(delta)} for calendar "${def.calendar || DEFAULT_CALENDAR_ID}"`);
                         continue;
                     }
                     // Calculated-datetime extension (requirements spec 1.31,
@@ -69,7 +73,7 @@ export function runDeterministicIncrements(chatId, triggerType) {
                     if (consumeDatetimeJump(chatId, def.name)) continue;
                 }
 
-                applyIncrement(chatId, def.name, def.increment.delta, def);
+                applyIncrement(chatId, def.name, delta, def);
                 recalculateDependents(chatId, def.name);
                 applied += 1;
             } catch (err) {

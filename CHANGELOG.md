@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased — Tracker editing, layering and variable increment steps
+
+**Added**
+
+- **Increment step from a variable.** A number or datetime variable's increment can take
+  its step from another variable ("Delta from variable" in the editor,
+  `increment.deltaVariable` in the API) - a number, a calculated variable, or for a
+  datetime a duration such as "3h". While that variable has no usable value the fixed
+  amount is used. Requirements spec 1.37.
+- **Story date phrasing.** A narrative jump or prompted date answer now understands
+  "It was September 5, 2025", abbreviated months ("Sept. 5"), and a leading weekday
+  ("Friday, September 5, 2025"). Requirements spec 1.38.
+
+**Changed**
+
+- Setting a date without a time of day now keeps the current time of day instead of
+  resetting the clock to midnight ("September 5, 2025" at 14:30 gives 2025-09-05 14:30).
+- The tracker's edit pencil is now offered for prompted and incremented variables too, so
+  a wrong value can be corrected by hand (calculated and image variables stay read-only).
+  Requirements spec 1.14.3.
+- The tracker panel now sits at z-index 200 (was 3000): above the chat and Pretty Panels,
+  below every SillyTavern drawer and popup - including when a theme lowers those (e.g.
+  Moonlit Echoes puts the Author's Note at 1000).
+
+**Fixed**
+
+- Showing the tracker from the wand menu is now remembered across reloads (only the
+  settings checkbox used to save it).
+
 ## Unreleased — Image API
 
 **Added**

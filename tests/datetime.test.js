@@ -731,7 +731,7 @@ describe('datetime variables', () => {
                 expect(r('skip ahead 2 days and 3 hours')).toBe(now + 2 * 86400 + 3 * 3600);
                 expect(r('advance the time by 30 minutes')).toBe(now + 1800);
                 expect(r('go back 1 hour')).toBe(now - 3600);
-                expect(r('set the date to 2030-05-06')).toBe(ts(2030, 5, 6));
+                expect(r('set the date to 2030-05-06')).toBe(ts(2030, 5, 6, 12)); // date only: keeps the time of day (1.38)
                 expect(r('2030-05-06 07:08:09')).toBe(ts(2030, 5, 6, 7, 8, 9));
                 expect(r(500)).toBe(500);
                 expect(r('500')).toBe(500);

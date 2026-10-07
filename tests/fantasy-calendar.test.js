@@ -542,25 +542,25 @@ describe('fantasy calendar: natural language', () => {
         expect(resolve('Next Year!')).toBe(at(1204, 8, 17, 12));
     });
 
-    it('"move to Stormfall 17": that day this year, at midnight', () => {
-        expect(resolve('move to Stormfall 17', at(1203, 2, 3, 9))).toBe(at(1203, 8, 17));
-        expect(resolve('MOVE TO STORMFALL 17', at(1203, 2, 3, 9))).toBe(at(1203, 8, 17));
-        expect(resolve('set time to Stormfall 17', at(1210, 2, 3, 9))).toBe(at(1210, 8, 17));
-        expect(resolve('advance to Stormfall 17', at(1203, 2, 3, 9))).toBe(at(1203, 8, 17));
-        expect(resolve('Stormfall 17', at(1203, 2, 3, 9))).toBe(at(1203, 8, 17)); // bare answer
+    it('"move to Stormfall 17": that day this year, keeping the time of day (1.38)', () => {
+        expect(resolve('move to Stormfall 17', at(1203, 2, 3, 9))).toBe(at(1203, 8, 17, 9));
+        expect(resolve('MOVE TO STORMFALL 17', at(1203, 2, 3, 9))).toBe(at(1203, 8, 17, 9));
+        expect(resolve('set time to Stormfall 17', at(1210, 2, 3, 9))).toBe(at(1210, 8, 17, 9));
+        expect(resolve('advance to Stormfall 17', at(1203, 2, 3, 9))).toBe(at(1203, 8, 17, 9));
+        expect(resolve('Stormfall 17', at(1203, 2, 3, 9))).toBe(at(1203, 8, 17, 9)); // bare answer
     });
 
     it('a target can carry a year, a time, an ordinal and the day-first order', () => {
-        expect(resolve('move to Stormfall 17, 1300')).toBe(at(1300, 8, 17));
+        expect(resolve('move to Stormfall 17, 1300')).toBe(at(1300, 8, 17, 12));
         expect(resolve('move to Stormfall 17 1300 at 14:30')).toBe(at(1300, 8, 17, 14, 30));
-        expect(resolve('move to the 17th of Stormfall')).toBe(at(1203, 8, 17));
-        expect(resolve('move to 3 Duskwane 1250')).toBe(at(1250, 9, 3));
+        expect(resolve('move to the 17th of Stormfall')).toBe(at(1203, 8, 17, 12));
+        expect(resolve('move to 3 Duskwane 1250')).toBe(at(1250, 9, 3, 12));
         expect(resolve('move to Stormfall 17 at 6:15:20')).toBe(at(1203, 8, 17, 6, 15, 20));
     });
 
     it('reads a numeric date and the calendar\'s own written date exactly', () => {
         expect(resolve('1203-08-17 12:00:00')).toBe(STORMFALL_17);
-        expect(resolve('set time to 1300-01-01', STORMFALL_17, 'plain')).toBe(at(1300, 1, 1));
+        expect(resolve('set time to 1300-01-01', STORMFALL_17, 'plain')).toBe(at(1300, 1, 1, 12));
         expect(resolve('Stormfall 17, 1203 12:00:00', 0, 'plain')).toBe(STORMFALL_17);
         expect(resolve(5000)).toBe(5000);
         expect(resolve('3600')).toBe(3600);
@@ -575,7 +575,7 @@ describe('fantasy calendar: natural language', () => {
         expect(resolve('advance 2 moons', STORMFALL_17, 'plain')).toBeNull();
         api('updateCalendarDefinition', 'plain', { nlRules: { rewindVerbs: ['unwind'], setVerbs: ['make it'] } });
         expect(resolve('unwind 1 day', STORMFALL_17, 'plain')).toBe(at(1203, 8, 16, 12));
-        expect(resolve('make it Stormfall 20', STORMFALL_17, 'plain')).toBe(at(1203, 8, 20));
+        expect(resolve('make it Stormfall 20', STORMFALL_17, 'plain')).toBe(at(1203, 8, 20, 12));
     });
 
     it('returns null - never throws - for anything it does not understand', () => {
@@ -596,7 +596,7 @@ describe('fantasy calendar: natural language', () => {
         expect(resolveInstruction('gregorian', T, 'rewind 2 days')).toBe(T - 2 * 86400);
         expect(resolveInstruction('gregorian', T, 'set time to 2027-01-01 08:30')).toBe(Date.UTC(2027, 0, 1, 8, 30) / 1000);
         expect(resolveInstruction('gregorian', T, 'a while later')).toBeNull();
-        expect(resolveInstruction('gregorian', T, 'move to December 25')).toBe(Date.UTC(2026, 11, 25) / 1000);
+        expect(resolveInstruction('gregorian', T, 'move to December 25')).toBe(Date.UTC(2026, 11, 25, 12) / 1000);
     });
 
     describe('in a prompted update', () => {
@@ -611,7 +611,7 @@ describe('fantasy calendar: natural language', () => {
             context.chat = [{ is_user: true, mes: 'we wait' }, { is_user: false, name: 'Bot', mes: 'Seasons turn.' }];
         });
 
-        it.each([['advance 1 season', at(1204, 1, 2, 12)], ['next cycle', STORMFALL_17 + 28 * PER_DAY], ['move to Duskwane 3', at(1203, 9, 3)]])(
+        it.each([['advance 1 season', at(1204, 1, 2, 12)], ['next cycle', STORMFALL_17 + 28 * PER_DAY], ['move to Duskwane 3', at(1203, 9, 3, 12)]])(
             'the model answers "%s"', async (answer, expected) => {
                 callBackgroundLLM.mockResolvedValue(JSON.stringify({ pp__clock: answer }));
                 await runPromptedStateUpdate('ai');
