@@ -97,24 +97,27 @@ export function wireEvents(managerApi, managerState) {
     });
     $overlay.on('click', '.se-role-delete', function () {
         const role = $(this).attr('data-role');
-        if (!window.confirm(`Delete the role "${role}" from this chat? Its assignment is removed too.`)) return;
-        managerApi.deleteRole(managerApi.getCurrentChatId(), role);
+        if (!window.confirm(`Delete the role "${role}"? It is removed from every chat, with its assignments.`)) return;
+        managerApi.deleteRole(role);
         uiRender.renderRolesTab(managerApi);
     });
     const createRoleFromForm = () => {
         const createValues = {
-            name: String($('#se-role-create-name').val() || '').trim(),
+            publicName: String($('#se-role-create-name').val() || '').trim(),
             type: String($('#se-role-create-type').val() || 'text'),
             label: String($('#se-role-create-label').val() || '').trim(),
         };
         try {
-            managerApi.createRole(managerApi.getCurrentChatId(), createValues);
+            managerApi.createRole(createValues);
             uiRender.renderRolesTab(managerApi);
         } catch (err) {
             uiRender.renderRolesTab(managerApi, { createError: err?.message || String(err), createValues });
         }
     };
     $overlay.on('click', '#se-role-create', createRoleFromForm);
+    $overlay.on('change', '#se-roles-show-namespaces', function () {
+        uiRender.renderRolesTab(managerApi, { showNamespaces: $(this).is(':checked') });
+    });
     $overlay.on('keydown', '#se-role-create-name, #se-role-create-label', (e) => {
         if (e.key === 'Enter') createRoleFromForm();
     });

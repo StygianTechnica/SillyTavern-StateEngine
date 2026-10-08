@@ -1399,19 +1399,28 @@ export function buildCalendarPreviewOutput(result) {
     `;
 }
 
-// Roles tab (requirements spec 1.40). `view`:
-//   { chatId, roles: [listChatRoles entries], candidates: { [roleName]: [{ name, label, type }] },
-//     roleTypes: [...], acceptedTypes: { [roleType]: [variable types] | null }, createError, createValues }
-// The tab only ever ASSIGNS existing variables; a role nothing fits says to
-// create a variable in the Variables tab.
-function roleStatus(role) {
+// Roles tab (requirements spec 1.40, namespaced 1.41). `view`:
+//   { chatId, roles: [listChatRoles entries], candidates: { [roleId]: [{ name, label, type }] },
+//     roleTypes: [...], acceptedTypes: { [roleType]: [variable types] | null },
+//     showNamespaces, createError, createValues }
+// Roles are global; the variable column is this chat's assignment. Lists
+// show a role's publicName - its id ("prettyPanels__scene.title") is on
+// hover, and its namespace in a column when "Show namespaces" is on. The
+// tab only ever ASSIGNS existing variables; a role nothing fits says to
+// create a variable in the Variables tab. Roles created here are "se" roles;
+// only those can be deleted here (an extension owns its own).
+function roleStatus(role, chatId) {
+    if (!role.exists) return `<span class="se-role-status se-role-problem" title="${escapeHtml(role.problem)}"><i class="fa-solid fa-triangle-exclamation"></i> Not defined</span>`;
+    if (!chatId) return '';
     if (role.valid) return '<span class="se-role-status se-role-ok" title="Assigned and usable"><i class="fa-solid fa-check"></i> Assigned</span>';
     if (role.problem) return `<span class="se-role-status se-role-problem" title="${escapeHtml(role.problem)}"><i class="fa-solid fa-triangle-exclamation"></i> ${escapeHtml(role.problem)}</span>`;
     if (role.requestedBy.length) return '<span class="se-role-status se-role-missing"><i class="fa-solid fa-circle-exclamation"></i> Missing</span>';
     return '<span class="se-role-status se-role-unassigned">Unassigned</span>';
 }
 
-function roleAssignment(role, candidates, accepted) {
+function roleAssignment(role, candidates, accepted, chatId) {
+    if (!role.exists) return '';
+    if (!chatId) return '<small class="se-role-hint">Open a chat to assign a variable.</small>';
     const options = candidates.map((c) => `<option value="${escapeHtml(c.name)}"${c.name === role.variable ? ' selected' : ''}>${escapeHtml(c.label)} (${escapeHtml(c.name)} · ${escapeHtml(c.type)})</option>`);
     // A current assignment that no longer fits stays visible (and selected) so
     // the user sees what it was.
@@ -1419,7 +1428,7 @@ function roleAssignment(role, candidates, accepted) {
         options.unshift(`<option value="${escapeHtml(role.variable)}" selected>${escapeHtml(role.variable)} (unusable)</option>`);
     }
     const select = `
-        <select class="text_pole se-role-assign" data-role="${escapeHtml(role.name)}" title="Variable that fulfils this role in this chat">
+        <select class="text_pole se-role-assign" data-role="${escapeHtml(role.id)}" title="Variable that fulfils ${escapeHtml(role.id)} in this chat">
             <option value=""${role.variable ? '' : ' selected'}>— not assigned —</option>
             ${options.join('')}
         </select>`;
@@ -1429,70 +1438,75 @@ function roleAssignment(role, candidates, accepted) {
     return select + hint;
 }
 
-function roleRow(role, candidates, accepted) {
+function roleRow(role, view, sharedNames) {
     const requested = role.requestedBy.length
         ? role.requestedBy.map((r) => `<span class="se-role-requester" title="${escapeHtml(r.extensionId)}">${escapeHtml(r.label || r.extensionId)}</span>`).join('')
         : '<span class="se-role-requester se-role-requester-none">—</span>';
+    const shared = sharedNames.has(role.publicName)
+        ? ` <i class="fa-solid fa-clone se-role-shared" title="Another role has this name in a different namespace - hover a name for its id"></i>`
+        : '';
     return `
-        <tr class="se-role-row" data-role="${escapeHtml(role.name)}">
+        <tr class="se-role-row" data-role="${escapeHtml(role.id)}">
             <td>
-                <code class="se-role-name">${escapeHtml(role.name)}</code>
+                <code class="se-role-name" title="${escapeHtml(role.id)}">${escapeHtml(role.publicName)}</code>${shared}
                 ${role.label ? `<div><small>${escapeHtml(role.label)}</small></div>` : ''}
                 ${role.description ? `<div><small class="se-role-desc">${escapeHtml(role.description)}</small></div>` : ''}
             </td>
+            ${view.showNamespaces ? `<td><code class="se-role-namespace">${escapeHtml(role.namespace)}</code></td>` : ''}
             <td><span class="se-role-type">${escapeHtml(role.type)}</span></td>
             <td>${requested}</td>
-            <td>${roleAssignment(role, candidates, accepted)}</td>
-            <td>${roleStatus(role)}</td>
-            <td>${role.defined
-                ? `<button type="button" class="menu_button se-role-delete" data-role="${escapeHtml(role.name)}" title="Delete this role from this chat"><i class="fa-solid fa-trash"></i></button>`
-                : ''}</td>
+            <td>${roleAssignment(role, view.candidates[role.id] ?? [], view.acceptedTypes[role.type], view.chatId)}</td>
+            <td>${roleStatus(role, view.chatId)}</td>
+            <td>${role.exists && role.namespace === 'se'
+                ? `<button type="button" class="menu_button se-role-delete" data-role="${escapeHtml(role.id)}" title="Delete ${escapeHtml(role.id)} (from every chat)"><i class="fa-solid fa-trash"></i></button>`
+                : (role.exists ? `<i class="fa-solid fa-lock se-role-owned" title="Defined by namespace &quot;${escapeHtml(role.namespace)}&quot; - change it there"></i>` : '')}</td>
         </tr>`;
 }
 
 export function buildRolesTab(view) {
-    if (!view.chatId) {
-        return `
-            <div class="se-manager-section">
-                <h3>Roles</h3>
-                <div class="se-empty">Open a chat to manage its roles.</div>
-            </div>`;
-    }
     const required = view.roles.filter((r) => r.requestedBy.length > 0);
     const missing = required.filter((r) => !r.valid);
-    const rows = view.roles.map((role) => roleRow(role, view.candidates[role.name] ?? [], view.acceptedTypes[role.type])).join('');
+    const counts = new Map();
+    for (const role of view.roles) counts.set(role.publicName, (counts.get(role.publicName) ?? 0) + 1);
+    const sharedNames = new Set([...counts].filter(([, n]) => n > 1).map(([name]) => name));
+    const rows = view.roles.map((role) => roleRow(role, view, sharedNames)).join('');
     const values = view.createValues ?? {};
     const typeOptions = view.roleTypes.map((t) => `<option value="${t}"${t === (values.type ?? 'text') ? ' selected' : ''}>${t}</option>`).join('');
     return `
         <div class="se-manager-section">
-            <h3>Roles</h3>
+            <div class="se-manager-section-header">
+                <h3 style="margin: 0;">Roles</h3>
+                <label class="se-roles-advanced" title="Show which namespace each role belongs to">
+                    <input type="checkbox" id="se-roles-show-namespaces"${view.showNamespaces ? ' checked' : ''} /> Show namespaces
+                </label>
+            </div>
             <small>
                 A role says what a variable means ("scene.title", "character.health"), so extensions such as
-                Pretty Panels can show it without knowing which variable this chat uses. Assign one variable from
-                this chat's active presets to each role. Roles and assignments belong to this chat.
+                Pretty Panels can show it without knowing which variable a chat uses. Roles exist in every chat;
+                ${view.chatId ? 'the Variable column assigns one of <b>this chat\'s</b> variables to each.' : 'open a chat to assign its variables to them.'}
             </small>
-            <div class="se-roles-summary">
-                ${view.roles.length} role(s) · ${required.length} required by extensions ·
+            ${view.chatId ? `<div class="se-roles-summary">
+                ${view.roles.length} role(s) · ${required.length} required in this chat ·
                 ${missing.length
-                    ? `<span class="se-role-missing"><i class="fa-solid fa-circle-exclamation"></i> ${missing.length} missing: ${missing.map((r) => `<code>${escapeHtml(r.name)}</code>`).join(', ')}</span>`
+                    ? `<span class="se-role-missing"><i class="fa-solid fa-circle-exclamation"></i> ${missing.length} missing: ${missing.map((r) => `<code title="${escapeHtml(r.id)}">${escapeHtml(r.publicName)}</code>`).join(', ')}</span>`
                     : '<span class="se-role-ok">none missing</span>'}
-            </div>
+            </div>` : ''}
             ${view.roles.length
                 ? `<table class="se-roles-table">
-                    <thead><tr><th>Role</th><th>Type</th><th>Required by</th><th>Variable</th><th>Status</th><th></th></tr></thead>
+                    <thead><tr><th>Role</th>${view.showNamespaces ? '<th>Namespace</th>' : ''}<th>Type</th><th>Required by</th><th>Variable</th><th>Status</th><th></th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table>`
-                : '<div class="se-empty">No roles yet. Extensions add the roles they need here; you can also create your own below.</div>'}
+                : '<div class="se-empty">No roles yet. Extensions add theirs (Pretty Panels: a layout\'s roles); you can also create your own below.</div>'}
         </div>
         <div class="se-manager-section">
             <h4>Create a role</h4>
             <div class="se-roles-create">
-                <input type="text" class="text_pole" id="se-role-create-name" placeholder="name, e.g. scene.title" value="${escapeHtml(values.name ?? '')}" />
+                <input type="text" class="text_pole" id="se-role-create-name" placeholder="name, e.g. scene.title" value="${escapeHtml(values.publicName ?? '')}" />
                 <select class="text_pole" id="se-role-create-type" title="What kind of variable can fulfil it">${typeOptions}</select>
                 <input type="text" class="text_pole" id="se-role-create-label" placeholder="label (optional)" value="${escapeHtml(values.label ?? '')}" />
                 <button type="button" class="menu_button" id="se-role-create"><i class="fa-solid fa-plus"></i> Create</button>
             </div>
-            <small>Lowercase words separated by dots. Types: text (string, enum), number, boolean, date (datetime), image, list (array), any.</small>
+            <small>Lowercase words separated by dots; created in the <code>se</code> namespace, available in every chat. Types: text (string, enum), number, boolean, date (datetime), image, list (array), any.</small>
             ${view.createError ? `<div class="se-role-create-error">${escapeHtml(view.createError)}</div>` : ''}
         </div>`;
 }

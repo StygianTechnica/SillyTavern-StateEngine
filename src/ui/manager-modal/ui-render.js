@@ -448,20 +448,24 @@ function updateMoveButtonStates() {
     }
 }
 
-// Roles tab (spec 1.40). `extra` carries the create form's last values and
-// error so a rejected Create keeps what was typed.
+// Roles tab (spec 1.40/1.41). `extra` carries the create form's last values
+// and error so a rejected Create keeps what was typed, and
+// `showNamespaces` (the "Show namespaces" toggle, kept for the session).
+let rolesShowNamespaces = false;
 export function renderRolesTab(managerApi, extra = {}) {
     const $tab = $('#se-manager-roles-tab');
     // An API bag without the role adapters (manager-api.js roleAdapters) has
     // no Roles tab to draw.
     if (!$tab.length || typeof managerApi.listRoles !== 'function') return;
-    const chatId = managerApi.getCurrentChatId();
-    const roles = chatId ? managerApi.listRoles(chatId) : [];
+    if (typeof extra.showNamespaces === 'boolean') rolesShowNamespaces = extra.showNamespaces;
+    const chatId = managerApi.getCurrentChatId() || null;
+    const roles = managerApi.listRoles(chatId);
     const candidates = {};
-    for (const role of roles) candidates[role.name] = managerApi.roleCandidates(chatId, role.type);
+    if (chatId) for (const role of roles) candidates[role.id] = managerApi.roleCandidates(chatId, role.id);
     const roleTypes = managerApi.roleTypes();
     const acceptedTypes = Object.fromEntries(roleTypes.map((type) => [type, managerApi.acceptedRoleVariableTypes(type)]));
     $tab.html(uiTemplates.buildRolesTab({
-        chatId, roles, candidates, roleTypes, acceptedTypes, createError: extra.createError ?? '', createValues: extra.createValues ?? null,
+        chatId, roles, candidates, roleTypes, acceptedTypes, showNamespaces: rolesShowNamespaces,
+        createError: extra.createError ?? '', createValues: extra.createValues ?? null,
     }));
 }

@@ -2853,6 +2853,46 @@ still renders with those elements blank.
 Verification: tests/roles.test.js; tests/new-chat-start.test.js ("the
 earlier chat's roles come along").
 
+1.41 Role Namespaces (2026-10-08)
+
+Roles become global, namespaced concepts; only their assignment to a
+variable is per chat (user requirement, 2026-10-08: "the role is a global
+concept for the extension but the bindings are specific to a chat").
+
+- Every role has a publicName ("scene.title"), a namespace, and an id that
+  joins them with the variable delimiter: "prettyPanels__scene.title" (user
+  requirement: the same delimiter and the same namespaces as variables).
+  The namespace is the State Engine namespace of whoever defined the role:
+  Pretty Panels' layout roles are "prettyPanels", roles created in the
+  Roles tab are "se" (like variables created in the manager), an extension
+  uses its own. Only the namespace's owner may define, rename, retype or
+  delete its roles.
+- Lists show the publicName only; the id (namespace) is shown on hover, and
+  in advanced views (the Roles tab's "Show namespaces"). Roles sharing a
+  publicName are listed side by side (duplicated), each with its own id.
+  Same publicName in different namespaces = different roles. Duplicate
+  publicNames within one namespace are refused (user requirement).
+- Definitions are stored in variableStore.roles.globalDefinitions; a chat's
+  assignments, keyed by role id, on its chat state.
+- An extension can keep its namespace's roles in step with its own data in
+  one call (setNamespaceRoles); renaming a role (updateRole) moves every
+  chat's assignment to the new id.
+- The Roles tab lists every role (global), assigns this chat's variables
+  (only when a chat is open), creates "se" roles, and deletes only "se"
+  roles - an extension's roles are read-only there.
+- 1.14.1 new chats copy the earlier chat's assignments that fit (role
+  definitions are global already).
+- Data from 1.40 as first released is migrated on startup.
+
+Pretty Panels: a layout carries its own roles ("Layout Roles" in its drawer:
+create, rename, retype, remove; two layouts using one name share the role);
+they are sent to State Engine whenever they change; the drawer also assigns
+the open chat's variables to the layout's roles; a layout can only be chosen
+with a chat open; elements bind to a variable or a role (Variables | Roles
+palette, Binding type).
+
+Verification: tests/roles.test.js (rewritten), tests/new-chat-start.test.js.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 

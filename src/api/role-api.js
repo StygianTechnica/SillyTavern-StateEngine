@@ -1,38 +1,45 @@
-// Role API (requirements spec 1.40)
+// Role API (requirements spec 1.40, namespaced 1.41)
 //
-// Roles map MEANING to variables, per chat: "scene.title" -> whichever
-// variable this chat uses for it. See src/core/roles.js for the model.
+// A role is a GLOBAL semantic tag for what a variable represents; each chat
+// assigns it one of its variables. Roles are namespaced like variables:
+// id = "<namespace>__<publicName>" ("prettyPanels__scene.title"). See
+// src/core/roles.js for the model.
 //
-//   listRoles         every role of a chat (defined + requested), with its
-//                     assigned variable and whether that assignment is
-//                     usable                                   (GET  /roles)
-//   createRole        define a role in a chat                  (POST /roles/create)
-//   deleteRole        remove a role the chat defined
-//   assignRole        assign a variable to a role, or clear it (POST /roles/assign)
-//   getRequiredRoles  the roles extensions request for a chat  (GET  /roles/required)
-//   requestRoles      declare the roles your extension needs, for every
-//                     chat or for one chat (replaces your earlier request
-//                     under the same key; an empty list removes it)
-//   resolveRoles      the status of a set of roles in a chat, for rendering
-//                     by role: which exist, are assigned, to what, and
-//                     whether the variable's type fits
-//   getRoleTypes      the role types: text, number, boolean, date, image, list, any
+//   listRoles          every role, as seen from a chat (assignment,
+//                      validity, who requested it)        (GET  /roles)
+//   createRole         define a role in your namespace     (POST /roles/create)
+//   updateRole         rename / retype / relabel one of your roles (a
+//                      rename moves every chat's assignment with it)
+//   deleteRole         delete one of your roles (and its assignments)
+//   setNamespaceRoles  replace ALL of your namespace's roles with a list
+//                      (keeping an extension's roles in step with its data)
+//   assignRole         assign a variable to a role in a chat, or clear it
+//                                                          (POST /roles/assign)
+//   getRoleCandidates  the chat's existing variables that could fulfil a role
+//   getRequiredRoles   the roles extensions request for a chat
+//                                                          (GET  /roles/required)
+//   requestRoles       declare which roles (ids) your extension needs, for
+//                      every chat or one chat
+//   resolveRoles       the status of a set of role ids in a chat
+//   getRoleTypes       text, number, boolean, date, image, list, any
 //
-// Open to any registered caller (resolveCallerRecord: right instance, owns
-// some namespace) - roles belong to the chat, not to a namespace, and any
-// display extension needs them. requestRoles is recorded under the CALLER's
-// extension id. Identity failures throw (outside the try/catch, like every
-// API entry point); any other rejection is logged and returns null (false
-// for deleteRole), never a partial write. Values are copies.
+// Identity: defining, updating, deleting and setNamespaceRoles are
+// OWNER-ONLY - the role's namespace must be the caller's (validateCallerIdentity),
+// exactly like variables. Reads, assignments and requests are open to any
+// registered caller (resolveCallerRecord) - assignments belong to the chat,
+// not to a namespace. Identity failures throw (outside the try/catch, like
+// every API entry point); any other rejection is logged and returns null
+// (false for deleteRole), with nothing written. Values are copies.
 //
-// Role changes are saved on the chat's state, so they emit State Engine's
-// variables-changed event (VARIABLES_CHANGED_EVENT) like a value write -
-// a display extension already listening for that re-resolves its roles.
+// Role changes emit State Engine's variables-changed event
+// (VARIABLES_CHANGED_EVENT) - for one chat when an assignment changes, for
+// every chat (null) when a definition does.
 
 import { LOG_PREFIX } from '../core/settings-core.js';
-import { resolveCallerRecord } from './identity.js';
+import { validateCallerIdentity, resolveCallerRecord } from './identity.js';
 import {
-    ROLE_TYPES, listChatRoles, createChatRole, deleteChatRole, assignChatRole, setRoleRequest, resolveRoles as resolveChatRoles,
+    ROLE_TYPES, parseRoleId, listChatRoles, defineRole, updateRole as updateRoleDefinition, deleteRole as deleteRoleDefinition,
+    setNamespaceRoles as replaceNamespaceRoles, assignChatRole, candidateVariables, setRoleRequest, resolveRoles as resolveChatRoles,
 } from '../core/roles.js';
 
 function rejected(fnName, err) {
@@ -40,58 +47,108 @@ function rejected(fnName, err) {
     return null;
 }
 
-// [{ name, type, label, description, defined, requestedBy: [{ extensionId, label }],
-//    variable, valid, problem }] for `chatId`, sorted by name. [] without a chat.
-export function listRoles(extensionId, instanceId, chatId) {
+// The namespace a role id belongs to, for the owner check (a malformed id
+// is checked against no namespace, which the identity check refuses).
+function namespaceOf(id) {
+    return parseRoleId(id)?.namespace ?? '';
+}
+
+// Every role - every definition, plus ids requested in the chat that nobody
+// defined - as seen from `chatId` (optional; without it, no assignments):
+// [{ id, namespace, publicName, type, label, description, exists,
+//    requestedBy: [{ extensionId, label }], variable, valid, problem }],
+// sorted by publicName then namespace.
+export function listRoles(extensionId, instanceId, chatId = null) {
     resolveCallerRecord(extensionId, instanceId);
     try {
-        return chatId ? listChatRoles(chatId) : [];
+        return listChatRoles(chatId || null);
     } catch (err) {
         console.warn(LOG_PREFIX, 'listRoles failed (gracefully handled)', err);
         return [];
     }
 }
 
-// Defines a role in `chatId`: { name, type, label?, description? }. `name` is
-// lowercase words separated by dots ("scene.title"); `type` one of
-// getRoleTypes(). Returns the stored definition, or null (invalid spec, or
-// the chat already defines that role).
-export function createRole(extensionId, instanceId, chatId, spec) {
-    resolveCallerRecord(extensionId, instanceId);
+// Defines a role: { namespace?, publicName, type, label?, description? }.
+// `namespace` defaults to the caller's own and must be one it owns.
+// `publicName` is lowercase words separated by dots ("scene.title"); a
+// namespace never holds two roles with the same publicName. Returns the
+// definition ({ id, namespace, publicName, type, label, description,
+// createdAt, updatedAt }), or null.
+export function createRole(extensionId, instanceId, spec) {
+    const record = resolveCallerRecord(extensionId, instanceId);
+    const namespace = spec?.namespace ?? record.namespace;
+    validateCallerIdentity(extensionId, instanceId, namespace);
     try {
-        return createChatRole(chatId, spec);
+        return defineRole(namespace, spec);
     } catch (err) {
         return rejected('createRole', err);
     }
 }
 
-// Removes a role `chatId` defined, and its assignment. A role that is only
-// requested by an extension cannot be deleted. Returns true if removed.
-export function deleteRole(extensionId, instanceId, chatId, name) {
-    resolveCallerRecord(extensionId, instanceId);
+// Changes one of the caller's roles: { publicName?, type?, label?,
+// description? }. A new publicName gives the role a new id; every chat's
+// assignment and every request move with it. Returns the definition, or null.
+export function updateRole(extensionId, instanceId, id, patch) {
+    validateCallerIdentity(extensionId, instanceId, namespaceOf(id));
     try {
-        return deleteChatRole(chatId, name);
+        return updateRoleDefinition(id, patch);
+    } catch (err) {
+        return rejected('updateRole', err);
+    }
+}
+
+// Deletes one of the caller's roles, with its assignment in every chat.
+// Returns true if it existed.
+export function deleteRole(extensionId, instanceId, id) {
+    validateCallerIdentity(extensionId, instanceId, namespaceOf(id));
+    try {
+        return deleteRoleDefinition(id);
     } catch (err) {
         rejected('deleteRole', err);
         return false;
     }
 }
 
-// Assigns `variableName` (fully qualified, e.g. "se__scene_title") to the
-// role `name` in `chatId`; null clears the assignment. The variable must
-// belong to a preset active in the chat and its type must fit the role.
-// Returns the role's updated entry (as listRoles gives it), or null.
-export function assignRole(extensionId, instanceId, chatId, name, variableName) {
+// Replaces every role in the caller's namespace with `roles`
+// ([{ publicName, type, label?, description? }]): roles that stay keep their
+// assignments, roles left out are deleted. Returns { added, updated,
+// removed } (ids), or null.
+export function setNamespaceRoles(extensionId, instanceId, roles) {
+    const record = resolveCallerRecord(extensionId, instanceId);
+    try {
+        return replaceNamespaceRoles(record.namespace, roles);
+    } catch (err) {
+        return rejected('setNamespaceRoles', err);
+    }
+}
+
+// Assigns `variableName` (fully qualified, e.g. "se__scene_title") to role
+// `id` in `chatId`; null clears it. The variable must belong to a preset
+// active in the chat and its type must fit the role. Returns the role's
+// entry (as listRoles gives it), or null.
+export function assignRole(extensionId, instanceId, chatId, id, variableName) {
     resolveCallerRecord(extensionId, instanceId);
     try {
-        return assignChatRole(chatId, name, variableName ?? null);
+        return assignChatRole(chatId, id, variableName ?? null);
     } catch (err) {
         return rejected('assignRole', err);
     }
 }
 
+// The variables of `chatId`'s active presets that could fulfil role `id`:
+// [{ name, label, type }] sorted by label ([] for an unknown role).
+export function getRoleCandidates(extensionId, instanceId, chatId, id) {
+    resolveCallerRecord(extensionId, instanceId);
+    try {
+        return candidateVariables(chatId, id);
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'getRoleCandidates failed (gracefully handled)', err);
+        return [];
+    }
+}
+
 // The roles extensions request for `chatId` (every-chat requests plus that
-// chat's own), each as listRoles gives it - requestedBy says who asked.
+// chat's own), each as listRoles gives it - requestedBy says who.
 export function getRequiredRoles(extensionId, instanceId, chatId) {
     resolveCallerRecord(extensionId, instanceId);
     try {
@@ -102,13 +159,13 @@ export function getRequiredRoles(extensionId, instanceId, chatId) {
     }
 }
 
-// Declares the roles the caller needs:
-//   { key, label?, chatId?, roles: [{ name, type, label?, description? }] }
+// Declares the roles the caller needs: { key, label?, chatId?, roles:
+// [role ids] } (any namespace; an id nobody defined is reported missing).
 // `key` names the request (one per key per chat); `chatId` limits it to one
-// chat (omit or null for every chat); `label` says what needs them, for the
-// Roles tab ("Layout: Scene HUD"). Replaces the caller's earlier request
-// under the same key and chat; an empty `roles` removes it. Returns true if
-// anything changed, false if it was already so, null if rejected.
+// chat (omit or null for every chat); `label` says what needs them ("Pretty
+// Panels layout \"HUD\""). Replaces the caller's earlier request under the
+// same key and chat; an empty `roles` removes it. Returns true if anything
+// changed, false if not, null if rejected.
 export function requestRoles(extensionId, instanceId, request) {
     const record = resolveCallerRecord(extensionId, instanceId);
     try {
@@ -118,15 +175,13 @@ export function requestRoles(extensionId, instanceId, request) {
     }
 }
 
-// The status of `roles` (names, or { name, type } specs - a spec's type is
-// checked against the assigned variable) in `chatId`:
-//   { roles: [{ name, type, exists, assigned, variable, valid, problem }],
-//     missing: [names not usable], allAssigned }
-export function resolveRoles(extensionId, instanceId, chatId, roles) {
+// The status of role `ids` in `chatId`:
+//   { roles: [{ id, namespace, publicName, type, exists, assigned, variable, valid, problem }],
+//     missing: [ids], allAssigned }
+export function resolveRoles(extensionId, instanceId, chatId, ids) {
     resolveCallerRecord(extensionId, instanceId);
     try {
-        if (!chatId) return { roles: [], missing: [], allAssigned: true };
-        return resolveChatRoles(chatId, roles);
+        return resolveChatRoles(chatId || null, ids);
     } catch (err) {
         return rejected('resolveRoles', err);
     }

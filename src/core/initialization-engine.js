@@ -7,7 +7,7 @@ import { setVar, loadChatState, saveChatState } from './chat-state.js';
 import { getDefaultValue } from './variable-schema.js';
 import { shouldSkipPromptedRefresh, runPromptedStateUpdate } from './prompted-engine.js';
 import { recalculateDependents, recalculateAllForChat } from './calculated-engine.js';
-import { copyChatRoles } from './roles.js';
+import { copyChatRoles, migrateRoleData } from './roles.js';
 
 
 export function applyResetOnNewChat() {
@@ -272,5 +272,11 @@ export function runStartupOnce() {
     startupRan = true;
     const settings = getSettings();
     migrateAllSettings(settings);
+    // Role data from before role namespaces (spec 1.41).
+    try {
+        migrateRoleData();
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'role data migration failed (gracefully handled)', err);
+    }
     runPromptedStateUpdate('startup');
 }

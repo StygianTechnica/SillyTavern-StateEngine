@@ -396,26 +396,21 @@ describe('a brand-new character or group starts with a clean slate', () => {
     });
 });
 
-// Roles (spec 1.40) come along with the presets.
-describe('the earlier chat\'s roles come along', () => {
-    it.each([NEW_CHAT_CHOICES.PRESETS, NEW_CHAT_CHOICES.CONTINUE])('%s copies role definitions and fitting assignments', async (choice) => {
+// Roles (spec 1.40/1.41) are global; a chat's ASSIGNMENTS come along with
+// the presets.
+describe('the earlier chat role assignments come along', () => {
+    it.each([NEW_CHAT_CHOICES.PRESETS, NEW_CHAT_CHOICES.CONTINUE])('%s copies the assignments that fit the new chat', async (choice) => {
         const source = makeSourceChat('chat-roles-src', { presetIds: [hp], lastUpdated: 9000 });
-        source.roles = {
-            definitions: { 'character.health': { name: 'character.health', type: 'number', label: '', description: '', createdAt: 1 } },
-            assignments: { 'character.health': 'se__hp', 'scene.title': 'se__not_in_new_chat' },
-        };
+        source.roles = { assignments: { 'se__character.health': 'se__hp', 'se__scene.title': 'se__not_in_new_chat' } };
         makeNewChat();
         const result = await offerNewChatStart(NEW, ask(choice));
-        expect(result.rolesCopied).toBe(2);
-        expect(loadChatState(NEW).roles).toEqual({
-            definitions: { 'character.health': expect.objectContaining({ type: 'number' }) },
-            assignments: { 'character.health': 'se__hp' },
-        });
+        expect(result.rolesCopied).toBe(1);
+        expect(loadChatState(NEW).roles).toEqual({ assignments: { 'se__character.health': 'se__hp' } });
     });
 
-    it('a clean slate copies no roles', async () => {
+    it('a clean slate copies none', async () => {
         const source = makeSourceChat('chat-roles-src2', { presetIds: [hp], lastUpdated: 9000 });
-        source.roles = { definitions: { a: { name: 'a', type: 'any' } }, assignments: {} };
+        source.roles = { assignments: { 'se__character.health': 'se__hp' } };
         makeNewChat();
         await offerNewChatStart(NEW, ask(NEW_CHAT_CHOICES.CLEAN));
         expect(loadChatState(NEW).roles).toBeUndefined();

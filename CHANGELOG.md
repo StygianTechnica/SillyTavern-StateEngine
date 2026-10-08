@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — Role namespaces
+
+**Changed**
+
+- **Roles are global and namespaced.** A role is defined once and exists in every chat; each
+  chat only chooses which variable fulfils it. Its id uses the variable delimiter and the
+  definer's namespace: `prettyPanels__scene.title`, `se__scene.title`. Lists show the name;
+  hover (or the Roles tab's "Show namespaces") shows the namespace. Duplicate names within a
+  namespace are refused. Requirements spec 1.41.
+- **Roles tab:** every role, this chat's variable for each, roles created there are `se`
+  roles; an extension's roles are read-only there.
+- **Role API:** `createRole` / `updateRole` / `deleteRole` / `setNamespaceRoles` are
+  owner-only (your namespace); `assignRole`, `requestRoles` and `resolveRoles` take role ids;
+  new `getRoleCandidates`. A rename moves every chat's assignment. API specification Section 23.
+- Role data from the first roles release is migrated on startup.
+
+**Tests:** 50 files, 2004 tests (`tests/roles.test.js` rewritten).
+
 ## Unreleased — Roles
 
 **Added**

@@ -29,7 +29,7 @@ import { setStatus } from '../settings-panel-ui.js';
 import { getCurrentChatId } from '../wand-ui.js';
 import { previewCalendarDefinition, validateCalendarDefinition } from '../../core/calendar-engine.js';
 import { listConnectionProfiles as connectionProfiles } from '../connection-profile-ui.js';
-import { ROLE_TYPES, listChatRoles, createChatRole, deleteChatRole, assignChatRole, candidateVariables, acceptedVariableTypes } from '../../core/roles.js';
+import { ROLE_TYPES, listChatRoles, defineRole, deleteRole, assignChatRole, candidateVariables, acceptedVariableTypes } from '../../core/roles.js';
 
 function findPresetById(presetId) {
     return getSettings().presets[presetId] || null;
@@ -214,14 +214,16 @@ export const calendarAdapters = {
     previewCalendar: previewCalendarDefinition,
 };
 
-// Roles tab (spec 1.40). Straight to src/core/roles.js rather than the
+// Roles tab (spec 1.40/1.41). Straight to src/core/roles.js rather than the
 // stateEngine.* role API: the API turns a rejection into null + a console
 // line, and the tab needs the reason ("is a number variable, but this role
-// needs text") to show next to the form. Same data, same rules.
+// needs text") to show next to the form. Same data, same rules. Roles the
+// user creates here are State Engine's own - the "se" namespace, like the
+// variables they create in the manager.
 export const roleAdapters = {
     listRoles: listChatRoles,
-    createRole: createChatRole,
-    deleteRole: deleteChatRole,
+    createRole: (spec) => defineRole(BUILTIN_NAMESPACE, spec),
+    deleteRole,
     assignRole: assignChatRole,
     roleCandidates: candidateVariables,
     roleTypes: () => [...ROLE_TYPES],

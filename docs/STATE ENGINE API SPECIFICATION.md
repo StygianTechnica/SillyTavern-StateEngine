@@ -2316,86 +2316,108 @@ time. Note that a `patch` with an `increment` object replaces the whole
 
 `tests/increment-delta-variable.test.js`.
 
-SECTION 23 — ROLE API (2026-10-08)
+SECTION 23 — ROLE API (2026-10-08; namespaced the same day, requirements 1.41)
 
 A role is a semantic tag for what a variable represents ("scene.title",
-"character.health"). Roles hold no value and are not variables: per chat,
-a role maps meaning to ONE variable, so an extension can show "the scene
-title" without knowing which variable this chat uses. Requirements spec
-1.40. `src/api/role-api.js` (rules and storage: `src/core/roles.js`).
-
-Open to any registered caller (`resolveCallerRecord`: right instance, owns
-some namespace) - roles belong to the chat, not to a namespace. Identity
-failures throw; any other rejection logs a warning and returns `null`
-(`false` for `deleteRole`), with nothing written. Values are copies.
+"character.health"). Roles hold no value and are not variables. A role is
+GLOBAL - defined once, available in every chat - and each chat ASSIGNS it
+one of its variables. Requirements spec 1.40 / 1.41. `src/api/role-api.js`
+(rules and storage: `src/core/roles.js`).
 
 **23.1 Model**
 
-- Name: lowercase words separated by dots - `/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$/`, max 64.
+- Namespaced like variables: a role belongs to the State Engine namespace
+  of whoever defined it, and its id joins the two with the variable
+  delimiter: `id = "<namespace>__<publicName>"` ("prettyPanels__scene.title").
+  Lists show the publicName; the id/namespace is for hover and advanced
+  views. Same publicName in two namespaces = two roles. A namespace never
+  holds two roles with the same publicName.
+- publicName: lowercase words separated by dots - `/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$/`, max 64.
 - Type: `text` (string, enum, calculated), `number` (number, calculated),
   `boolean` (boolean, calculated), `date` (datetime), `image` (image,
   imageList, imageMap), `list` (array), `any` (every type).
-- A chat's roles = the roles DEFINED in it (`createRole`, the Roles tab)
-  plus the roles extensions REQUEST for it (`requestRoles`) that it has not
-  defined. A role both defined and requested keeps its definition's type; a
-  request needing another type is reported as a problem.
-- Each role has at most one assigned variable per chat. It must belong to
-  a preset active in that chat and its type must fit the role.
-- Stored on the chat's state (`state.roles = { definitions, assignments }`),
-  so a role change emits `VARIABLES_CHANGED_EVENT` like a value write.
-  Requests are stored in `settings.roleRequests`.
+- Each chat assigns a role at most one variable, from a preset active in
+  that chat, whose type fits.
+- Storage: definitions in `settings.variableStore.roles.globalDefinitions`
+  (`{ [id]: { id, namespace, publicName, type, label, description, createdAt, updatedAt } }`);
+  a chat's assignments on its chat state (`state.roles.assignments`,
+  `{ [roleId]: variableName }`); requests in `settings.roleRequests`.
+- Identity: defining, updating, deleting and `setNamespaceRoles` are
+  OWNER-ONLY (the role's namespace must be the caller's - validateCallerIdentity,
+  exactly like variables). Reads, assignments and requests are open to any
+  registered caller. Identity failures throw; any other rejection logs a
+  warning and returns `null` (`false` for `deleteRole`), with nothing written.
+- Events: `VARIABLES_CHANGED_EVENT` - for the chat when an assignment
+  changes, for every chat (`null`) when a definition does.
 
 A role entry, as `listRoles` returns it:
 
 ```
-{ name, type, label, description,
-  defined: boolean,                         // the chat defined it
-  requestedBy: [{ extensionId, label }],    // who requested it
-  variable: string | null,                  // the assigned variable
-  valid: boolean,                           // assigned AND usable
-  problem: string | null }                  // why an assignment is unusable
+{ id, namespace, publicName, type, label, description,
+  exists: boolean,                          // defined (a requested id may not be)
+  requestedBy: [{ extensionId, label }],    // who requested it in this chat
+  variable: string | null,                  // this chat's assigned variable
+  valid: boolean,                           // defined, assigned AND usable
+  problem: string | null }                  // why not
 ```
 
-**23.2 Functions** (the spec's HTTP-style names in brackets)
+**23.2 Functions** (the requirements' HTTP-style names in brackets)
 
 ```
-listRoles(extensionId, instanceId, chatId)                  [GET /roles]
-    -> [role entry], sorted by name ([] without a chat)
-createRole(extensionId, instanceId, chatId, { name, type, label?, description? })
+listRoles(extensionId, instanceId, chatId?)                 [GET /roles]
+    -> [role entry]: every definition, plus ids requested in the chat that
+       nobody defined; sorted by publicName then namespace. Without a chat,
+       no assignments.
+createRole(extensionId, instanceId, { namespace?, publicName, type, label?, description? })
                                                             [POST /roles/create]
-    -> the stored definition | null (invalid, or already defined in the chat)
-deleteRole(extensionId, instanceId, chatId, name)
-    -> true if a DEFINED role (and its assignment) was removed; a role that
-       is only requested cannot be deleted
-assignRole(extensionId, instanceId, chatId, name, variableName | null)
+    -> the definition | null. namespace defaults to the caller's own.
+updateRole(extensionId, instanceId, id, { publicName?, type?, label?, description? })
+    -> the definition | null. A new publicName = a new id; every chat's
+       assignment and every request follow it.
+deleteRole(extensionId, instanceId, id)
+    -> true if it existed (its assignments go with it)
+setNamespaceRoles(extensionId, instanceId, [{ publicName, type, label?, description? }])
+    -> { added, updated, removed } (ids) | null. Replaces ALL of the caller's
+       roles: listed ones are kept (with their assignments) or added, the
+       rest deleted. A publicName listed twice is refused.
+assignRole(extensionId, instanceId, chatId, id, variableName | null)
                                                             [POST /roles/assign]
-    -> the role's updated entry | null (unknown role, unknown variable,
-       preset not active in the chat, type does not fit). null clears.
+    -> the role's entry | null (unknown role or variable, preset not
+       active, type does not fit). null clears.
+getRoleCandidates(extensionId, instanceId, chatId, id)
+    -> [{ name, label, type }]: the chat's existing variables that fit
 getRequiredRoles(extensionId, instanceId, chatId)           [GET /roles/required]
-    -> the role entries extensions requested for the chat (requestedBy
-       says who)
-requestRoles(extensionId, instanceId, { key, label?, chatId?, roles: [{ name, type, label?, description? }] })
-    -> true if anything changed, false if it was already so, null if
-       rejected. Replaces the caller's earlier request under the same key
-       (and chat); an empty `roles` removes it. `chatId` omitted/null = every
-       chat. Recorded under the CALLER's extension id.
-resolveRoles(extensionId, instanceId, chatId, roles)
-    roles: names, or { name, type } specs (a spec's type is checked against
-    the assigned variable)
-    -> { roles: [{ name, type, exists, assigned, variable, valid, problem }],
-         missing: [names not usable], allAssigned }
+    -> the role entries extensions requested for the chat
+requestRoles(extensionId, instanceId, { key, label?, chatId?, roles: [role ids] })
+    -> true if anything changed, false if not, null if rejected. Replaces
+       the caller's earlier request under the same key (and chat); an empty
+       list removes it; chatId omitted/null = every chat. Any namespace's ids.
+resolveRoles(extensionId, instanceId, chatId, [role ids])
+    -> { roles: [{ id, namespace, publicName, type, exists, assigned, variable, valid, problem }],
+         missing: [ids], allAssigned }
 getRoleTypes() -> ['text', 'number', 'boolean', 'date', 'image', 'list', 'any']
 ```
 
 **23.3 Typical use** (Pretty Panels)
 
-When a layout is shown in a chat: `requestRoles({ key: 'layout', chatId,
-label: 'Pretty Panels layout "HUD"', roles })` with the layout's role
-bindings, then `resolveRoles(chatId, roles)` - render, and warn about
-`missing`. On `VARIABLES_CHANGED_EVENT`, `listRoles` / `resolveRoles` again
-(an assignment may have changed). When no layout is shown, request `[]`.
+Pretty Panels keeps its layout roles in its own data and sends them with
+`setNamespaceRoles` whenever they change (a rename goes through
+`updateRole` first, so assignments follow). When a layout is shown in a
+chat: `requestRoles({ key: 'layout', chatId, label, roles: [ids] })` with
+the layout's roles and its elements' role bindings, then `resolveRoles` -
+render, warn about `missing`. Its drawer assigns variables with
+`getRoleCandidates` + `assignRole`. On `VARIABLES_CHANGED_EVENT` it reads
+`listRoles` / `resolveRoles` again. With no layout shown it requests `[]`.
 
-**23.4 Verification**
+**23.4 Migration**
 
-`tests/roles.test.js`; role copying on a new chat in
+Role data from 1.40 as first released (roles defined per chat, bare-name
+assignments, `{ name, type }` request specs) is migrated on startup
+(`migrateRoleData`): per-chat definitions become global `se` roles,
+assignments move to role ids, old requests are dropped (extensions
+re-request).
+
+**23.5 Verification**
+
+`tests/roles.test.js`; assignment copying on a new chat in
 `tests/new-chat-start.test.js`.

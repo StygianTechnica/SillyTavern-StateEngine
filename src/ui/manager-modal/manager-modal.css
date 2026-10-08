@@ -1068,3 +1068,6 @@
 .se-roles-create { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .se-roles-create .text_pole { flex: 1 1 140px; margin: 0; }
 .se-role-create-error { color: #e06c75; margin-top: 6px; }
+.se-roles-advanced { display: flex; align-items: center; gap: 4px; font-size: 0.9em; cursor: pointer; }
+.se-role-namespace { opacity: 0.8; }
+.se-role-shared, .se-role-owned { opacity: 0.6; margin-left: 4px; }
