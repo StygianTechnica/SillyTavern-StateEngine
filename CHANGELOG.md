@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased — Forgiving durations and new-chat presets in groups
+
+**Changed**
+
+- **Durations are worked with, not refused.** "Two days passed", "two more days",
+  "10 minutes later", "about an hour" and "it's been three days" are understood. Vague
+  amounts are estimated (a couple = 2, a few / several = 3), halves work ("half an hour",
+  "an hour and a half"), and a fraction of a month, year or season is approximated from
+  the calendar's own lengths (half a month = 15 days on Gregorian, half a year = 6 months)
+  where it used to be an error. Applies everywhere a duration is read: narrative jumps
+  (deltaSource), prompted datetime answers and increment deltas. Requirements spec 1.39.
+- **Semantic time of day works through a narrative jump.** With the toggle on, a
+  datetime's delta variable can say "the next morning". It used to apply only to a
+  prompted answer written to the datetime directly. Spec 1.35.
+- **A new chat copies from your most recently used chat** with that character or group,
+  no longer from whichever chat happened to be open before it. In a group that was often
+  an old chat SillyTavern reopened, so removed presets came back and new ones were missing.
+  "Most recently used" is now the last chat written to, not the last one created.
+- **The new-chat popup has a Cancel button**, which leaves the new chat untouched.
+- A brand-new character or group starts with a clean slate, without a question.
+
+**Tests:** 49 files, 1959 tests (new: `tests/narrative-delta.test.js`,
+`tests/chat-state-last-updated.test.js`).
+
 ## Unreleased — Tracker editing, layering and variable increment steps
 
 **Added**

@@ -1126,7 +1126,8 @@ const NARRATIVE_WORDS = new Set([
 const NUMBER_AHEAD = `(?=(?:\\d|${WORD_NUMBER_TENS_PATTERN}|${WORD_NUMBER_ONES_PATTERN})\\b)`;
 
 function normalizeNarrativeDelta(calendar, text) {
-    let out = text.replace(/[.!?]+$/, '');
+    const original = text.replace(/[.!?]+$/, '').trim();
+    let out = original;
     for (const [pattern, amount] of VAGUE_AMOUNTS) out = out.replace(pattern, amount);
     out = out
         .replace(/\band\s+a\s+half\b/g, ' __half ')
@@ -1141,7 +1142,8 @@ function normalizeNarrativeDelta(calendar, text) {
         .replace(/(\d+(?:\.\d+)?)\s+([a-z]+)\s+__half\b/g, (_, n, unit) => `${Number(n) + 0.5} ${unit}`)
         .replace(/^(?:\s*(?:,|\band\b))+|(?:(?:,|\band\b)\s*)+$/g, '')
         .trim();
-    if (!out) return null;
+    // Nothing narrative was there to normalize: "h" alone is not "1 h".
+    if (!out || out === normalizeWordNumbers(original)) return null;
     return out
         .split(/\s*(?:,|\band\b)\s*/)
         .map((part) => (/^[a-z]+$/.test(part) && lookupUnit(calendar, part) ? `1 ${part}` : part))

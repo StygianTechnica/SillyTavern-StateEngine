@@ -483,7 +483,7 @@ describe('fantasy calendar: increments', () => {
             expect(isValidDelta('aldoria', '1fortnight')).toBe(false);
         });
 
-        it('a fraction follows the unit an alias names: half a moon (a 28-day cycle here) is 14 days, half a month is this calendar's own average month', () => {
+        it('a fraction follows the unit an alias names: half a moon (a 28-day cycle here) is 14 days, half a month is the calendar average month', () => {
             expect(incrementScalar('aldoria', STORMFALL_17, 'half a moon') - STORMFALL_17).toBe(14 * PER_DAY);
             const { months } = getCalendarDefinition('aldoria');
             const year = months.reduce((n, m) => n + m.days, 0);
@@ -588,7 +588,7 @@ describe('fantasy calendar: natural language', () => {
 
     it('returns null - never throws - for anything it does not understand', () => {
         for (const bad of ['', '   ', 'whenever', 'move to Frobozz 3', 'move to Stormfall 31', 'next fortnight', 'advance 1 fortnight',
-            'advance 1.5 seasons', 'move to Stormfall 17 at 25:00', null, undefined, {}, NaN]) {
+            'move to Stormfall 17 at 25:00', null, undefined, {}, NaN]) {
             expect(() => resolve(bad), String(bad)).not.toThrow();
             expect(resolve(bad), String(bad)).toBeNull();
         }

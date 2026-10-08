@@ -343,11 +343,25 @@ starts, BEFORE it proceeds (SillyTavern awaits CHAT_CREATED listeners):
      in its load order; their variables start at their defaults.
   2. Same presets AND data - as 1, then the source chat's values are copied
      (a continuation of that chat).
-  3. Clean slate - no presets, no data. Closing the dialog, Escape or an
-     error is also a clean slate.
+  3. Clean slate - no presets, no data. Cancel, closing the dialog, Escape
+     or an error is also a clean slate (the new chat is left untouched).
 
-The dialog is SillyTavern's Popup with three buttons (no OK/Cancel); without
-Popup it falls back to two confirm() questions. It is asked once per chat per
+The dialog is SillyTavern's Popup with the three choices and a Cancel button
+(no OK); without Popup it falls back to two confirm() questions.
+
+Revised 2026-10-08 (reported from group chats: presets the user had removed
+kept coming back, recently added ones did not):
+- "Most recently updated" means most recently WRITTEN TO: saveChatState()
+  stamps lastUpdated on every write. It used to be set only when the state
+  was first created, so it really meant the most recently created chat.
+- The source is always the most recently updated candidate. A preference for
+  the chat open just before the new one (added 2026-09-21) is removed: in a
+  group that was whatever chat SillyTavern reopened on selecting the group,
+  often an old one.
+- A brand-new character or group has no candidate, so it starts with a clean
+  slate and is not asked. A chat whose owner is unknown (neither
+  characterAvatar nor groupId) has no candidate either - previously null
+  matched null and group chats became candidates for it. It is asked once per chat per
 session. Activating the presets goes through addPresetToChat(), so their
 variables are seeded as for any manual activation (this is a preset-add
 trigger, not seeding on CHAT_CREATED, which 3.1 still forbids). Values are
@@ -2478,6 +2492,13 @@ ui-templates.js (the editor field).
   TARGET datetime has timeSemanticMode enabled - confirmed by its own test
   in tests/calculated-datetime.test.js, not assumed from the reading of the
   request alone.
+  REVISED 2026-10-08: the deltaSource exclusion is lifted. A datetime fed by
+  a deltaSource has no other way to receive a semantic phrase, so the toggle
+  did nothing for it, and the user turning it on expected "the next morning"
+  in the delta text to work. applyDatetimeDeltaTriggers now passes
+  `{ semanticTimeOfDay }` from the TARGET datetime's timeSemanticMode; with
+  the toggle off, deltaSource text is still never given semantic
+  interpretation. Tests in tests/calculated-datetime.test.js cover both.
 - Precedence ("semantic time phrases override duration based deltas"):
   resolveSemanticTimeOfDay() is checked FIRST in resolveInstruction(),
   before the absolute-date parse, phrase rules, and the advance/rewind
@@ -2743,6 +2764,51 @@ Verification: tests/date-phrasing.test.js; the midnight expectations in
 tests/datetime.test.js, tests/fantasy-calendar.test.js and
 tests/fantasy-calendar-seeds.test.js updated to the kept time of day. A
 calendar's own nlRules.moveToDay phrase keeps the time of day the same way.
+
+1.39 Forgiving Durations (2026-10-08)
+
+A duration is worked with, not refused, whenever there is a reasonable
+reading of it. Reported from a real group chat: the model copied "Two days
+passed" into a deltaSource variable, the parser refused it, and the date
+never moved (the text stayed in the variable). The rule: try to work with the
+duration even if it is not exact.
+
+- Narrative wording around a duration is dropped: narrative verbs ("passed",
+  "went by", "elapsed", "later", "it's been"), hedges ("about", "nearly",
+  "roughly", "just under"), intensifiers ("more", "another", "a further",
+  "a good"). "Two more days passed" = 2 days, "10 minutes later" = 10
+  minutes. A unit left with no amount means one ("another day", "the next
+  hour"). A word that is one of the calendar's own unit aliases is never
+  dropped.
+- Vague amounts are estimated: a couple = 2, a few = 3, several = 3, a
+  handful = 3.
+- Halves: "half an hour" = 0.5 hour, "an hour and a half" = 1.5 hours, "two
+  and a half hours" = 2.5 hours.
+- A fraction of a month, year or season (no fixed length) is approximated
+  from the calendar's own lengths, not refused (this replaces the earlier
+  "must be whole numbers" rule): a year's fraction becomes months, and a
+  month's or season's fraction becomes whole days of an average one (days in
+  the year / number of months or seasons). "Half a month" = 15 days on
+  Gregorian; "0.5y" = 6 months. A fraction follows the unit an alias names:
+  half a "moon" on a calendar whose moon is a 28-day cycle is 14 days.
+- Still refused: text with no duration in it ("later" alone, "no change",
+  "banana days").
+
+Implemented in calendar-engine.js parseDeltaFor(), so every path gets it:
+deltaSource text (1.31), a prompted datetime answer, a deterministic
+increment's delta, isValidDelta(). Narrative normalization is only tried
+AFTER the text fails to parse as written, so nothing that already parsed
+changes meaning. A bare unit with nothing narrative around it ("h") is still
+refused.
+
+Also revised the same day: semantic time of day (1.35) now applies to a
+datetime's deltaSource text when that datetime opts in - see the note in
+1.35.
+
+Verification: tests/narrative-delta.test.js; narrative deltas through
+deltaSource and semantic deltaSource in tests/calculated-datetime.test.js;
+fractional expectations in tests/datetime.test.js and
+tests/fantasy-calendar.test.js updated from "refused" to "approximated".
 
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
