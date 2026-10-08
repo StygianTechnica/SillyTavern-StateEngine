@@ -292,12 +292,16 @@ export function loadChatState(chatId) {
     }
 }
 
-// Writes the full state object back for <chatId>, then signals the change
-// (variable-change-signal.js). Never throws.
+// Writes the full state object back for <chatId>, stamping lastUpdated, then
+// signals the change (variable-change-signal.js). Never throws. lastUpdated
+// used to be set only when the state was first created, so "the most recent
+// chat" (initialization-engine.js findPreviousChat, the Variable Management
+// list) really meant the most recently CREATED one.
 export function saveChatState(chatId, state) {
     try {
         if (!chatId) return;
         const store = getStore();
+        if (state && typeof state === 'object') state.lastUpdated = Date.now();
         store.chats[chatId] = state;
         persistSettings();
         notifyVariablesChanged(chatId);
