@@ -105,11 +105,11 @@ export function blankDefinition() {
         // enabled, a prompted datetime answer's semantic phrases ("morning",
         // "the next evening", ...) are interpreted into a precise target time
         // BEFORE the ordinary duration/verb grammar gets a chance at them -
-        // see calendar-engine.js's resolveSemanticTimeOfDay(). Independent of
-        // deltaSource above: deltaSource's own text is never given semantic
-        // interpretation (the request that introduced this field says so
-        // explicitly) - only the model's direct prompted answer for THIS
-        // variable is.
+        // see calendar-engine.js's resolveSemanticTimeOfDay(). Applies both to
+        // the model's direct prompted answer for THIS variable and to the text
+        // of its deltaSource (revised 2026-10-08; it originally excluded
+        // deltaSource, which left the toggle doing nothing for a datetime fed
+        // by one).
         timeSemanticMode: 'none',
 
         // Default value

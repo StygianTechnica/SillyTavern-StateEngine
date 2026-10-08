@@ -1091,12 +1091,76 @@ function normalizeWordNumbers(text) {
         .replace(/\ban?\b/g, '1');
 }
 
+// Narrative wording around a duration (requirements spec 1.39): a model asked
+// for a time delta copies the phrase it read - "two days passed", "two more
+// days", "10 minutes later", "about an hour", "several hours" - and every one
+// of those failed to parse, so the delta was skipped and the datetime never
+// moved. Reported against a real chat ("Two days passed" left verbatim in the
+// delta variable), reproduced before fixing. Only ever tried AFTER the text
+// fails to parse as written (parseDeltaFor), so nothing that already parsed -
+// a calendar's own multi-word aliases included - can change meaning.
+//
+// Vague amounts are estimated, never rejected: a couple = 2, a few / several /
+// a handful = 3. Halves: "half an hour" = 0.5 hour, "two and a half hours" =
+// 2.5 hours, "an hour and a half" = 1.5 hours. Hedges ("about", "nearly"),
+// narrative verbs ("passed", "went by", "later", "it's been") and intensifiers
+// ("more", "another", "a good") are dropped. A unit left with no amount
+// ("another day", "the next hour") means one of it. A word that is one of the
+// calendar's own unit aliases is never dropped. Returns the normalized text
+// (word numbers already digits), or null when nothing is left.
+const VAGUE_AMOUNTS = [
+    [/\b(?:a\s+)?couple(?:\s+of)?\b/g, '2'],
+    [/\b(?:a\s+)?handful\s+of\b/g, '3'],
+    [/\b(?:a\s+)?few\b/g, '3'],
+    [/\bseveral\b/g, '3'],
+];
+const NARRATIVE_PHRASES = /\b(?:close\s+to|at\s+least|or\s+so|just\s+(?:under|over)|a\s+(?:good|full|whole|solid)|the\s+(?:next|following|past|last|better\s+part\s+of))\b/g;
+const NARRATIVE_WORDS = new Set([
+    'about', 'around', 'roughly', 'approximately', 'approx', 'nearly', 'almost', 'some', 'maybe', 'perhaps', 'probably',
+    'another', 'more', 'extra', 'additional', 'further', 'whole', 'full', 'entire', 'long',
+    'after', 'for', 'over', 'under', 'in', 'of', 'on', 'by', 'then', 'now', 'already', 'time', 'next', 'following',
+    'it', "it's", 'its', 'is', 'was', 'has', 'have', 'had', 'been',
+    'pass', 'passes', 'passed', 'passing', 'elapsed', 'later', 'gone', 'went', 'go', 'goes',
+    'flew', 'crept', 'dragged', 'slipped',
+]);
+const NUMBER_AHEAD = `(?=(?:\\d|${WORD_NUMBER_TENS_PATTERN}|${WORD_NUMBER_ONES_PATTERN})\\b)`;
+
+function normalizeNarrativeDelta(calendar, text) {
+    let out = text.replace(/[.!?]+$/, '');
+    for (const [pattern, amount] of VAGUE_AMOUNTS) out = out.replace(pattern, amount);
+    out = out
+        .replace(/\band\s+a\s+half\b/g, ' __half ')
+        .replace(/\bhalf\s+(?:an?\s+)?([a-z]+)\b/g, '0.5 $1')
+        .replace(NARRATIVE_PHRASES, ' ')
+        .replace(/[a-z']+/g, (word) => (NARRATIVE_WORDS.has(word) && !lookupUnit(calendar, word) ? ' ' : word))
+        // "a further two days" -> "two days": an article left directly in front
+        // of an amount belongs to a dropped word, not to the amount.
+        .replace(new RegExp(`\\ban?\\s+${NUMBER_AHEAD}`, 'g'), '');
+    out = normalizeWordNumbers(out.replace(/\s+/g, ' ').trim())
+        .replace(/(\d+(?:\.\d+)?)\s+__half\s+([a-z]+)/g, (_, n, unit) => `${Number(n) + 0.5} ${unit}`)
+        .replace(/(\d+(?:\.\d+)?)\s+([a-z]+)\s+__half\b/g, (_, n, unit) => `${Number(n) + 0.5} ${unit}`)
+        .replace(/^(?:\s*(?:,|\band\b))+|(?:(?:,|\band\b)\s*)+$/g, '')
+        .trim();
+    if (!out) return null;
+    return out
+        .split(/\s*(?:,|\band\b)\s*/)
+        .map((part) => (/^[a-z]+$/.test(part) && lookupUnit(calendar, part) ? `1 ${part}` : part))
+        .join(', ');
+}
+
 // "1h", "3 hours", "1d 2h", "1y, 2mo and 3d", "-2d", "1season", "2 cycles",
 // "one month", "a day", "twenty-five days" -> { years, months, seasons,
 // seconds } where seconds already covers every fixed-length unit for
 // `calendar` (a cycle is its first cycle's length in days). A bare number is
-// seconds. Months, years and seasons must be whole numbers (half a month has
-// no fixed length). Throws on anything else.
+// seconds. A fraction of a month, year or season - which have no fixed length
+// - is approximated from the calendar's own lengths rather than refused
+// (requirements spec 1.39): a year's fraction becomes months, and a month's or
+// season's fraction becomes whole days of an average one (days in the year /
+// number of months or seasons) - "half a month" is 15 days on Gregorian, and
+// half a "moon" on a calendar whose unitAliases make a moon a month is half of
+// THAT calendar's average month. Text that does not parse as written gets one more try
+// with its narrative wording normalized (normalizeNarrativeDelta - "two days
+// passed", "several hours"). Throws on anything else.
 function parseDeltaFor(calendar, delta) {
     if (typeof delta === 'number') {
         if (!Number.isFinite(delta)) throw new Error(`Invalid delta ${delta}`);
@@ -1104,12 +1168,37 @@ function parseDeltaFor(calendar, delta) {
     }
     if (typeof delta !== 'string' || !delta.trim()) throw new Error(`Invalid delta "${delta}"`);
 
-    const text = normalizeWordNumbers(delta.trim().toLowerCase());
+    const lowered = delta.trim().toLowerCase();
+    try {
+        return parseDeltaText(calendar, delta, lowered);
+    } catch (err) {
+        const narrative = normalizeNarrativeDelta(calendar, lowered);
+        if (narrative === null || narrative === lowered) throw err;
+        try {
+            return parseDeltaText(calendar, delta, narrative);
+        } catch {
+            throw err;
+        }
+    }
+}
+
+// parseDeltaFor()'s grammar for one lowercased text. `delta` is the original,
+// for error messages only.
+function parseDeltaText(calendar, delta, lowered) {
+    const text = normalizeWordNumbers(lowered);
     const perMinute = calendar.secondsPerMinute;
     const perHour = perMinute * calendar.minutesPerHour;
     const perDay = perHour * calendar.hoursPerDay;
     const out = { years: 0, months: 0, seasons: 0, seconds: 0 };
     let tokens = 0;
+    // Whole days only for an approximated fraction: "half a month" lands on a
+    // day boundary, not 15 days 5 hours 14 minutes in.
+    const addDays = (days) => { out.seconds += Math.round(days) * perDay; };
+    const addMonths = (months) => {
+        const whole = Math.trunc(months);
+        out.months += whole;
+        addDays((months - whole) * (yearLength(calendar) / calendar.months.length));
+    };
 
     DELTA_TOKEN.lastIndex = 0;
     while (DELTA_TOKEN.lastIndex < text.length) {
@@ -1126,14 +1215,15 @@ function parseDeltaFor(calendar, delta) {
         const unit = lookupUnit(calendar, m[2]);
         if (!unit) throw new Error(`Invalid delta "${delta}": unknown unit "${m[2]}"`);
         const [kind, multiplier] = unit;
-        if ((kind === 'months' || kind === 'years' || kind === 'seasons') && !Number.isInteger(amount * multiplier)) {
-            throw new Error(`Invalid delta "${delta}": months, years and seasons must be whole numbers`);
-        }
-        if (kind === 'years') out.years += amount * multiplier;
-        else if (kind === 'months') out.months += amount * multiplier;
+        const count = amount * multiplier;
+        if (kind === 'years') {
+            out.years += Math.trunc(count);
+            addMonths((count - Math.trunc(count)) * calendar.months.length);
+        } else if (kind === 'months') addMonths(count);
         else if (kind === 'seasons') {
             if (!calendar.seasons?.length) throw new Error(`Invalid delta "${delta}": this calendar has no seasons`);
-            out.seasons += amount * multiplier;
+            out.seasons += Math.trunc(count);
+            addDays((count - Math.trunc(count)) * (yearLength(calendar) / calendar.seasons.length));
         } else if (kind === 'cycles') {
             const cycle = calendar.cycles?.[0];
             if (!cycle) throw new Error(`Invalid delta "${delta}": this calendar has no cycles`);

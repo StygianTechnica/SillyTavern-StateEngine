@@ -478,9 +478,17 @@ describe('fantasy calendar: increments', () => {
             expect(() => incrementScalar('gregorian', 0, '1season')).toThrow(/no seasons/);
         });
 
-        it('seasons must be whole numbers, and unknown units are refused', () => {
-            expect(isValidDelta('aldoria', '0.5season')).toBe(false);
+        it('a fractional season is approximated (spec 1.39), and unknown units are refused', () => {
+            expect(isValidDelta('aldoria', '0.5season')).toBe(true);
             expect(isValidDelta('aldoria', '1fortnight')).toBe(false);
+        });
+
+        it('a fraction follows the unit an alias names: half a moon (a 28-day cycle here) is 14 days, half a month is this calendar's own average month', () => {
+            expect(incrementScalar('aldoria', STORMFALL_17, 'half a moon') - STORMFALL_17).toBe(14 * PER_DAY);
+            const { months } = getCalendarDefinition('aldoria');
+            const year = months.reduce((n, m) => n + m.days, 0);
+            expect(incrementScalar('aldoria', STORMFALL_17, 'half a month') - STORMFALL_17)
+                .toBe(Math.round(0.5 * (year / months.length)) * PER_DAY);
         });
 
         it('unit aliases from nlRules extend the grammar', () => {

@@ -245,14 +245,21 @@ describe('the dialog', () => {
         expect(out.choice).toBe(expected);
     });
 
-    it('has exactly the three buttons and no OK / Cancel', async () => {
+    it('has the three choices and a Cancel button, no OK', async () => {
         installPopup(103);
         await offerNewChatStart(DLG);
         const { customButtons, okButton, cancelButton } = popups[0].options;
         expect(customButtons.map((b) => b.text)).toEqual(['Same presets, no data', 'Continue (presets + data)', 'Clean slate']);
         expect(customButtons.map((b) => b.result)).toEqual([101, 102, 103]);
         expect(okButton).toBe(false);
-        expect(cancelButton).toBe(false);
+        expect(cancelButton).toBe('Cancel');
+    });
+
+    it('Cancel leaves the new chat untouched', async () => {
+        installPopup(0); // SillyTavern's POPUP_RESULT.CANCELLED
+        const out = await offerNewChatStart(DLG);
+        expect(out).toMatchObject({ choice: 'clean', activated: [], copied: 0 });
+        expect(getPresetsForChat(DLG)).toEqual([]);
     });
 
     it('tells the user what it found, with everything escaped', async () => {
@@ -287,7 +294,7 @@ describe('wiring', () => {
     const src = read('src', 'events', 'event-engine.js');
     it('the handler is async, awaits the question, and serves normal and group chats', () => {
         expect(src).toMatch(/const onChatCreated = async \(\) => \{/);
-        expect(src).toContain('await offerNewChatStart(chatId, undefined, previousChatId)');
+        expect(src).toContain('await offerNewChatStart(chatId);');
         expect(src).toContain('eventSource.on(eventTypes.CHAT_CREATED, onChatCreated)');
         expect(src).toContain('eventSource.on(eventTypes.GROUP_CHAT_CREATED, onChatCreated)');
     });
@@ -332,34 +339,59 @@ describe('a character with no greeting never gets CHAT_CREATED: CHAT_CHANGED ask
     it('CHAT_CHANGED is wired to ask before the lorebook offer', () => {
         const src = read('src', 'events', 'event-engine.js');
         expect(src).toContain('eventSource.on(eventTypes.CHAT_CHANGED, async () => {');
-        expect(src).toContain('if (looksLikeNewChat(chatId, context)) await offerNewChatStart(chatId, undefined, previousChatId);');
+        expect(src).toContain('if (looksLikeNewChat(chatId, context)) await offerNewChatStart(chatId);');
         expect(src.indexOf('looksLikeNewChat(chatId, context)')).toBeLessThan(src.lastIndexOf('offerLorebookPresets(chatId);'));
     });
 });
 
-describe('the chat the user started from wins over the most recently updated one', () => {
-    it('findPreviousChat prefers the chat you were just in', () => {
-        makeSourceChat('chat-real', { presetIds: [hp], values: { se__hp: 7 }, lastUpdated: 1000 });
-        makeSourceChat('chat-defaults-only', { presetIds: [hp], values: { se__hp: 0 }, lastUpdated: 5000 });
+// Reported 2026-10-08: in a group, the chat that happened to be open before
+// the new one (whatever SillyTavern reopened on selecting the group) used to
+// win, so presets removed long ago came back and recently added ones did not.
+describe('the most recently used chat is the source, not the one open before', () => {
+    it('findPreviousChat picks the most recently updated chat', () => {
+        makeSourceChat('chat-old', { presetIds: [hp, mood], lastUpdated: 1000 });
+        makeSourceChat('chat-recent', { presetIds: [hp], lastUpdated: 5000 });
         makeNewChat();
-        expect(findPreviousChat(NEW).sourceChatId).toBe('chat-defaults-only');
-        expect(findPreviousChat(NEW, 'chat-real').sourceChatId).toBe('chat-real');
+        expect(findPreviousChat(NEW).sourceChatId).toBe('chat-recent');
     });
 
-    it('a preferred chat of another character (or with nothing to continue from) is ignored', () => {
-        makeSourceChat('chat-mine', { presetIds: [hp], lastUpdated: 1000 });
-        makeSourceChat('chat-other-char', { avatar: 'b.png', presetIds: [hp], lastUpdated: 9000 });
-        makeSourceChat('chat-empty', { lastUpdated: 8000 });
-        makeNewChat();
-        expect(findPreviousChat(NEW, 'chat-other-char').sourceChatId).toBe('chat-mine');
-        expect(findPreviousChat(NEW, 'chat-empty').sourceChatId).toBe('chat-mine');
+    it('the same for a group', () => {
+        makeSourceChat('g-old', { groupId: 'g1', presetIds: [hp, mood], lastUpdated: 1000 });
+        makeSourceChat('g-recent', { groupId: 'g1', presetIds: [hp], lastUpdated: 5000 });
+        makeNewChat(NEW, null, 'g1');
+        const source = findPreviousChat(NEW);
+        expect(source.sourceChatId).toBe('g-recent');
+        expect(source.presetIds).toEqual([hp]);
     });
 
-    it('CONTINUE copies the preferred chat values, not the newest chat defaults', async () => {
-        makeSourceChat('chat-real', { presetIds: [hp], values: { se__hp: 7 }, lastUpdated: 1000 });
-        makeSourceChat('chat-defaults-only', { presetIds: [hp], values: { se__hp: 0 }, lastUpdated: 5000 });
-        makeNewChat();
-        await offerNewChatStart(NEW, ask(NEW_CHAT_CHOICES.CONTINUE), 'chat-real');
-        expect(loadChatState(NEW).variables.se__hp.value).toBe(7);
+    it('takes no "chat open before" argument any more', () => {
+        expect(findPreviousChat.length).toBe(1);
+        expect(offerNewChatStart.length).toBe(1);
+        expect(read('src', 'events', 'event-engine.js')).not.toContain('previousChatId');
+    });
+});
+
+describe('a brand-new character or group starts with a clean slate', () => {
+    it('a new group has no earlier chat - nothing is asked or activated', async () => {
+        makeSourceChat('g-other', { groupId: 'g-other', presetIds: [hp, mood], lastUpdated: 9000 });
+        makeNewChat(NEW, null, 'g-new');
+        const fn = ask(NEW_CHAT_CHOICES.PRESETS);
+        expect(await offerNewChatStart(NEW, fn)).toMatchObject({ choice: null, activated: [] });
+        expect(fn).not.toHaveBeenCalled();
+        expect(getPresetsForChat(NEW)).toEqual([]);
+    });
+
+    it('a new character has no earlier chat - nothing is asked or activated', async () => {
+        makeSourceChat('c-other', { avatar: 'other.png', presetIds: [hp], lastUpdated: 9000 });
+        makeNewChat(NEW, 'brand-new.png');
+        const fn = ask(NEW_CHAT_CHOICES.PRESETS);
+        expect((await offerNewChatStart(NEW, fn)).choice).toBe(null);
+        expect(fn).not.toHaveBeenCalled();
+    });
+
+    it('a chat whose owner is unknown never matches group chats (both owners null)', () => {
+        makeSourceChat('g-any', { groupId: 'g1', presetIds: [hp], lastUpdated: 9000 });
+        makeNewChat(NEW, null, null);
+        expect(findPreviousChat(NEW)).toBeNull();
     });
 });

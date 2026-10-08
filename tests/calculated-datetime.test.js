@@ -222,20 +222,43 @@ describe('calculated-datetime extension', () => {
             expect(stored('jump')).toBe('');
         });
 
-        // Semantic time of day (requirements spec 1.35): the request that
-        // introduced timeSemanticMode is explicit that deltaSource text is
-        // NEVER given semantic interpretation - only the model's direct
-        // prompted answer for the datetime variable itself is. Confirmed
-        // here rather than assumed: a datetime with timeSemanticMode
-        // enabled still treats a semantic phrase arriving through its
-        // deltaSource exactly like any other unparseable delta text.
-        it('a semantic phrase through deltaSource is NOT understood, even when the target has timeSemanticMode "semanticTimeOfDay"', () => {
+        // Semantic time of day (requirements spec 1.35, revised 2026-10-08):
+        // the toggle on the datetime also covers the text of its deltaSource -
+        // originally it did not, which left it doing nothing for a datetime
+        // fed by one.
+        it('a semantic phrase through deltaSource is understood when the target has timeSemanticMode "semanticTimeOfDay"', () => {
             createDeltaSource('jump');
             createDatetime('clock', { defaultValue: ts(2026, 9, 18, 12), deltaSource: 'pp__jump', timeSemanticMode: 'semanticTimeOfDay' });
+            setDelta('jump', 'the next morning');
+            expect(stored('clock')).toBe(ts(2026, 9, 19, 8));
+            expect(stored('jump')).toBe(''); // consumed
+        });
+
+        it('a semantic phrase through deltaSource is NOT understood when the target leaves timeSemanticMode off', () => {
+            createDeltaSource('jump');
+            createDatetime('clock', { defaultValue: ts(2026, 9, 18, 12), deltaSource: 'pp__jump' });
             setDelta('jump', 'the next morning');
             expect(stored('clock')).toBe(ts(2026, 9, 18, 12)); // unchanged
             expect(stored('jump')).toBe('the next morning'); // never consumed
             expect(console.warn).toHaveBeenCalledWith(expect.any(String), expect.stringContaining('could not understand'));
+        });
+
+        // Narrative durations (requirements spec 1.39): the wording a model
+        // copies out of the message ("Two days passed", reported from a real
+        // group chat) moves the datetime instead of being skipped.
+        it.each([
+            ['Two days passed', 2 * 86400],
+            ['Two more days passed', 2 * 86400],
+            ['ten minutes passed', 600],
+            ['several hours later', 3 * 3600],
+            ['a couple of days', 2 * 86400],
+            ['an hour and a half', 5400],
+        ])('a narrative delta %j through deltaSource moves the datetime', (text, seconds) => {
+            createDeltaSource('jump');
+            createDatetime('clock', { defaultValue: ts(2026, 9, 18, 12), deltaSource: 'pp__jump' });
+            setDelta('jump', text);
+            expect(stored('clock')).toBe(ts(2026, 9, 18, 12) + seconds);
+            expect(stored('jump')).toBe('');
         });
 
         // Datetime mode (requirements spec 1.36): a deltaSource jump writes

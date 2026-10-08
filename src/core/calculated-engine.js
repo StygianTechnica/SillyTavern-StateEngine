@@ -218,7 +218,13 @@ function applyDatetimeDeltaTriggers(chatId, sourceVarName, allDefs) {
             // before being treated as unparseable. An instruction that already
             // has its own verb (or is an absolute date) is unaffected - the
             // first, unprefixed attempt already resolves those.
-            const next = resolveInstruction(calendarId, current, sourceValue)
+            // Semantic time of day (spec 1.35, revised 2026-10-08): a datetime
+            // that opts in gets it for its delta text too ("the next
+            // morning"), the same as a prompted answer written to it directly -
+            // the toggle lives on the datetime, and a datetime fed by a
+            // deltaSource has no other way to receive one.
+            const semanticTimeOfDay = def.timeSemanticMode === 'semanticTimeOfDay';
+            const next = resolveInstruction(calendarId, current, sourceValue, { semanticTimeOfDay })
                 ?? resolveInstruction(calendarId, current, `advance ${sourceValue}`);
             if (next === null) {
                 console.warn(LOG_PREFIX, `datetime delta skipped for "${def.name}": could not understand ${JSON.stringify(sourceValue)} from "${sourceVarName}"`);

@@ -415,12 +415,20 @@ describe('datetime variables', () => {
                 expect([days(ts(2023, 3, 1), '1y'), days(ts(2024, 3, 1), '1y')]).toEqual([366, 365]);
             });
 
-            it('rejects a bad delta, a bad scalar, and fractional months/years', () => {
-                for (const bad of ['', '   ', 'banana', '1x', 'h', '1h 2', '1.5mo', '0.5y', NaN, null, undefined, {}, '1h and']) {
+            it('rejects a bad delta and a bad scalar', () => {
+                for (const bad of ['', '   ', 'banana', '1x', 'h', '1h 2', NaN, null, undefined, {}, '1h and']) {
                     expect(() => incrementScalar('gregorian', 0, bad), String(bad)).toThrow();
                 }
                 expect(() => incrementScalar('gregorian', NaN, '1h')).toThrow();
                 expect(() => incrementScalar('gregorian', '5', '1h')).toThrow();
+            });
+
+            // Requirements spec 1.39: approximated, not refused.
+            it('a fractional month/year is approximated from the calendar: whole months, then whole days of an average month', () => {
+                const days = (from, delta) => (incrementScalar('gregorian', from, delta) - from) / 86400;
+                expect(days(ts(2026, 1, 1), '0.5mo')).toBe(15);
+                expect(days(ts(2026, 1, 1), '1.5mo')).toBe(31 + 15);
+                expect(incrementScalar('gregorian', ts(2026, 1, 1), '0.5y')).toBe(ts(2026, 7, 1));
             });
 
             it('isValidDelta mirrors what incrementScalar accepts', () => {
@@ -735,7 +743,7 @@ describe('datetime variables', () => {
                 expect(r('2030-05-06 07:08:09')).toBe(ts(2030, 5, 6, 7, 8, 9));
                 expect(r(500)).toBe(500);
                 expect(r('500')).toBe(500);
-                for (const bad of ['make it evening', 'advance', 'advance soon', 'advance 1.5 months', 'set time to noon', '', null, undefined, {}, NaN]) {
+                for (const bad of ['make it evening', 'advance', 'advance soon', 'set time to noon', '', null, undefined, {}, NaN]) {
                     expect(r(bad), String(bad)).toBeNull();
                 }
                 expect(resolveInstruction('nope', now, 'advance 1 hour')).toBeNull();
