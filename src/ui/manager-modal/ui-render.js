@@ -447,3 +447,21 @@ function updateMoveButtonStates() {
         $moveButtons.addClass('se-button-disabled');
     }
 }
+
+// Roles tab (spec 1.40). `extra` carries the create form's last values and
+// error so a rejected Create keeps what was typed.
+export function renderRolesTab(managerApi, extra = {}) {
+    const $tab = $('#se-manager-roles-tab');
+    // An API bag without the role adapters (manager-api.js roleAdapters) has
+    // no Roles tab to draw.
+    if (!$tab.length || typeof managerApi.listRoles !== 'function') return;
+    const chatId = managerApi.getCurrentChatId();
+    const roles = chatId ? managerApi.listRoles(chatId) : [];
+    const candidates = {};
+    for (const role of roles) candidates[role.name] = managerApi.roleCandidates(chatId, role.type);
+    const roleTypes = managerApi.roleTypes();
+    const acceptedTypes = Object.fromEntries(roleTypes.map((type) => [type, managerApi.acceptedRoleVariableTypes(type)]));
+    $tab.html(uiTemplates.buildRolesTab({
+        chatId, roles, candidates, roleTypes, acceptedTypes, createError: extra.createError ?? '', createValues: extra.createValues ?? null,
+    }));
+}

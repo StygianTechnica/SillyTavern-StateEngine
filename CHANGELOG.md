@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — Roles
+
+**Added**
+
+- **Roles.** A role says what a variable means ("scene.title", "character.health") so
+  extensions can show it without knowing which variable a chat uses. Roles are defined,
+  stored and assigned per chat; each is assigned one variable whose type fits (text,
+  number, boolean, date, image, list or any). Requirements spec 1.40.
+- **Roles tab** in the manager: every role of the open chat, its type, which extensions
+  require it, its assigned variable (chosen from the chat's existing variables - the tab
+  never creates variables), its status, what is missing, and a form to create roles.
+- **Role API:** `listRoles`, `createRole`, `deleteRole`, `assignRole`, `getRequiredRoles`,
+  `requestRoles`, `resolveRoles`, `getRoleTypes`. API specification Section 23.
+- A new chat started from an earlier one (Same presets / Continue) also gets its roles and
+  the assignments that fit the new chat's presets.
+
+**Tests:** 50 files, 2003 tests (new: `tests/roles.test.js`).
+
 ## Unreleased — Forgiving durations and new-chat presets in groups
 
 **Changed**

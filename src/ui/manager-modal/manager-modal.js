@@ -59,6 +59,9 @@ export function buildManagerModal() {
             <button class="se-manager-tab-btn" data-tab="calendars">
                 <i class="fa-solid fa-calendar-days"></i> Calendars
             </button>
+            <button class="se-manager-tab-btn" data-tab="roles">
+                <i class="fa-solid fa-tags"></i> Roles
+            </button>
             <button class="se-manager-tab-btn" data-tab="worldinfo">
                 <i class="fa-solid fa-book"></i> World Info
             </button>
@@ -77,6 +80,7 @@ export function buildManagerModal() {
             <div class="se-manager-tab-pane se-manager-tab-active" data-tab="presets" id="se-manager-presets-tab"></div>
             <div class="se-manager-tab-pane" data-tab="variables" id="se-manager-variables-tab"></div>
             <div class="se-manager-tab-pane" data-tab="calendars" id="se-manager-calendars-tab"></div>
+            <div class="se-manager-tab-pane" data-tab="roles" id="se-manager-roles-tab"></div>
             <div class="se-manager-tab-pane" data-tab="worldinfo" id="se-manager-worldinfo-tab"></div>
             <div class="se-manager-tab-pane" data-tab="varmgmt" id="se-manager-varmgmt-tab"></div>
             <div class="se-manager-tab-pane" data-tab="debug" id="se-manager-debug-tab"></div>
@@ -91,6 +95,7 @@ export function buildManagerModal() {
     managerCurrentPresetId = uiRender.renderVariablesTab(managerApi, managerCurrentPresetId);
     uiRender.renderCalendarsTab(managerApi);
     uiRender.renderWorldInfoTab(managerApi);
+    uiRender.renderRolesTab(managerApi);
     renderedForChatId = managerApi.getCurrentChatId();
 
     // Wire events
@@ -121,6 +126,7 @@ function renderChatDependentTabs() {
     managerCurrentPresetId = uiRender.renderVariablesTab(managerApi, selected);
     uiRender.renderWorldInfoTab(managerApi);
     uiRender.renderVariableManagementTab(managerApi);
+    uiRender.renderRolesTab(managerApi);
     renderedForChatId = managerApi.getCurrentChatId();
 }
 
@@ -150,6 +156,10 @@ export function refreshVariableManagementTabIfOpen() {
             renderChatDependentTabs();
         } else {
             uiRender.renderVariableManagementTab(managerApi);
+            // Roles follow variables: an extension's new request, a preset
+            // (de)activated, a variable created - unless the user is choosing
+            // in one of the tab's dropdowns or typing in its form right now.
+            if (!$('#se-manager-roles-tab').find(':focus').length) uiRender.renderRolesTab(managerApi);
         }
     }
 }

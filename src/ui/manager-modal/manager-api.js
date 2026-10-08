@@ -29,6 +29,7 @@ import { setStatus } from '../settings-panel-ui.js';
 import { getCurrentChatId } from '../wand-ui.js';
 import { previewCalendarDefinition, validateCalendarDefinition } from '../../core/calendar-engine.js';
 import { listConnectionProfiles as connectionProfiles } from '../connection-profile-ui.js';
+import { ROLE_TYPES, listChatRoles, createChatRole, deleteChatRole, assignChatRole, candidateVariables, acceptedVariableTypes } from '../../core/roles.js';
 
 function findPresetById(presetId) {
     return getSettings().presets[presetId] || null;
@@ -213,6 +214,20 @@ export const calendarAdapters = {
     previewCalendar: previewCalendarDefinition,
 };
 
+// Roles tab (spec 1.40). Straight to src/core/roles.js rather than the
+// stateEngine.* role API: the API turns a rejection into null + a console
+// line, and the tab needs the reason ("is a number variable, but this role
+// needs text") to show next to the form. Same data, same rules.
+export const roleAdapters = {
+    listRoles: listChatRoles,
+    createRole: createChatRole,
+    deleteRole: deleteChatRole,
+    assignRole: assignChatRole,
+    roleCandidates: candidateVariables,
+    roleTypes: () => [...ROLE_TYPES],
+    acceptedRoleVariableTypes: acceptedVariableTypes,
+};
+
 setManagerApi({
     getSettings,
     persistSettings,
@@ -236,4 +251,5 @@ setManagerApi({
     generateUniqueVariableName,
     ...calendarAdapters,
     ...independentPresetAdapters,
+    ...roleAdapters,
 });

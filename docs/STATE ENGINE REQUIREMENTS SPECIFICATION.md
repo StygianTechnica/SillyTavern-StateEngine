@@ -2810,6 +2810,49 @@ deltaSource and semantic deltaSource in tests/calculated-datetime.test.js;
 fractional expectations in tests/datetime.test.js and
 tests/fantasy-calendar.test.js updated from "refused" to "approximated".
 
+1.40 Roles (2026-10-08)
+
+A role is a semantic tag that says what a variable represents
+("scene.title", "story.chapter", "character.health"). Roles do not store
+values and are not variables: they map meaning to variables, per chat, so
+extensions (Pretty Panels, quest, time, weather) can ask for "the scene
+title" without knowing which variable a chat uses for it.
+
+- Defined in State Engine, stored and assigned per chat (on the chat's own
+  state, so they go with the chat). A role has a name (lowercase words
+  separated by dots, max 64) and a type: text, number, boolean, date,
+  image, list or any.
+- A chat's roles are the ones the user created in it plus the ones
+  extensions request for it. Extensions request roles through the API, for
+  every chat or for one chat (Pretty Panels: the roles of the layout chosen
+  in that chat).
+- Each role is assigned at most one variable, which must belong to a
+  preset active in the chat and whose type must fit the role (text: string,
+  enum, calculated; number: number, calculated; boolean: boolean,
+  calculated; date: datetime; image: image, imageList, imageMap; list:
+  array; any: anything).
+- Roles Panel (the manager's Roles tab): every role of the open chat - type,
+  which extensions require it, its assigned variable (a dropdown of the
+  chat's existing variables that fit), its status (assigned / missing /
+  unusable, with the reason), a summary of what is missing, and a form to
+  create a role. Roles the user created can be deleted; requested ones
+  cannot. The Roles Panel NEVER creates variables (user requirement,
+  2026-10-08): when nothing fits it says to create one in the Variables tab.
+- API: listRoles, createRole, deleteRole, assignRole, getRequiredRoles,
+  requestRoles, resolveRoles, getRoleTypes (API specification, Section 23).
+- A new chat started from an earlier one (1.14.1, "Same presets" or
+  "Continue") also gets the earlier chat's role definitions and its
+  assignments to variables the new chat's presets define (user requirement,
+  2026-10-08).
+
+Pretty Panels (its own repository) consumes roles: an element is bound to a
+variable or to a role; no layout loads by default; a chosen layout's roles
+are requested and checked, missing ones are warned about while the layout
+still renders with those elements blank.
+
+Verification: tests/roles.test.js; tests/new-chat-start.test.js ("the
+earlier chat's roles come along").
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 

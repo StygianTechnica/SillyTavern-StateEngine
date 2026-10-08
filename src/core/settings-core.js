@@ -442,6 +442,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
     // actually calls registerExtension()/registerEventSource().
     extensions: {},
     eventSources: {},
+    // Roles extensions request (src/core/roles.js, spec 1.40):
+    // { [extensionId]: { [requestId]: { key, label, chatId, roles, updatedAt } } }.
+    // A chat's own role definitions and assignments live on its chat state.
+    roleRequests: {},
     // Notification Core (src/core/notification-core.js): a list of
     // { id, source, severity, message, timestamp, callbackId }. Never holds
     // functions - a notification only NAMES its callback.
@@ -528,6 +532,7 @@ export function getSettings() {
     if (!settings.lorebookPresetDeclines || typeof settings.lorebookPresetDeclines !== 'object' || Array.isArray(settings.lorebookPresetDeclines)) settings.lorebookPresetDeclines = {};
     if (!settings.extensions || typeof settings.extensions !== 'object') settings.extensions = {};
     if (!settings.eventSources || typeof settings.eventSources !== 'object') settings.eventSources = {};
+    if (!settings.roleRequests || typeof settings.roleRequests !== 'object' || Array.isArray(settings.roleRequests)) settings.roleRequests = {};
     // A hand-edited or corrupted list is replaced; an entry that is not an
     // object with an id and a message is dropped (every reader assumes both).
     settings.notifications = Array.isArray(settings.notifications)

@@ -12,6 +12,7 @@ import * as deps from './dependency-graph.js';
 import * as indep from './independent-presets.js';
 import * as notifications from './notification-api.js';
 import * as images from './image-api.js';
+import * as roles from './role-api.js';
 
 export const stateEngine = {
     ...ns,
@@ -26,4 +27,5 @@ export const stateEngine = {
     ...indep,
     ...notifications,
     ...images,
+    ...roles,
 };

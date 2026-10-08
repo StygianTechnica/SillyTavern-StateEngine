@@ -1049,3 +1049,22 @@
 .se-indy-status-error {
     color: #e57373;
 }
+
+/* Roles tab (spec 1.40) */
+.se-roles-summary { margin: 8px 0; }
+.se-roles-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+.se-roles-table th, .se-roles-table td { text-align: left; padding: 6px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); vertical-align: top; }
+.se-roles-table select.se-role-assign { width: 100%; min-width: 180px; margin: 0; }
+.se-role-name { font-size: 0.95em; }
+.se-role-type { font-family: monospace; opacity: 0.85; }
+.se-role-desc, .se-role-hint { opacity: 0.75; display: block; }
+.se-role-requester { display: inline-block; margin: 0 4px 2px 0; padding: 1px 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); font-size: 0.85em; }
+.se-role-requester-none { background: none; opacity: 0.5; }
+.se-role-status { font-size: 0.9em; }
+.se-role-ok { color: #7ec699; }
+.se-role-missing { color: #e06c75; }
+.se-role-problem { color: #e5c07b; }
+.se-role-unassigned { opacity: 0.6; }
+.se-roles-create { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.se-roles-create .text_pole { flex: 1 1 140px; margin: 0; }
+.se-role-create-error { color: #e06c75; margin-top: 6px; }

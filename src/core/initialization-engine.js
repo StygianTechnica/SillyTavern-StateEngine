@@ -7,6 +7,7 @@ import { setVar, loadChatState, saveChatState } from './chat-state.js';
 import { getDefaultValue } from './variable-schema.js';
 import { shouldSkipPromptedRefresh, runPromptedStateUpdate } from './prompted-engine.js';
 import { recalculateDependents, recalculateAllForChat } from './calculated-engine.js';
+import { copyChatRoles } from './roles.js';
 
 
 export function applyResetOnNewChat() {
@@ -111,8 +112,8 @@ async function askNewChatStart(source, presetNames) {
             cancelButton: 'Cancel',
             wide: false,
             customButtons: [
-                { text: 'Same presets, no data', tooltip: 'Activate the same presets. Variables start at their defaults.', result: 101 },
-                { text: 'Continue (presets + data)', tooltip: 'Activate the same presets and copy the variable values - a continuation of that chat.', result: 102 },
+                { text: 'Same presets, no data', tooltip: 'Activate the same presets and roles. Variables start at their defaults.', result: 101 },
+                { text: 'Continue (presets + data)', tooltip: 'Activate the same presets and roles and copy the variable values - a continuation of that chat.', result: 102 },
                 { text: 'Clean slate', tooltip: 'No presets and no data.', result: 103 },
             ],
         });
@@ -149,6 +150,10 @@ export function applyNewChatChoice(chatId, choice, source) {
             result.activated.push(presetId);
         }
     }
+
+    // Roles (spec 1.40) come along with the presets: the earlier chat's role
+    // definitions, and its assignments to variables these presets define.
+    result.rolesCopied = copyChatRoles(source.sourceChatId, chatId);
 
     if (choice === NEW_CHAT_CHOICES.CONTINUE) {
         const definedHere = new Set(Object.values(getAllVariablesFromPresets(getPresetsForChat(chatId))).map((def) => def?.name).filter(Boolean));

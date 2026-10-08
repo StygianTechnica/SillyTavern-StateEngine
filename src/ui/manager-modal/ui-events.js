@@ -78,8 +78,45 @@ export function wireEvents(managerApi, managerState) {
         else if (tab === 'variables') managerState.currentPresetId = uiRender.renderVariablesTab(managerApi, managerState.currentPresetId);
         else if (tab === 'calendars') uiRender.renderCalendarsTab(managerApi, calendarEditing);
         else if (tab === 'worldinfo') uiRender.renderWorldInfoTab(managerApi);
+        else if (tab === 'roles') uiRender.renderRolesTab(managerApi);
         else if (tab === 'varmgmt') uiRender.renderVariableManagementTab(managerApi);
         else if (tab === 'debug') uiRender.renderDebugTab(managerApi);
+    });
+
+    // Roles tab (spec 1.40): assign / clear, delete, create. Only ever
+    // assigns EXISTING variables - creating one is the Variables tab's job.
+    $overlay.on('change', '.se-role-assign', function () {
+        const chatId = managerApi.getCurrentChatId();
+        const role = $(this).attr('data-role');
+        try {
+            managerApi.assignRole(chatId, role, $(this).val() || null);
+        } catch (err) {
+            managerApi.setStatus(err?.message || String(err), true);
+        }
+        uiRender.renderRolesTab(managerApi);
+    });
+    $overlay.on('click', '.se-role-delete', function () {
+        const role = $(this).attr('data-role');
+        if (!window.confirm(`Delete the role "${role}" from this chat? Its assignment is removed too.`)) return;
+        managerApi.deleteRole(managerApi.getCurrentChatId(), role);
+        uiRender.renderRolesTab(managerApi);
+    });
+    const createRoleFromForm = () => {
+        const createValues = {
+            name: String($('#se-role-create-name').val() || '').trim(),
+            type: String($('#se-role-create-type').val() || 'text'),
+            label: String($('#se-role-create-label').val() || '').trim(),
+        };
+        try {
+            managerApi.createRole(managerApi.getCurrentChatId(), createValues);
+            uiRender.renderRolesTab(managerApi);
+        } catch (err) {
+            uiRender.renderRolesTab(managerApi, { createError: err?.message || String(err), createValues });
+        }
+    };
+    $overlay.on('click', '#se-role-create', createRoleFromForm);
+    $overlay.on('keydown', '#se-role-create-name, #se-role-create-label', (e) => {
+        if (e.key === 'Enter') createRoleFromForm();
     });
 
     // 1.29: the Presets tab's own "Regular Presets" / "Independent Presets" subtabs.

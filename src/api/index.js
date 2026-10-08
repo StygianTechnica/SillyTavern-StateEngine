@@ -13,3 +13,4 @@ export * from './dependency-graph.js';
 export * from './independent-presets.js';
 export * from './notification-api.js';
 export * from './image-api.js';
+export * from './role-api.js';
