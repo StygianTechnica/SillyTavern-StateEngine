@@ -30,7 +30,10 @@ export function characterName(id) {
 }
 
 // A character variable's value as text: a name, or names joined with ", ".
+// A list already turned into text (the macro mirror's "Kael, Mira") is
+// returned as it is.
 export function characterValueText(def, value) {
     if (def?.type === 'character') return characterName(value);
+    if (typeof value === 'string') return value;
     return (Array.isArray(value) ? value : []).map(characterName).filter(Boolean).join(', ');
 }

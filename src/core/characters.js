@@ -10,13 +10,13 @@
 //   with the one variant the setting currently uses (activeVariant, null =
 //   the base). Editing a canonical character edits the baseline, for every
 //   chat using the setting. One setting, "default", always exists; with
-//   autoPromote on, it collects every character chats on it meet.
+//   autoConfirm on, it collects every character chats on it meet.
 //
 //   CHAT (per chat, on the chat's state as state.characters) - which setting
 //   the chat uses, per-character chat state (present, match count), and the
-//   chat's OWN characters: ones extraction or the user created that are not
-//   (yet) promoted into the setting - unconfirmed ones, and confirmed ones
-//   nobody promoted. Canonical characters are never copied into a chat.
+//   chat's OWN characters: the UNCONFIRMED ones extraction or the user
+//   created, not yet reviewed. Canonical characters are never copied into a
+//   chat.
 //
 //   state.characters = { setting: id | null, entries: { [id]: { present, matches } },
 //                        local: { [id]: character } }
@@ -28,11 +28,15 @@
 //                 biography?, personality?, faction?, role? } } },
 //     activeVariant: variantId | null, createdAt, updatedAt }
 //
-// Confirmed: false for characters extraction creates; becomes true when the
-// user edits and saves the character (canonicalization) or confirms it.
-// Promotion (chat -> setting, same id): by hand; automatically when a chat
-// character is matched PROMOTE_AFTER_MATCHES times, when it is given an
-// image, or always when its setting has autoPromote on.
+// THE RULE (user requirement, 2026-10-08): confirmed <=> in the setting.
+// A character extraction creates is unconfirmed and lives only in its chat.
+// Confirming it - the user saving an edit (canonicalization) or confirming
+// it as it is - moves it into the chat's setting (same id, so every
+// variable keeps pointing at it). Automatic confirmation: a chat character
+// matched CONFIRM_AFTER_MATCHES times, or every new character when its
+// setting has autoConfirm on. There is no separate "add to setting". A
+// detection that is really someone already known is RESOLVED to them
+// (resolveCharacter): its name becomes their alias, and they are confirmed.
 //
 // Variable values hold character ids (a character variable one id, an array
 // of item type character a list); character-display.js shows names.
@@ -45,7 +49,7 @@ import { genId } from './variable-schema.js';
 import { setCharacterNameResolver, isCharacterDefinition } from './character-display.js';
 
 export const DEFAULT_SETTING_ID = 'default';
-export const PROMOTE_AFTER_MATCHES = 10;
+export const CONFIRM_AFTER_MATCHES = 10;
 const BASELINE_TEXT_FIELDS = ['biography', 'personality', 'faction', 'role'];
 // Fields a variant may override.
 const VARIANT_FIELDS = ['name', 'aliases', 'image', ...BASELINE_TEXT_FIELDS];
@@ -137,22 +141,28 @@ function settingStore() {
     if (!isObject(store.characterSettings)) store.characterSettings = {};
     const settings = store.characterSettings;
     if (!isObject(settings[DEFAULT_SETTING_ID])) {
-        settings[DEFAULT_SETTING_ID] = { id: DEFAULT_SETTING_ID, name: 'Default', autoPromote: true, createdAt: Date.now(), characters: {} };
+        settings[DEFAULT_SETTING_ID] = { id: DEFAULT_SETTING_ID, name: 'Default', autoConfirm: true, createdAt: Date.now(), characters: {} };
     }
     for (const setting of Object.values(settings)) {
         if (!isObject(setting.characters)) setting.characters = {};
+        // autoPromote was this option's name before confirmation and
+        // promotion became one thing.
+        if ('autoPromote' in setting) {
+            if (setting.autoConfirm === undefined) setting.autoConfirm = setting.autoPromote === true;
+            delete setting.autoPromote;
+        }
     }
     return settings;
 }
 
 function settingSummary(setting) {
     return {
-        id: setting.id, name: setting.name, autoPromote: setting.autoPromote === true, isDefault: setting.id === DEFAULT_SETTING_ID,
+        id: setting.id, name: setting.name, autoConfirm: setting.autoConfirm === true, isDefault: setting.id === DEFAULT_SETTING_ID,
         characterCount: Object.keys(setting.characters).length, createdAt: setting.createdAt,
     };
 }
 
-// Every setting (Default first, then by name): [{ id, name, autoPromote, isDefault, characterCount, createdAt }].
+// Every setting (Default first, then by name): [{ id, name, autoConfirm, isDefault, characterCount, createdAt }].
 export function listSettings() {
     return Object.values(settingStore())
         .map(settingSummary)
@@ -164,18 +174,18 @@ export function getSetting(settingId) {
     return setting ? settingSummary(setting) : null;
 }
 
-export function createSetting({ name, autoPromote = false } = {}) {
+export function createSetting({ name, autoConfirm = false } = {}) {
     const clean = text(name, MAX_NAME);
     if (!clean) throw new Error('a setting needs a name');
     if (listSettings().some((s) => s.name.toLowerCase() === clean.toLowerCase())) throw new Error(`a setting named "${clean}" already exists`);
     const id = `set_${genId()}`;
-    settingStore()[id] = { id, name: clean, autoPromote: autoPromote === true, createdAt: Date.now(), characters: {} };
+    settingStore()[id] = { id, name: clean, autoConfirm: autoConfirm === true, createdAt: Date.now(), characters: {} };
     persistSettings();
     changed(null);
     return getSetting(id);
 }
 
-export function updateSetting(settingId, { name, autoPromote } = {}) {
+export function updateSetting(settingId, { name, autoConfirm } = {}) {
     const setting = settingStore()[settingId];
     if (!setting) throw new Error(`setting ${JSON.stringify(settingId)} does not exist`);
     if (name !== undefined) {
@@ -184,7 +194,7 @@ export function updateSetting(settingId, { name, autoPromote } = {}) {
         if (listSettings().some((s) => s.id !== settingId && s.name.toLowerCase() === clean.toLowerCase())) throw new Error(`a setting named "${clean}" already exists`);
         setting.name = clean;
     }
-    if (autoPromote !== undefined) setting.autoPromote = autoPromote === true;
+    if (autoConfirm !== undefined) setting.autoConfirm = autoConfirm === true;
     persistSettings();
     changed(null);
     return getSetting(settingId);
@@ -396,7 +406,8 @@ function mustLocate(chatId, id, settingId) {
 }
 
 // Creates an unconfirmed chat character (extraction, or the user assigning a
-// new one). Promoted at once when the chat's setting auto-promotes.
+// new one). Confirmed - and so in the setting - at once when the chat's
+// setting auto-confirms.
 export function createUnconfirmedCharacter(chatId, name, snippet = null) {
     if (!chatId) throw new Error('createUnconfirmedCharacter needs a chat');
     if (!text(name, MAX_NAME)) throw new Error('a character needs a name');
@@ -405,7 +416,7 @@ export function createUnconfirmedCharacter(chatId, name, snippet = null) {
         layer.local[record.id] = record;
         layer.entries[record.id] = { present: false, matches: 0, ...(layer.entries[record.id] ?? {}) };
     });
-    if (effectiveSetting(chatId).autoPromote) promoteCharacter(chatId, record.id, { silent: true });
+    if (effectiveSetting(chatId).autoConfirm) confirmCharacter(chatId, record.id);
     changed(chatId);
     return getCharacter(chatId, record.id);
 }
@@ -424,12 +435,11 @@ export function createCharacter(settingId, data = {}) {
 
 // Edits a character's baseline fields (name, aliases, image, biography,
 // personality, faction, role) where it lives - a canonical character for
-// every chat on its setting. Saving an edit confirms it (canonicalization);
-// a chat character given an image is promoted.
+// every chat on its setting. Saving an edit confirms it (canonicalization),
+// which puts a chat character into the setting.
 export function updateCharacter(chatId, id, patch = {}, { settingId = null } = {}) {
     const found = mustLocate(chatId, id, settingId);
     const record = normalizeCharacter(found.record);
-    const imageBefore = record.image;
     if (patch.name !== undefined) {
         const name = text(patch.name, MAX_NAME);
         if (!name) throw new Error('a character needs a name');
@@ -441,7 +451,7 @@ export function updateCharacter(chatId, id, patch = {}, { settingId = null } = {
     for (const field of BASELINE_TEXT_FIELDS) if (patch[field] !== undefined) record[field] = text(patch[field], MAX_TEXT);
     record.confirmed = true;
     saveRecord(chatId, found, record);
-    if (found.scope === 'chat' && record.image && record.image !== imageBefore) promoteCharacter(chatId, id, { silent: true });
+    if (found.scope === 'chat') moveToSetting(chatId, id);
     changed(found.scope === 'chat' ? chatId : null);
     return getCharacter(chatId, id, settingId);
 }
@@ -459,11 +469,14 @@ export function updateCharacterImage(chatId, id, imageUrl, options = {}) {
     return updateCharacter(chatId, id, { image: imageUrl }, options);
 }
 
+// Confirms a character as it is - a chat character moves into the chat's
+// setting (confirmed <=> in the setting).
 export function confirmCharacter(chatId, id, options = {}) {
     const found = mustLocate(chatId, id, options.settingId);
     const record = normalizeCharacter(found.record);
     record.confirmed = true;
     saveRecord(chatId, found, record);
+    if (found.scope === 'chat') moveToSetting(chatId, id);
     changed(found.scope === 'chat' ? chatId : null);
     return getCharacter(chatId, id, options.settingId);
 }
@@ -488,17 +501,14 @@ export function markCharacterAbsent(chatId, id) {
     return getCharacter(chatId, id);
 }
 
-// Moves a chat character into the chat's setting (same id - every variable
-// keeps pointing at it). A no-op for a character already canonical.
-export function promoteCharacter(chatId, id, { silent = false } = {}) {
-    const found = mustLocate(chatId, id);
-    if (found.scope === 'setting') return getCharacter(chatId, id);
-    const setting = effectiveSetting(chatId);
-    setting.characters[id] = normalizeCharacter(found.record);
+// Moves a (confirmed) chat character into the chat's setting - same id, so
+// every variable keeps pointing at it. Only confirmation does this.
+function moveToSetting(chatId, id) {
+    const local = readChat(chatId).local[id];
+    if (!local) return;
+    effectiveSetting(chatId).characters[id] = normalizeCharacter(local);
     writeChat(chatId, (layer) => { delete layer.local[id]; });
     persistSettings();
-    if (!silent) changed(chatId);
-    return getCharacter(chatId, id);
 }
 
 // Merges `sourceId` into `targetId`: the target keeps its own data and gains
@@ -526,8 +536,18 @@ export function mergeCharacters(chatId, sourceId, targetId, { settingId = null }
     saveRecord(chatId, target, into);
     removeRecord(chatId, source);
     removeReferences(sourceId, targetId);
+    if (into.confirmed && target.scope === 'chat') moveToSetting(chatId, targetId);
     changed(null);
     return getCharacter(chatId, targetId, settingId);
+}
+
+// A detection that is really someone already known: `sourceId` (usually an
+// unconfirmed character with the wrong name) is resolved to `targetId` - a
+// merge (the detected name becomes the target's alias; variables follow)
+// after which the target is confirmed, so it is in the setting.
+export function resolveCharacter(chatId, sourceId, targetId, options = {}) {
+    mergeCharacters(chatId, sourceId, targetId, options);
+    return confirmCharacter(chatId, targetId, options);
 }
 
 function removeRecord(chatId, found) {
@@ -676,7 +696,7 @@ export function resolveCharacterNames(chatId, names, { source = '' } = {}) {
     return { ids, created };
 }
 
-// A match: counts toward promotion (PROMOTE_AFTER_MATCHES) of a chat character.
+// A match: counts toward confirming a chat character (CONFIRM_AFTER_MATCHES).
 function recordMatch(chatId, id) {
     let matches = 0;
     writeChat(chatId, (layer) => {
@@ -685,7 +705,7 @@ function recordMatch(chatId, id) {
         matches = entry.matches;
         layer.entries[id] = entry;
     });
-    if (matches >= PROMOTE_AFTER_MATCHES && readChat(chatId).local[id]) promoteCharacter(chatId, id, { silent: true });
+    if (matches >= CONFIRM_AFTER_MATCHES && readChat(chatId).local[id]) confirmCharacter(chatId, id);
 }
 
 // Presence after an extraction: `presentIds` are in the scene; `absentIds`
@@ -698,6 +718,33 @@ export function applyPresence(chatId, presentIds = [], absentIds = []) {
         for (const id of absentIds) if (!present.has(id) && layer.entries[id]) layer.entries[id].present = false;
     });
     changed(chatId);
+}
+
+// --------------------------------------------------------------- migration
+
+// Data from before "confirmed <=> in the setting": confirmed characters still
+// living in a chat move into its setting (Default when it has none).
+// Unconfirmed characters already in a setting stay there (nothing is moved
+// out of a setting); confirming them only sets the flag. Idempotent; run on
+// startup. Returns the number moved.
+export function migrateCharacterData() {
+    let moved = 0;
+    settingStore(); // also renames autoPromote -> autoConfirm
+    for (const [chatId, state] of Object.entries(getSettings().variableStore?.chats || {})) {
+        const local = state?.characters?.local;
+        if (!isObject(local)) continue;
+        const confirmed = Object.values(local).filter((c) => c?.confirmed === true);
+        if (!confirmed.length) continue;
+        const setting = settingStore()[state.characters.setting] ?? settingStore()[DEFAULT_SETTING_ID];
+        for (const record of confirmed) {
+            setting.characters[record.id] = normalizeCharacter(record);
+            delete local[record.id];
+            moved++;
+        }
+        saveChatState(chatId, state);
+    }
+    if (moved) persistSettings();
+    return moved;
 }
 
 // ------------------------------------------------- the manager modal hook

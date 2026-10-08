@@ -2433,8 +2433,10 @@ returns `null` (`false` for deletes), with nothing written. Changes emit
 
 **24.1 Storage**
 
-- `settings.variableStore.characterSettings = { [settingId]: { id, name, autoPromote, createdAt, characters: { [id]: character } } }`;
-  `default` always exists (autoPromote on).
+- `settings.variableStore.characterSettings = { [settingId]: { id, name, autoConfirm, createdAt, characters: { [id]: character } } }`;
+  `default` always exists (autoConfirm on).
+- Confirmed <=> in the setting: a chat's `local` characters are its unconfirmed ones; confirming
+  (confirmCharacter, or saving an edit with updateCharacter) moves one into the setting.
 - A chat's layer on its chat state: `state.characters = { setting, entries: { [id]: { present, matches } }, local: { [id]: character } }`.
 - A character: `{ id, name, aliases, image, introduction_snippet, biography, personality, faction, role, confirmed, variants: { [variantId]: { id, name, overrides } }, activeVariant, createdAt, updatedAt }`.
 - Variable values: a `character` variable holds one id; an array of itemType `character` a list of ids.
@@ -2452,7 +2454,7 @@ A character as returned (the active variant's overrides applied; `base` = the ba
 
 ```
 listCharacterSettings() / getCharacterSetting(settingId)
-createCharacterSetting({ name, autoPromote? }) / updateCharacterSetting(settingId, { name?, autoPromote? })
+createCharacterSetting({ name, autoConfirm? }) / updateCharacterSetting(settingId, { name?, autoConfirm? })
 deleteCharacterSetting(settingId)            not Default; its characters leave every variable
 getChatCharacterSetting(chatId) / setChatCharacterSetting(chatId, settingId)
 ensureChatCharacterSetting(chatId)           async; asks the user when the chat has none
@@ -2460,12 +2462,13 @@ listCharacters(chatId, { settingId? })       a chat's (own + setting's), or a se
 getCharacter(chatId, id, settingId?) / getCharacterByAlias(chatId, name)
 createUnconfirmedCharacter(chatId, name, snippet?)
 createCharacter(settingId, data)             canonical, confirmed
-updateCharacter(chatId, id, patch, { settingId? })   baseline fields; confirms; an image promotes
+updateCharacter(chatId, id, patch, { settingId? })   baseline fields; confirms (-> the setting)
 updateCharacterAliases(chatId, id, alias) / updateCharacterImage(chatId, id, url)
 markCharacterPresent(chatId, id) / markCharacterAbsent(chatId, id)
 mergeCharacters(chatId, sourceId, targetId, { settingId? })
-deleteCharacter(chatId, id, { settingId? }) / confirmCharacter(chatId, id, { settingId? })
-promoteCharacter(chatId, id)
+deleteCharacter(chatId, id, { settingId? }) / confirmCharacter(chatId, id, { settingId? })   confirm -> the setting
+resolveCharacter(chatId, sourceId, targetId, { settingId? })   a detection that is really someone known:
+                                             its name becomes their alias, variables follow, they are confirmed
 addCharacterVariant(chatId, id, { name, overrides }, { settingId? })
 updateCharacterVariant(chatId, id, variantId, { name?, overrides? }, { settingId? })
 deleteCharacterVariant(chatId, id, variantId, { settingId? })

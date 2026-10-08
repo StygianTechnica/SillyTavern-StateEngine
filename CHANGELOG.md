@@ -15,8 +15,11 @@
 - **Extraction.** A prompted character variable is answered with names: known names
   (or aliases) are matched, unknown ones become unconfirmed characters with the sentence they
   were met in; presence follows; "New characters detected for review" is posted.
-- **Promotion** into the setting: by hand, after 10 matches, when given an image, or always
-  (a setting's auto-promote - on for Default).
+- **Confirmed = in the setting.** A detected character is unconfirmed and only in its chat
+  until reviewed; confirming it (or saving an edit) adds it to the setting - no separate
+  "add to setting". **Resolve** a wrong detection to a character you already have: its name
+  becomes their alias. Confirmed automatically after 10 matches, or always with a setting's
+  auto-confirm (on for Default).
 - **Manage characters** button in the drawer; the Character Manager window itself comes from a
   UI extension (Pretty Panels) through the new **Character API** (API specification Section 24).
 - The tracker edits a character variable from the chat's confirmed characters, or creates a

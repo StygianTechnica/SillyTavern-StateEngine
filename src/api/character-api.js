@@ -3,11 +3,14 @@
 // Characters live in two layers (src/core/characters.js): SETTINGS - global
 // containers of canonical characters (baseline data and variants) - and each
 // CHAT - its setting, presence, match counts and its own not-yet-promoted
-// characters. Character variables hold character ids.
+// characters - the UNCONFIRMED ones, not yet reviewed. Confirmed <=> in the
+// setting: confirming a chat character (or saving an edit to it) moves it
+// into the setting; there is no separate promotion. Character variables hold
+// character ids.
 //
 // Settings
 //   listCharacterSettings / getCharacterSetting / createCharacterSetting /
-//   updateCharacterSetting ({ name?, autoPromote? }) / deleteCharacterSetting
+//   updateCharacterSetting ({ name?, autoConfirm? }) / deleteCharacterSetting
 //   getChatCharacterSetting / setChatCharacterSetting
 //   ensureChatCharacterSetting  (async) the chat's setting, asking the user
 //                               which one when it has none ("ask on first use")
@@ -16,11 +19,14 @@
 //   getCharacter / getCharacterByAlias
 //   createUnconfirmedCharacter(chatId, name, snippet)
 //   createCharacter(settingId, data)          canonical, confirmed
-//   updateCharacter(chatId, id, patch, { settingId? })  edits the baseline; confirms
+//   updateCharacter(chatId, id, patch, { settingId? })  edits the baseline; confirms (-> setting)
 //   updateCharacterAliases(chatId, id, alias) / updateCharacterImage(chatId, id, url)
 //   markCharacterPresent / markCharacterAbsent
 //   mergeCharacters(chatId, sourceId, targetId, { settingId? })
-//   deleteCharacter / confirmCharacter / promoteCharacter
+//   deleteCharacter / confirmCharacter (-> setting)
+//   resolveCharacter(chatId, sourceId, targetId)  a detection that is really
+//                               someone known: its name becomes their alias,
+//                               variables follow, they are confirmed
 // Variants
 //   addCharacterVariant / updateCharacterVariant / deleteCharacterVariant /
 //   setCharacterActiveVariant (one active variant per character, for its setting)
@@ -64,8 +70,8 @@ export function getCharacterSetting(extensionId, instanceId, settingId) {
     return guard('getCharacterSetting', extensionId, instanceId, () => characters.getSetting(settingId));
 }
 
-export function createCharacterSetting(extensionId, instanceId, { name, autoPromote } = {}) {
-    return guard('createCharacterSetting', extensionId, instanceId, () => characters.createSetting({ name, autoPromote }));
+export function createCharacterSetting(extensionId, instanceId, { name, autoConfirm } = {}) {
+    return guard('createCharacterSetting', extensionId, instanceId, () => characters.createSetting({ name, autoConfirm }));
 }
 
 export function updateCharacterSetting(extensionId, instanceId, settingId, patch = {}) {
@@ -150,8 +156,12 @@ export function confirmCharacter(extensionId, instanceId, chatId, id, options = 
     return guard('confirmCharacter', extensionId, instanceId, () => characters.confirmCharacter(chatId || null, id, options));
 }
 
-export function promoteCharacter(extensionId, instanceId, chatId, id) {
-    return guard('promoteCharacter', extensionId, instanceId, () => characters.promoteCharacter(chatId, id));
+// Resolves `sourceId` (a detection with the wrong name) to `targetId`: the
+// detected name becomes the target's alias, every variable holding the
+// source holds the target, the source is deleted, the target is confirmed
+// (and so in the setting). Returns the target, or null.
+export function resolveCharacter(extensionId, instanceId, chatId, sourceId, targetId, options = {}) {
+    return guard('resolveCharacter', extensionId, instanceId, () => characters.resolveCharacter(chatId || null, sourceId, targetId, options));
 }
 
 // ----------------------------------------------------------------- variants

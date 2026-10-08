@@ -279,7 +279,14 @@ export function renderTrackerPanel() {
     }
 
     for (const def of defs) {
-        const value = isImageType(def) ? imageVariableValue(chatId, def, context) : getMacroValue(context, def);
+        // Image and character values come from the isolated store: the macro
+        // mirror holds a character variable's NAMES (for {{getvar::...}}), not
+        // the ids the tracker resolves and edits.
+        const value = isImageType(def)
+            ? imageVariableValue(chatId, def, context)
+            : isCharacterDefinition(def)
+                ? (getVar(chatId, def.name)?.value ?? getDefaultValue(def))
+                : getMacroValue(context, def);
         const $row = $('<div></div>').addClass('se-tracker-row');
         if (def.showInTracker === false) $row.addClass('se-tracker-row-hidden');
 

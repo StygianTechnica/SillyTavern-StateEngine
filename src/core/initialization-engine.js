@@ -8,7 +8,7 @@ import { getDefaultValue } from './variable-schema.js';
 import { shouldSkipPromptedRefresh, runPromptedStateUpdate } from './prompted-engine.js';
 import { recalculateDependents, recalculateAllForChat } from './calculated-engine.js';
 import { copyChatRoles, migrateRoleData } from './roles.js';
-import { getChatSetting, setChatSetting, ensureChatSetting } from './characters.js';
+import { getChatSetting, setChatSetting, ensureChatSetting, migrateCharacterData } from './characters.js';
 import { askChatSetting } from '../ui/setting-prompt.js';
 
 
@@ -290,6 +290,12 @@ export function runStartupOnce() {
         migrateRoleData();
     } catch (err) {
         console.warn(LOG_PREFIX, 'role data migration failed (gracefully handled)', err);
+    }
+    // Characters from before "confirmed <=> in the setting" (spec 1.42).
+    try {
+        migrateCharacterData();
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'character data migration failed (gracefully handled)', err);
     }
     runPromptedStateUpdate('startup');
 }

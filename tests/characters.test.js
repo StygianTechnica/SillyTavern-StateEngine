@@ -3,6 +3,7 @@
 // (its setting, presence, matches, its own unpromoted characters), character
 // variables holding ids, extraction through prompted variables, promotion,
 // merge/delete, and the Character Manager hook.
+import fs from 'node:fs';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import context from './harness/context.js';
 import settings from './harness/settings.js';
@@ -25,25 +26,25 @@ vi.mock('../src/ui/ui-entrypoints.js', () => ({ refreshPanelIfOpen: vi.fn() }));
 const CHAT = 'chat-1';
 let id;
 const api = (fn, ...args) => stateEngine[fn]('pp', id, ...args);
-// A setting that does not auto-promote, so chat characters stay in the chat.
+// A setting that does not auto-confirm, so new characters stay in the chat.
 let story;
 
 beforeEach(() => {
     id = ensureInstanceId();
     registerNamespaces('pp');
-    story = C.createSetting({ name: 'Story', autoPromote: false });
+    story = C.createSetting({ name: 'Story', autoConfirm: false });
     C.setChatSetting(CHAT, story.id);
     context.chatId = CHAT;
 });
 
 describe('settings', () => {
-    it('Default always exists, auto-promotes, and comes first', () => {
-        expect(C.listSettings()[0]).toMatchObject({ id: 'default', name: 'Default', isDefault: true, autoPromote: true });
+    it('Default always exists, auto-confirms, and comes first', () => {
+        expect(C.listSettings()[0]).toMatchObject({ id: 'default', name: 'Default', isDefault: true, autoConfirm: true });
     });
 
     it('create / rename / toggle / delete; names are unique; Default cannot be deleted', () => {
         expect(() => C.createSetting({ name: 'story' })).toThrow(/already exists/);
-        expect(C.updateSetting(story.id, { name: 'Saga', autoPromote: true })).toMatchObject({ name: 'Saga', autoPromote: true });
+        expect(C.updateSetting(story.id, { name: 'Saga', autoConfirm: true })).toMatchObject({ name: 'Saga', autoConfirm: true });
         expect(() => C.deleteSetting('default')).toThrow(/cannot be deleted/);
         expect(C.deleteSetting(story.id)).toBe(true);
         expect(C.getChatSetting(CHAT)).toBeNull(); // asked again on next use
@@ -64,16 +65,16 @@ describe('settings', () => {
 });
 
 describe('characters: create, match, edit', () => {
-    it('an unconfirmed chat character stays in the chat (setting without auto-promote)', () => {
+    it('an unconfirmed chat character stays in the chat (setting without auto-confirm)', () => {
         const kael = C.createUnconfirmedCharacter(CHAT, 'Kael', 'Kael stepped out of the rain.');
         expect(kael).toMatchObject({ name: 'Kael', confirmed: false, scope: 'chat', introduction_snippet: 'Kael stepped out of the rain.' });
         expect(kael.id).toMatch(/^chr_/);
         expect(C.listCharacters(null, { settingId: story.id })).toEqual([]);
     });
 
-    it('on an auto-promoting setting (Default) it goes straight into the setting', () => {
+    it('on an auto-confirming setting (Default) it is confirmed at once - and so in the setting', () => {
         C.setChatSetting(CHAT, 'default');
-        expect(C.createUnconfirmedCharacter(CHAT, 'Mira')).toMatchObject({ scope: 'setting', settingId: 'default', confirmed: false });
+        expect(C.createUnconfirmedCharacter(CHAT, 'Mira')).toMatchObject({ scope: 'setting', settingId: 'default', confirmed: true });
     });
 
     it('alias matching: name or alias, case and quotes ignored; chat characters first, then the setting', () => {
@@ -85,24 +86,41 @@ describe('characters: create, match, edit', () => {
         expect(C.getCharacterByAlias(CHAT, 'nobody')).toBeNull();
     });
 
-    it('editing and saving confirms (canonicalization); a canonical edit changes the baseline for every chat', () => {
+    it('editing and saving confirms (canonicalization) - which puts it in the setting; a canonical edit changes the baseline for every chat', () => {
         const kael = C.createUnconfirmedCharacter(CHAT, 'Kael');
-        expect(C.updateCharacter(CHAT, kael.id, { faction: 'Ashguard' })).toMatchObject({ confirmed: true, faction: 'Ashguard', scope: 'chat' });
+        expect(C.updateCharacter(CHAT, kael.id, { faction: 'Ashguard' })).toMatchObject({ id: kael.id, confirmed: true, faction: 'Ashguard', scope: 'setting', settingId: story.id });
+        expect(loadChatState(CHAT).characters.local).toEqual({});
         const canon = C.createCharacter(story.id, { name: 'Rhys' });
         C.setChatSetting('chat-2', story.id);
         C.updateCharacter(CHAT, canon.id, { biography: 'A smuggler.' });
         expect(C.getCharacter('chat-2', canon.id).biography).toBe('A smuggler.');
     });
 
-    it('giving a chat character an image promotes it', () => {
+    it('giving a chat character an image is an edit: confirmed, in the setting', () => {
         const kael = C.createUnconfirmedCharacter(CHAT, 'Kael');
-        expect(C.updateCharacterImage(CHAT, kael.id, 'user/images/kael.png')).toMatchObject({ scope: 'setting', settingId: story.id, image: 'user/images/kael.png' });
+        expect(C.updateCharacterImage(CHAT, kael.id, 'user/images/kael.png')).toMatchObject({ confirmed: true, scope: 'setting', image: 'user/images/kael.png' });
     });
 
-    it('promote by hand keeps the id', () => {
+    it('confirming as it is moves it into the setting, keeping its id', () => {
         const kael = C.createUnconfirmedCharacter(CHAT, 'Kael');
-        expect(C.promoteCharacter(CHAT, kael.id)).toMatchObject({ id: kael.id, scope: 'setting' });
+        expect(C.confirmCharacter(CHAT, kael.id)).toMatchObject({ id: kael.id, confirmed: true, scope: 'setting', settingId: story.id });
         expect(loadChatState(CHAT).characters.local).toEqual({});
+    });
+
+    it('there is no separate promotion: confirmed <=> in the setting', () => {
+        expect(C.promoteCharacter).toBeUndefined();
+        expect(stateEngine.promoteCharacter).toBeUndefined();
+    });
+
+    it('resolving a detection to an existing character: its name becomes an alias, the target is confirmed', () => {
+        const luc = C.createUnconfirmedCharacter(CHAT, 'Luc');
+        const lucian = C.createUnconfirmedCharacter(CHAT, 'Lucian Hale');
+        setVar(CHAT, 'pp__who', luc.id, { name: 'pp__who', type: 'character' });
+        const resolved = api('resolveCharacter', CHAT, luc.id, lucian.id);
+        expect(resolved).toMatchObject({ id: lucian.id, confirmed: true, scope: 'setting', aliases: ['Luc'] });
+        expect(C.getCharacter(CHAT, luc.id)).toBeNull();
+        expect(getVar(CHAT, 'pp__who').value).toBe(lucian.id);
+        expect(C.getCharacterByAlias(CHAT, 'luc').id).toBe(lucian.id);
     });
 
     it('presence is per chat', () => {
@@ -148,12 +166,12 @@ describe('extraction (resolveCharacterNames)', () => {
         expect(listNotifications().find((n) => n.message.startsWith('New characters detected for review'))).toMatchObject({ callbackId: 'characters.review' });
     });
 
-    it('a chat character matched PROMOTE_AFTER_MATCHES times is promoted', () => {
+    it('a chat character matched CONFIRM_AFTER_MATCHES times is confirmed (and so in the setting)', () => {
         const kael = C.createUnconfirmedCharacter(CHAT, 'Kael');
-        for (let i = 0; i < C.PROMOTE_AFTER_MATCHES - 1; i++) C.resolveCharacterNames(CHAT, ['Kael']);
-        expect(C.getCharacter(CHAT, kael.id).scope).toBe('chat');
+        for (let i = 0; i < C.CONFIRM_AFTER_MATCHES - 1; i++) C.resolveCharacterNames(CHAT, ['Kael']);
+        expect(C.getCharacter(CHAT, kael.id)).toMatchObject({ confirmed: false, scope: 'chat' });
         C.resolveCharacterNames(CHAT, ['kael']);
-        expect(C.getCharacter(CHAT, kael.id)).toMatchObject({ scope: 'setting', matches: C.PROMOTE_AFTER_MATCHES });
+        expect(C.getCharacter(CHAT, kael.id)).toMatchObject({ confirmed: true, scope: 'setting', matches: C.CONFIRM_AFTER_MATCHES });
     });
 
     it('snippetFor finds the sentence and trims long ones', () => {
@@ -184,6 +202,19 @@ describe('character variables', () => {
         expect(characterValueText({ type: 'array', itemType: 'character' }, [kael.id, 'chr_gone'])).toBe('Kael, chr_gone');
         expect(formatValueForDisplay(kael.id, { type: 'character' })).toBe('Kael');
         expect(formatValueForDisplay('', { type: 'character' })).toBe('—');
+    });
+
+    // Reported 2026-10-08: the tracker showed "—" for a filled character list -
+    // it read the macro mirror (names as text) and treated that text as ids.
+    it('a list already turned into names (the macro mirror) displays as those names, not "—"', () => {
+        const list = { type: 'array', itemType: 'character' };
+        expect(characterValueText(list, 'Lucian, Soren')).toBe('Lucian, Soren');
+        expect(formatValueForDisplay('Lucian, Soren', list)).toBe('Lucian, Soren');
+    });
+
+    it('the tracker reads character values from the store, not the macro mirror', () => {
+        const src = fs.readFileSync(new URL('../src/ui/tracker-panel-ui.js', import.meta.url), 'utf8');
+        expect(src).toContain("? (getVar(chatId, def.name)?.value ?? getDefaultValue(def))");
     });
 
     it('a prompted update resolves names to ids, records new characters and sets presence', async () => {
@@ -268,5 +299,23 @@ describe('Character API and the manager hook', () => {
         expect(api('updateCharacter', CHAT, 'chr_missing', { name: 'X' })).toBeNull();
         expect(api('mergeCharacters', CHAT, 'a', 'a')).toBeNull();
         expect(api('createCharacterSetting', { name: '' })).toBeNull();
+    });
+});
+
+describe('migration to "confirmed <=> in the setting"', () => {
+    it('confirmed characters left in a chat move into its setting; autoPromote becomes autoConfirm', () => {
+        const state = loadChatState(CHAT);
+        state.characters.local.chr_old = { id: 'chr_old', name: 'Old Hand', confirmed: true };
+        state.characters.local.chr_new = { id: 'chr_new', name: 'Newcomer', confirmed: false };
+        const legacy = C.createSetting({ name: 'Legacy' });
+        const stored = settings.get().variableStore.characterSettings[legacy.id];
+        delete stored.autoConfirm;
+        stored.autoPromote = true;
+        expect(C.migrateCharacterData()).toBe(1);
+        expect(C.getCharacter(CHAT, 'chr_old')).toMatchObject({ scope: 'setting', settingId: story.id, confirmed: true });
+        expect(C.getCharacter(CHAT, 'chr_new')).toMatchObject({ scope: 'chat', confirmed: false });
+        expect(C.getSetting(legacy.id).autoConfirm).toBe(true);
+        expect('autoPromote' in settings.get().variableStore.characterSettings[legacy.id]).toBe(false);
+        expect(C.migrateCharacterData()).toBe(0);
     });
 });
