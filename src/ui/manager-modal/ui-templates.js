@@ -279,6 +279,7 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                 <option value="image" ${d.type === 'image' ? 'selected' : ''}>Image</option>
                 <option value="imageList" ${d.type === 'imageList' ? 'selected' : ''}>Image list</option>
                 <option value="imageMap" ${d.type === 'imageMap' ? 'selected' : ''}>Image map</option>
+                <option value="character" ${d.type === 'character' ? 'selected' : ''}>Character</option>
             </select>
 
             ${d.type === 'datetime' ? `
@@ -375,6 +376,8 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                         ? `<option value="${escapeHtml(d.currentKeyVariable)}" selected>${escapeHtml(d.currentKeyVariable)} (not in this preset)</option>` : ''}
                 </select>
                 <div class="se-empty">The tracker shows the image under that variable's current value (a string, an enum, an array's current value or a calculated result, read as text). No matching key: a placeholder - there is no default key. Only references are stored; nothing is fetched or checked. Drop an image file on a row to set its image, or on empty space to add a row.</div>
+            ` : d.type === 'character' ? `
+                <div class="se-empty">A character variable holds one character of the chat (for a list of characters, use an Array of Character items). It starts empty: characters belong to a setting and a chat, so the chat assigns one - by prompting it (the model answers with a name, matched to the setting's characters or recorded as a new one), or in the tracker. Characters are edited in the Character Manager.</div>
             ` : d.type === 'calculated' ? `
                 <div class="se-empty">Calculated variables have no manually-set default value - they evaluate automatically.</div>
             ` : `
@@ -465,6 +468,7 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                     <option value="number" ${itemType === 'number' ? 'selected' : ''}>Number</option>
                     <option value="boolean" ${itemType === 'boolean' ? 'selected' : ''}>Boolean</option>
                     <option value="enum" ${itemType === 'enum' ? 'selected' : ''}>Enum</option>
+                    <option value="character" ${itemType === 'character' ? 'selected' : ''}>Character</option>
                     ${itemType === 'object' ? '<option value="object" selected>Object (created through the API)</option>' : ''}
                     <option value="any" ${itemType === 'any' ? 'selected' : ''}>Any</option>
                 </select>

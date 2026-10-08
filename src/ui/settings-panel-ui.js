@@ -9,6 +9,7 @@ import { populateConnectionProfileDropdown, populateStateEngineProfileDropdown }
 import { renderVarTable } from './manager-modal-ui.js';
 import { setTrackerPanelVisible } from './tracker-panel-ui.js';
 import { openManagerIfReady, updateManagerButtonState, getCurrentChatId } from './wand-ui.js';
+import { openCharacterManager, hasCharacterManager } from '../core/characters.js';
 
 // ---------------------------------------------------------------------------
 // UI — settings panel
@@ -133,6 +134,13 @@ export function bindPanelEvents() {
     });
 
     $('#se_open_manager').on('click', () => openManagerIfReady());
+    // Characters (spec 1.42): State Engine keeps them; the Character Manager
+    // window is a UI extension's (Pretty Panels registers it).
+    $('#se_manage_characters').on('click', () => {
+        if (!hasCharacterManager() || !openCharacterManager({})) {
+            setStatus('The Character Manager needs a UI extension that provides it, such as Pretty Panels.', true);
+        }
+    });
     updateManagerButtonState();
 
     $('#se_prompted_header').on('change', (e) => {

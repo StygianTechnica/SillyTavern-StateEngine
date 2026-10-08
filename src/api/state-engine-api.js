@@ -13,6 +13,7 @@ import * as indep from './independent-presets.js';
 import * as notifications from './notification-api.js';
 import * as images from './image-api.js';
 import * as roles from './role-api.js';
+import * as characterApi from './character-api.js';
 
 export const stateEngine = {
     ...ns,
@@ -28,4 +29,5 @@ export const stateEngine = {
     ...notifications,
     ...images,
     ...roles,
+    ...characterApi,
 };

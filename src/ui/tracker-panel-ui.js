@@ -13,6 +13,9 @@ import { formatValueForDisplay } from './formatting-utils.js';
 import { isImageType, activeImageRef } from '../core/image-variables.js';
 import { thumbHtml } from './image-preview.js';
 import { setStatus } from './settings-panel-ui.js';
+import { isCharacterDefinition } from '../core/character-display.js';
+import { listCharacters, createUnconfirmedCharacter, ensureChatSetting } from '../core/characters.js';
+import { askChatSetting } from './setting-prompt.js';
 
 // A variable is runtime-editable from the tracker unless its value is not
 // the user's to set: calculated (derived, read-only - 1.17.3) or an image
@@ -140,7 +143,59 @@ function datetimeDetail(def, scalar) {
 // entered/selected/toggled; the caller is responsible for coercing and
 // writing it. `onCancel()` discards the edit. Both are guarded by the
 // caller against double-invocation (blur firing after Enter/Escape).
-function buildStaticValueEditor(def, currentValue, onCommit, onCancel) {
+// Asks for a new character's name (SillyTavern's input popup, or prompt()).
+async function askCharacterName() {
+    const context = SillyTavern.getContext();
+    if (context.Popup && context.POPUP_TYPE?.INPUT !== undefined) {
+        const result = await new context.Popup('<h3>New character</h3><p>Name, as the story calls them. It starts unconfirmed - review it in the Character Manager.</p>', context.POPUP_TYPE.INPUT, '').show();
+        return typeof result === 'string' ? result.trim() : '';
+    }
+    return (window.prompt('New character - name, as the story calls them:') || '').trim();
+}
+
+// Character variables (spec 1.42): choose from the chat's CONFIRMED
+// characters (an unconfirmed one shows only while it is the current value),
+// or create a new, unconfirmed one. A list is a multi-select, committed on
+// blur or Enter. Characters themselves are edited in the Character Manager.
+function buildCharacterEditor(def, currentValue, onCommit, onCancel, chatId) {
+    const multiple = def.type === 'array';
+    const current = multiple ? (Array.isArray(currentValue) ? currentValue : []) : [currentValue].filter(Boolean);
+    const all = listCharacters(chatId);
+    const offered = all.filter((c) => c.confirmed || current.includes(c.id));
+    const $input = $(`<select class="text_pole se-tracker-edit-input"${multiple ? ' multiple size="5"' : ''}></select>`);
+    if (!multiple) $('<option></option>').val('').text('— none —').appendTo($input);
+    for (const c of offered) {
+        $('<option></option>').val(c.id).text(c.confirmed ? c.name : `${c.name} (unconfirmed)`)
+            .attr('title', c.id).prop('selected', current.includes(c.id)).appendTo($input);
+    }
+    $('<option></option>').val('__new__').text('New character…').appendTo($input);
+    const commit = async () => {
+        const picked = [].concat($input.val() ?? []).filter(Boolean);
+        if (picked.includes('__new__')) {
+            const name = await askCharacterName();
+            const created = name ? createUnconfirmedCharacter(chatId, name) : null;
+            const rest = picked.filter((id) => id !== '__new__');
+            if (created) rest.push(created.id);
+            onCommit(multiple ? rest : (created?.id ?? current[0] ?? ''));
+            return;
+        }
+        onCommit(multiple ? picked : (picked[0] ?? ''));
+    };
+    if (multiple) {
+        $input.on('blur', () => void commit());
+        $input.on('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); void commit(); }
+            else if (e.key === 'Escape') onCancel();
+        });
+    } else {
+        $input.on('change', () => void commit());
+        $input.on('keydown', (e) => { if (e.key === 'Escape') onCancel(); });
+    }
+    return $input;
+}
+
+function buildStaticValueEditor(def, currentValue, onCommit, onCancel, chatId = null) {
+    if (isCharacterDefinition(def)) return buildCharacterEditor(def, currentValue, onCommit, onCancel, chatId);
     if (def.type === 'boolean') {
         // Deliberately NOT .se-tracker-edit-input - that class's flex-grow
         // and padding (meant for the text input/select below) fought with
@@ -301,8 +356,11 @@ export function renderTrackerPanel() {
                     const cid = ctx.chatId;
                     if (!cid) return;
 
-                    const current = getMacroValue(ctx, def);
+                    // A character variable's macro shows names; its ids live in the store.
+                    const current = isCharacterDefinition(def) ? getVar(cid, def.name)?.value : getMacroValue(ctx, def);
                     let committed = false;
+                    // Characters need the chat's setting (asked on first use).
+                    if (isCharacterDefinition(def)) void ensureChatSetting(cid, askChatSetting);
 
                     const $input = buildStaticValueEditor(
                         def,
@@ -330,6 +388,7 @@ export function renderTrackerPanel() {
                             committed = true;
                             renderTrackerPanel();
                         },
+                        cid,
                     );
 
                     $value.replaceWith($input);

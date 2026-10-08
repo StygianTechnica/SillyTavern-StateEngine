@@ -2893,6 +2893,76 @@ palette, Binding type).
 
 Verification: tests/roles.test.js (rewritten), tests/new-chat-start.test.js.
 
+1.42 Characters and Settings (2026-10-08)
+
+A character variable type, a two-layer character store, extraction of new
+characters through prompted variables, and a shared Character Manager whose
+window lives in a UI extension (Pretty Panels) while every rule and all data
+live here.
+
+Settings (user requirement): a SETTING is a global container of canonical
+characters, like a preset or world folder, not tied to any chat. A chat
+chooses one: a new chat started from an earlier one with its presets ("Same
+presets" / "Continue") uses the same setting; a brand-new chat, a clean
+slate, or a chat from before settings is asked on first use - only when there
+is more than the Default setting. The Default setting always exists and
+auto-promotes everything (a catch-all for users who never make settings).
+
+Characters (user requirement): a character's baseline lives ONLY in its
+setting - id, name, aliases, image, introduction snippet, biography,
+personality, faction, role, confirmed - never copied into chats; editing it
+edits it for every chat on the setting. Named VARIANTS (alternate versions,
+each overriding any of name, aliases, image, biography, personality,
+faction, role) belong to the character, and the character has ONE active
+variant (user requirement: chosen per setting, not per chat). Each chat keeps
+only: its setting, per-character presence and match count, and its own
+characters that are not (yet) promoted - unconfirmed ones extraction or the
+user created, and confirmed ones nobody promoted.
+
+Canonicalization: a character is unconfirmed until the user edits and saves
+it in the Character Manager (or confirms it). Promotion (chat -> setting,
+same id, so variables keep pointing at it): by hand; automatically after 10
+matches; automatically when it is given an image; always, when the setting's
+autoPromote option is on.
+
+Character variables: type 'character' holds one character id ('' = none);
+an array with itemType 'character' holds a list of ids. No default (a chat
+assigns characters), no increment. Wherever a value becomes text - macros,
+the tracker, prompts - the names are shown (character-display.js). The
+tracker edits a character variable with the chat's CONFIRMED characters (an
+unconfirmed one only while it is the value) plus "New character…" (creates
+an unconfirmed one).
+
+Extraction (user choice: through prompted variables): a prompted character /
+character[] variable is answered with NAMES. Each name is alias-matched
+(case, quotes and a trailing possessive ignored; the chat's own characters
+first, then its setting's; the active variant's name and aliases count); a
+match counts toward promotion; an unknown name becomes an unconfirmed chat
+character with the sentence of the latest message it appears in as its
+introduction snippet. The named characters become present; for a list,
+characters it held before and no longer does become absent. New aliases are
+learned by MERGING (the source's name and aliases become the target's
+aliases; every variable in every chat holding the source then holds the
+target).
+
+Notification: new characters post one State Engine notification, "New
+characters detected for review: ...", which opens the Character Manager on
+the chat's unconfirmed characters.
+
+The Character Manager: a UI extension registers its window
+(registerCharacterManager); State Engine's drawer has "Manage characters"
+and the notification opens it. Pretty Panels provides it: views "This chat"
+and "Settings" (default: the chat's setting; other settings browsable;
+settings created, renamed, deleted, set to auto-promote there); edit, merge,
+delete, confirm, promote, create canonical characters, variants and the
+active variant. It is the only place characters are edited.
+
+Not in scope (user requirement): generated profiles, the future Memory
+Manager. Chat-specific memories/updates of a character belong to that later
+extension.
+
+API: Section 24 of the API specification. Verification: tests/characters.test.js.
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 

@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased — Characters and settings
+
+**Added**
+
+- **Character variables.** Type `character` holds one character; an Array with item type
+  `character` a list. They show as names in macros, the tracker and prompts. Requirements
+  spec 1.42.
+- **Settings and characters.** A setting is a global container of canonical characters
+  (name, aliases, image, introduction snippet, biography, personality, faction, role, and
+  named variants with one active variant). Each chat uses a setting and keeps presence, match
+  counts and its own unconfirmed / unpromoted characters. A chat started from another uses its
+  setting; otherwise the chat is asked (only when there is more than the Default setting).
+- **Extraction.** A prompted character variable is answered with names: known names
+  (or aliases) are matched, unknown ones become unconfirmed characters with the sentence they
+  were met in; presence follows; "New characters detected for review" is posted.
+- **Promotion** into the setting: by hand, after 10 matches, when given an image, or always
+  (a setting's auto-promote - on for Default).
+- **Manage characters** button in the drawer; the Character Manager window itself comes from a
+  UI extension (Pretty Panels) through the new **Character API** (API specification Section 24).
+- The tracker edits a character variable from the chat's confirmed characters, or creates a
+  new (unconfirmed) one.
+
+**Tests:** 51 files, 2034 tests (new: `tests/characters.test.js`).
+
+## Unreleased — Date pattern placeholders
+
+**Added**
+
+- Brace date patterns (`formatDateTime` custom style) gain `{MM}` and `{DD}` (zero-padded month
+  and day) and a half-day clock: `{h}` / `{hh}` (12-hour on a 24-hour day, unpadded / padded)
+  and `{ampm}` (AM / PM). On a calendar whose day has an odd number of hours those three are
+  empty. For display extensions' date and time formats (Pretty Panels' Value Formatting).
+
+**Tests:** `tests/calendar-format.test.js` (brace placeholders).
+
 ## Unreleased — Role namespaces
 
 **Changed**

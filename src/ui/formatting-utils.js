@@ -2,6 +2,7 @@
 
 import { DEFAULT_CALENDAR_ID } from '../core/settings-core.js';
 import { formatScalar, getCalendar } from '../core/calendar-engine.js';
+import { isCharacterDefinition, characterValueText } from '../core/character-display.js';
 
 export function stripHtml(str) {
     return String(str ?? '').replace(/<[^>]*>/g, '').trim();
@@ -127,6 +128,16 @@ export function describeConstraint(def) {
             + 'If no time has passed, repeat the current value';
     }
     if (def.type === 'enum') return `one of: ${def.enumValues.join(', ')}`;
+    // Characters (spec 1.42): the model answers with NAMES; State Engine
+    // matches them to its characters (or records new ones).
+    if (def.type === 'character') {
+        return 'a character\'s name, exactly as the story calls them (e.g. "Kael" or "the stranger"). '
+            + 'Reply with the name only; "" if nobody fits';
+    }
+    if (def.type === 'array' && def.itemType === 'character') {
+        return 'list of character names, each exactly as the story calls them. Reply with a full JSON array of names '
+            + '(e.g. ["Kael","the stranger"]); [] if nobody fits';
+    }
     if (def.type === 'array') {
         const itemType = def.itemType || 'any';
         let desc = `array of ${itemType}`;
@@ -166,6 +177,7 @@ export function typeLabel(type) {
     if (type === 'image') return 'Image';
     if (type === 'imageList') return 'Image list';
     if (type === 'imageMap') return 'Image map';
+    if (type === 'character') return 'Character';
     return 'Text';
 }
 
@@ -190,6 +202,8 @@ export function formatValueForDisplay(value, def) {
         const style = def.datetimeMode === 'dateOnly' ? 'date' : def.datetimeMode === 'timeOnly' ? 'time' : 'full';
         return formatScalar(def.calendar || DEFAULT_CALENDAR_ID, value, style) ?? String(value);
     }
+    // Character ids show as names (spec 1.42).
+    if (isCharacterDefinition(def)) return characterValueText(def, value) || '—';
     if (def?.type === 'boolean') {
         const isTrue = value === true || value === 'true'
             || (typeof value === 'number' && value !== 0);

@@ -40,6 +40,9 @@ function isValidArrayItem(item, itemType, def) {
     switch (itemType) {
         case 'string':
             return typeof item === 'string';
+        case 'character':
+            // A character id (spec 1.42).
+            return typeof item === 'string' && item !== '';
         case 'number':
             return typeof item === 'number' && Number.isFinite(item);
         case 'boolean':
@@ -87,6 +90,7 @@ function sortArrayItems(items, itemType, def) {
         case 'number':
             return copy.sort((a, b) => a - b);
         case 'string':
+        case 'character':
             return copy.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
         case 'enum': {
             const order = Array.isArray(def?.itemEnumValues) ? def.itemEnumValues : [];

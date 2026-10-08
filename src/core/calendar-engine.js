@@ -511,7 +511,7 @@ export function format(calendarId, scalarTime, options = {}) {
         throw new Error(`Unknown format style "${style}"`);
     }
 
-    if (chosen.includes('{')) return formatTemplate(chosen, moment, rules);
+    if (chosen.includes('{')) return formatTemplate(chosen, moment, rules, calendar.hoursPerDay);
 
     const values = {
         YYYY: gregorian ? formatYear(t.year) : String(t.year),
@@ -527,16 +527,25 @@ export function format(calendarId, scalarTime, options = {}) {
 
 // "{monthName} {day}, Year {year} — {season}": brace placeholders, used by a
 // pattern that contains "{". monthName, month (number), day, year, HH, mm, ss,
+// MM and DD (month and day, zero-padded), h / hh (the hour on a half-day
+// clock - 12-hour for a 24-hour day - unpadded / padded) and ampm ("AM" for
+// the first half of the day, "PM" for the second; h, hh and ampm are empty
+// for a calendar whose day has an odd number of hours),
 // season, dayOfSeason, era, weekday, weekday_short, weekday_index (each empty
 // when the calendar does not define it), cycle (the first cycle's name) and
 // cycle:<name> -
 // the day within the cycle whose name is, or starts with, <name> ("cycle:red"
 // finds "Red Moon"). An unknown placeholder is left as written.
-function formatTemplate(template, moment, rules) {
+function formatTemplate(template, moment, rules, hoursPerDay = 24) {
     const { t } = moment;
+    const half = hoursPerDay % 2 === 0 ? hoursPerDay / 2 : null;
+    const halfHour = half === null ? null : (t.hour % half || half);
     const values = {
         monthName: moment.monthName, month: String(t.month), day: String(t.day), year: String(t.year),
+        MM: pad(t.month), DD: pad(t.day),
         HH: pad(t.hour), mm: pad(t.minute), ss: pad(t.second),
+        h: halfHour === null ? '' : String(halfHour), hh: halfHour === null ? '' : pad(halfHour),
+        ampm: half === null ? '' : (t.hour < half ? 'AM' : 'PM'),
         season: moment.seasonName ?? '', dayOfSeason: moment.dayOfSeason === null ? '' : String(moment.dayOfSeason),
         era: rules.era ?? '', cycle: moment.cycleName ?? '',
         weekday: t.weekdayName ?? '', weekday_short: t.weekdayShortName ?? '',

@@ -26,7 +26,7 @@ export function blankDefinition() {
         scope: 'chat', // chat | global
 
         // Type system
-        type: 'number', // number | string | boolean | enum | array | calculated | datetime | image | imageList | imageMap
+        type: 'number', // number | string | boolean | enum | array | calculated | datetime | image | imageList | imageMap | character
         enumValues: [],
 
         // Flag mode (only meaningful when type === 'boolean', requirements spec
@@ -173,6 +173,10 @@ export function getDefaultValue(def) {
             const scalar = toScalar(def.calendar || DEFAULT_CALENDAR_ID, def.defaultValue);
             return scalar ?? 0;
         }
+        case 'character':
+            // A character id (characters.js); none until a chat assigns one -
+            // characters belong to settings and chats, not to definitions.
+            return '';
         case 'image':
         case 'imageList':
         case 'imageMap': {

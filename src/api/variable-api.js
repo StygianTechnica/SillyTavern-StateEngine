@@ -172,6 +172,16 @@ function checkedImage(def, fnName, hadDefault) {
     return { ok: true };
 }
 
+// A character variable (spec 1.42): no default (a chat assigns a character -
+// characters belong to settings and chats, not to definitions), and nothing
+// to increment. Returns { ok: true } or { ok: false, error }; never throws.
+function checkedCharacter(def, fnName) {
+    if (def.type !== 'character') return { ok: true };
+    def.defaultValue = '';
+    if (def.behaviors?.increment === true) return { ok: false, error: `${fnName}: a character variable cannot be incremented` };
+    return { ok: true };
+}
+
 // A flag-mode boolean (1.28): flagMode, if given, must be a real boolean, and
 // defaultValue is ALWAYS forced to false when type is boolean and flagMode is
 // true - "the variable starts false" is absolute, not just "when no default was
@@ -369,6 +379,11 @@ export function createVariable(extensionId, instanceId, def) {
             console.warn(LOG_PREFIX, imageCheck.error);
             return null;
         }
+        const characterCheck = checkedCharacter(fullDef, 'createVariable');
+        if (!characterCheck.ok) {
+            console.warn(LOG_PREFIX, characterCheck.error);
+            return null;
+        }
         const flagCheck = checkedFlagMode(fullDef, 'createVariable');
         if (!flagCheck.ok) {
             console.warn(LOG_PREFIX, flagCheck.error);
@@ -491,6 +506,11 @@ export function updateVariable(extensionId, instanceId, ref, patch) {
         const imageCheck = checkedImage(newDef, 'updateVariable', !becameImage || safePatch.defaultValue !== undefined);
         if (!imageCheck.ok) {
             console.warn(LOG_PREFIX, imageCheck.error);
+            return null;
+        }
+        const characterCheck = checkedCharacter(newDef, 'updateVariable');
+        if (!characterCheck.ok) {
+            console.warn(LOG_PREFIX, characterCheck.error);
             return null;
         }
 

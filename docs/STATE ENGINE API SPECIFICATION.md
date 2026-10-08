@@ -2421,3 +2421,71 @@ re-request).
 
 `tests/roles.test.js`; assignment copying on a new chat in
 `tests/new-chat-start.test.js`.
+
+SECTION 24 — CHARACTER API (2026-10-08)
+
+Characters and settings - requirements spec 1.42. `src/api/character-api.js`
+(rules and storage: `src/core/characters.js`). Open to any registered caller
+(resolveCallerRecord) - characters belong to settings and chats, not to a
+namespace. Identity failures throw; any other rejection logs a warning and
+returns `null` (`false` for deletes), with nothing written. Changes emit
+`VARIABLES_CHANGED_EVENT`.
+
+**24.1 Storage**
+
+- `settings.variableStore.characterSettings = { [settingId]: { id, name, autoPromote, createdAt, characters: { [id]: character } } }`;
+  `default` always exists (autoPromote on).
+- A chat's layer on its chat state: `state.characters = { setting, entries: { [id]: { present, matches } }, local: { [id]: character } }`.
+- A character: `{ id, name, aliases, image, introduction_snippet, biography, personality, faction, role, confirmed, variants: { [variantId]: { id, name, overrides } }, activeVariant, createdAt, updatedAt }`.
+- Variable values: a `character` variable holds one id; an array of itemType `character` a list of ids.
+
+A character as returned (the active variant's overrides applied; `base` = the baseline):
+
+```
+{ id, name, aliases, image, introduction_snippet, biography, personality, faction, role,
+  confirmed, scope: 'chat' | 'setting', settingId, present, matches,
+  activeVariant, variants: [{ id, name, overrides }], base: { name, aliases, image, ... },
+  createdAt, updatedAt }
+```
+
+**24.2 Functions** (every one takes `(extensionId, instanceId, ...)` first)
+
+```
+listCharacterSettings() / getCharacterSetting(settingId)
+createCharacterSetting({ name, autoPromote? }) / updateCharacterSetting(settingId, { name?, autoPromote? })
+deleteCharacterSetting(settingId)            not Default; its characters leave every variable
+getChatCharacterSetting(chatId) / setChatCharacterSetting(chatId, settingId)
+ensureChatCharacterSetting(chatId)           async; asks the user when the chat has none
+listCharacters(chatId, { settingId? })       a chat's (own + setting's), or a setting's
+getCharacter(chatId, id, settingId?) / getCharacterByAlias(chatId, name)
+createUnconfirmedCharacter(chatId, name, snippet?)
+createCharacter(settingId, data)             canonical, confirmed
+updateCharacter(chatId, id, patch, { settingId? })   baseline fields; confirms; an image promotes
+updateCharacterAliases(chatId, id, alias) / updateCharacterImage(chatId, id, url)
+markCharacterPresent(chatId, id) / markCharacterAbsent(chatId, id)
+mergeCharacters(chatId, sourceId, targetId, { settingId? })
+deleteCharacter(chatId, id, { settingId? }) / confirmCharacter(chatId, id, { settingId? })
+promoteCharacter(chatId, id)
+addCharacterVariant(chatId, id, { name, overrides }, { settingId? })
+updateCharacterVariant(chatId, id, variantId, { name?, overrides? }, { settingId? })
+deleteCharacterVariant(chatId, id, variantId, { settingId? })
+setCharacterActiveVariant(chatId, id, variantId | null, { settingId? })
+registerCharacterManager(opener) / openCharacterManager(options) / hasCharacterManager()
+```
+
+`chatId` may be null with `{ settingId }` to act on a setting's character
+directly (the Character Manager's Settings view).
+
+**24.3 Extraction**
+
+Through prompted variables (prompted-engine.js): a character variable is
+described to the model as a name, a character list as a JSON array of names;
+the answer goes through `resolveCharacterNames` (alias match, else a new
+unconfirmed chat character with its introduction snippet), presence is
+updated, and the ids are stored. New characters post the
+`se::characters-detected` notification (its callback opens the Character
+Manager on the unconfirmed characters).
+
+**24.4 Verification**
+
+`tests/characters.test.js`.

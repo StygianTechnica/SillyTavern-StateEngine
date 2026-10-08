@@ -8,6 +8,8 @@ import { getDefaultValue } from './variable-schema.js';
 import { shouldSkipPromptedRefresh, runPromptedStateUpdate } from './prompted-engine.js';
 import { recalculateDependents, recalculateAllForChat } from './calculated-engine.js';
 import { copyChatRoles, migrateRoleData } from './roles.js';
+import { getChatSetting, setChatSetting, ensureChatSetting } from './characters.js';
+import { askChatSetting } from '../ui/setting-prompt.js';
 
 
 export function applyResetOnNewChat() {
@@ -193,14 +195,22 @@ const askedThisSession = new Set();
 // CHAT_CREATED / GROUP_CHAT_CREATED handler body. Asks once per chat, applies the
 // answer, returns { choice, activated, copied } (choice null when there was
 // nothing to ask). Never throws. `ask` is replaceable for tests.
-export async function offerNewChatStart(chatId, ask = askNewChatStart) {
+// Settings (spec 1.42): a new chat started from an earlier one with its
+// presets ("Same presets" / "Continue") uses the same setting; a brand-new
+// chat, or a clean slate, is asked which setting to use (only when there is
+// more than the Default setting - see characters.js ensureChatSetting).
+// `askSetting` is replaceable for tests.
+export async function offerNewChatStart(chatId, ask = askNewChatStart, askSetting = askChatSetting) {
     try {
         if (!chatId || askedThisSession.has(chatId)) return { choice: null, activated: [], copied: 0 };
         // Remembered with the chat (not just for the session): this question is
         // asked from two events (see looksLikeNewChat) and must never repeat.
         if (loadChatState(chatId).newChatStartAsked) return { choice: null, activated: [], copied: 0 };
         const source = findPreviousChat(chatId);
-        if (!source) return { choice: null, activated: [], copied: 0 };
+        if (!source) {
+            await ensureChatSetting(chatId, askSetting);
+            return { choice: null, activated: [], copied: 0 };
+        }
         askedThisSession.add(chatId);
         const asked = loadChatState(chatId);
         asked.newChatStartAsked = true;
@@ -210,6 +220,9 @@ export async function offerNewChatStart(chatId, ask = askNewChatStart) {
         const presetNames = source.presetIds.map((id) => settings.presets[id]?.name || id);
         const choice = await ask(source, presetNames);
         const applied = applyNewChatChoice(chatId, choice, source);
+        const inherited = choice !== NEW_CHAT_CHOICES.CLEAN ? getChatSetting(source.sourceChatId) : null;
+        if (inherited) setChatSetting(chatId, inherited);
+        else await ensureChatSetting(chatId, askSetting);
         return { choice, ...applied };
     } catch (err) {
         console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);

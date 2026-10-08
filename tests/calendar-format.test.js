@@ -247,3 +247,24 @@ describe('calendar formatting', () => {
         });
     });
 });
+
+// Padded month/day and a half-day (12-hour) clock in brace patterns, for
+// display extensions' date and time formats (Pretty Panels' Value
+// Formatting).
+describe('brace placeholders: MM, DD, h, hh, ampm', () => {
+    const at = (h, m = 5, s = 9) => Date.UTC(2026, 9, 8, h, m, s) / 1000;
+    const fmt = (t, pattern, calendar = 'gregorian') => format(calendar, t, { style: 'custom', pattern });
+
+    it('MM and DD are zero-padded', () => {
+        expect(fmt(at(0), '{year}-{MM}-{DD}')).toBe('2026-10-08');
+        expect(fmt(at(0), '{month}/{day}')).toBe('10/8');
+    });
+
+    it.each([[0, '12:05 AM'], [9, '9:05 AM'], [12, '12:05 PM'], [15, '3:05 PM'], [23, '11:05 PM']])('hour %i -> %s', (hour, text) => {
+        expect(fmt(at(hour), '{h}:{mm} {ampm}')).toBe(text);
+    });
+
+    it('hh pads the 12-hour hour', () => {
+        expect(fmt(at(15), '{hh}:{mm}:{ss} {ampm}')).toBe('03:05:09 PM');
+    });
+});

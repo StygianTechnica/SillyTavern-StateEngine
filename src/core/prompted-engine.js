@@ -13,6 +13,9 @@ import { extractJsonObject, describeConstraint, buildRecentMessagesSection } fro
 import { setStatus } from '../ui/settings-panel-ui.js';
 import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
 import { chunkPromptUnits } from './prompt-chunking.js';
+import { isCharacterDefinition, characterValueText } from './character-display.js';
+import { resolveCharacterNames, applyPresence, ensureChatSetting } from './characters.js';
+import { askChatSetting } from '../ui/setting-prompt.js';
 
 export function shouldSkipPromptedRefresh(def) {
     return !!(def && def.skipPromptedRefresh);
@@ -88,6 +91,8 @@ export function classifyPromptedVariables(chatId, variables) {
 // never raw scalar seconds. Every other type is shown as stored. A value the
 // calendar cannot format is shown as stored.
 function valueForPrompt(def, value) {
+    // Character ids are shown as the names the model answers with (spec 1.42).
+    if (isCharacterDefinition(def)) return def.type === 'character' ? characterValueText(def, value) : characterValueText(def, value).split(', ').filter(Boolean);
     if (def.type !== 'datetime') return value;
     try {
         return format(def.calendar || DEFAULT_CALENDAR_ID, Number(value), { style: 'full' });
@@ -134,13 +139,34 @@ export function chunkPromptedVariables(chatId, updateVars, incrementVars, maxCha
 // every variable's write is isolated (a malformed def, an unexpected value
 // shape, anything) so one bad entry can never prevent every other variable in
 // this same response from being written.
-function applyPromptedResponse(chatId, updateVars, incrementVars, parsed) {
+function applyPromptedResponse(chatId, updateVars, incrementVars, parsed, { source = '' } = {}) {
     let updatedCount = 0;
     for (const def of updateVars) {
         try {
             if (!Object.prototype.hasOwnProperty.call(parsed, def.name)) continue;
 
             const rawValue = parsed[def.name];
+
+            // Characters (spec 1.42): the model answered with names. Each is
+            // matched to a character (or recorded as a new, unconfirmed one,
+            // with the sentence it was met in), the variable stores the ids,
+            // the named characters are present, and - for a list - anyone it
+            // held before and no longer does is not.
+            if (isCharacterDefinition(def)) {
+                const names = def.type === 'character'
+                    ? (typeof rawValue === 'string' ? [rawValue] : [])
+                    : (Array.isArray(rawValue) ? rawValue.filter((n) => typeof n === 'string') : null);
+                if (names === null) continue;
+                const before = getVar(chatId, def.name)?.value;
+                const { ids } = resolveCharacterNames(chatId, names, { source });
+                const value = def.type === 'character' ? (ids[0] ?? '') : ids;
+                const previous = def.type === 'character' ? (before ? [before] : []) : (Array.isArray(before) ? before : []);
+                applyPresence(chatId, ids, def.type === 'character' ? [] : previous.filter((id) => !ids.includes(id)));
+                setVar(chatId, def.name, value, def);
+                recalculateDependents(chatId, def.name);
+                updatedCount++;
+                continue;
+            }
 
             if (def.type === 'array' && !Array.isArray(rawValue)) {
                 // Prompted arrays only ever accept a full array
@@ -254,7 +280,10 @@ async function runPromptedChunk(context, settings, contextSection, chunk) {
         console.warn(LOG_PREFIX, 'could not parse a JSON object from the model response:', raw);
         throw new Error('response was not valid JSON');
     }
-    return applyPromptedResponse(chatId, updateVars, incrementVars, parsed);
+    // A character answer needs the chat's setting (asked on first use).
+    if (updateVars.some(isCharacterDefinition)) await ensureChatSetting(chatId, askChatSetting);
+    const latest = Array.isArray(context.chat) ? context.chat[context.chat.length - 1] : null;
+    return applyPromptedResponse(chatId, updateVars, incrementVars, parsed, { source: typeof latest?.mes === 'string' ? latest.mes : '' });
 }
 
 // Runs every chunk SEQUENTIALLY (never in parallel - one chunk's LLM call is
