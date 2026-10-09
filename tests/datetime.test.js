@@ -686,7 +686,8 @@ describe('datetime variables', () => {
 
                 await runAi();
 
-                expect(systemPrompt()).toContain('Recent conversation:\nUser: they wait until the evening');
+                // Spec 1.44: the user message and the reply are the latest turn.
+                expect(systemPrompt()).toContain('Latest turn:\nUser: they wait until the evening\nBot: Hours pass.');
                 expect(systemPrompt()).toContain('Most recent roleplay message:\nBot: Hours pass.');
                 // The actual last message in the API call is a different,
                 // synthetic turn entirely - never confused with the label above.

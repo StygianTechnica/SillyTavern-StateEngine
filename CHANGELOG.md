@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — Latest turn
+
+**Added**
+
+- **"Latest turn" in the update prompt:** every message since the last user message (the
+  user's action and every reply after it), so instructions like "how much time passed?" see
+  the whole turn, not only the last AI message. The whole turn is always sent, reaching past
+  the context message count when needed (never past the max history cap). Requirements
+  spec 1.44; prompt cues are listed in docs/PROMPT MESSAGE CUES.md.
+
+**Tests:** 51 files, 2056 tests.
+
 ## Unreleased — Character runtime state
 
 **Added**

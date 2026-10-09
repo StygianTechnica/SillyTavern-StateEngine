@@ -28,19 +28,29 @@ export function stripHtml(str) {
 // Giving that line its own explicit, consistently-named heading gives every
 // preset's prompted instructions a stable term to reference.
 //
-// `recentMessages` is already sliced to whatever history-length limit the
-// caller computed (contextMessageCount / maxPromptHistoryMessages, or an
-// independent preset's own historyLimit override - both callers already do
-// this themselves, unchanged, before calling this). Returns a single ready-
+// `recentMessages` is already sliced by the caller - selectPromptMessages()
+// below, from contextMessageCount / maxPromptHistoryMessages or an
+// independent preset's own historyLimit override. Returns a single ready-
 // to-embed string:
 //   - nothing at all (or only blank/whitespace messages) -> 'No conversation yet.'
 //   - one real message and nothing before it -> just the "Most recent
 //     roleplay message:" section (no separate "Recent conversation:" for an
 //     empty history)
-//   - otherwise -> "Recent conversation:" (everything except the last
-//     message) followed by "Most recent roleplay message:" (the last one)
+//   - otherwise -> "Recent conversation:" (everything before the latest
+//     turn), "Latest turn:" (when the turn is more than one message) and
+//     "Most recent roleplay message:" (the last one)
+//
+// Latest turn (requirements spec 1.44, 2026-10-09): every message from the
+// last user message on - the user's action plus every reply after it (one or
+// more AI messages, a group chat's several characters). An instruction like
+// "how much time passed?" must see the whole turn, not only its last
+// message. The "Latest turn:" section INCLUDES the most recent message, and
+// is shown only when the turn is more than that one message - a one-message
+// turn (a user-triggered run) is exactly the "Most recent roleplay message"
+// and is not repeated. With no user message in the slice the whole slice is
+// the turn (selectPromptMessages() already reached back as far as allowed).
 export function buildRecentMessagesSection(recentMessages, { name1, name2, maxMessageLength = 0 } = {}) {
-    const lines = (recentMessages || [])
+    const entries = (recentMessages || [])
         .map((m) => {
             const speaker = m.is_user ? (name1 || 'User') : (m.name || name2 || 'Character');
             const strippedText = stripHtml(m.mes);
@@ -63,19 +73,41 @@ export function buildRecentMessagesSection(recentMessages, { name1, name2, maxMe
             if (maxMessageLength > 0 && text.length > maxMessageLength) {
                 text = text.slice(0, maxMessageLength) + '…';
             }
-            return `${speaker}: ${text}`;
+            return { line: `${speaker}: ${text}`, startsTurn: startsTurn(m) };
         })
-        .filter((line) => line !== null);
+        .filter((entry) => entry !== null);
 
-    if (lines.length === 0) return 'No conversation yet.';
+    if (entries.length === 0) return 'No conversation yet.';
 
-    const mostRecent = lines[lines.length - 1];
-    const history = lines.slice(0, -1);
+    const lines = entries.map((e) => e.line);
+    const turnStart = Math.max(0, entries.map((e) => e.startsTurn).lastIndexOf(true));
+    const history = lines.slice(0, turnStart);
+    const turn = lines.slice(turnStart);
 
     const parts = [];
     if (history.length > 0) parts.push(`Recent conversation:\n${history.join('\n')}`);
-    parts.push(`Most recent roleplay message:\n${mostRecent}`);
+    if (turn.length > 1) parts.push(`Latest turn:\n${turn.join('\n')}`);
+    parts.push(`Most recent roleplay message:\n${lines[lines.length - 1]}`);
     return parts.join('\n\n');
+}
+
+// A turn starts at a user message the prompt actually sees - a hidden
+// (is_system) one does not end the turn before it.
+function startsTurn(m) {
+    return !!(m && m.is_user && !m.is_system);
+}
+
+// The slice of `chat` both prompt builders send (spec 1.44): the last `count`
+// messages, reaching further back when needed so the latest turn is never cut
+// short - but never more than `cap` messages (maxPromptHistoryMessages stays a
+// hard limit).
+export function selectPromptMessages(chat, count, cap = count) {
+    const messages = Array.isArray(chat) ? chat : [];
+    const limit = Math.max(1, Math.min(count, cap));
+    let start = Math.max(0, messages.length - limit);
+    const turnStart = messages.findLastIndex(startsTurn);
+    if (turnStart !== -1 && turnStart < start) start = Math.max(turnStart, messages.length - Math.max(1, cap));
+    return messages.slice(start);
 }
 
 export function extractJsonObject(text) {

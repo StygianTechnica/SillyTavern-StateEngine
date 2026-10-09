@@ -57,7 +57,7 @@ import { getVar, setVar, applyIncrement } from '../core/chat-state.js';
 import { incrementDelta } from '../core/increment-delta.js';
 import { recalculateDependents } from '../core/calculated-engine.js';
 import { callBackgroundLLM } from '../core/background-llm.js';
-import { extractJsonObject, describeConstraint, buildRecentMessagesSection } from '../ui/formatting-utils.js';
+import { extractJsonObject, describeConstraint, buildRecentMessagesSection, selectPromptMessages } from '../ui/formatting-utils.js';
 import { shouldSkipPromptedRefresh, isDoneFlag } from '../core/prompted-engine.js';
 import { parseScheduleTarget, scheduleAfterRun } from '../core/schedule-engine.js';
 import { chunkPromptUnits } from '../core/prompt-chunking.js';
@@ -510,8 +510,9 @@ async function runIndependentPresetInternal(chatId, presetRef) {
             // maxPromptHistoryMessages exactly like the global one always was.
             const userRequestedCount = Math.max(1, Number(config.historyLimit) || Number(settings.contextMessageCount) || 10);
             const historyCap = Math.max(1, Number(settings.maxPromptHistoryMessages) || userRequestedCount);
-            const count = Math.min(historyCap, userRequestedCount);
-            const recent = context.chat.slice(-count);
+            // 1.44: reaches back to the last user message so the whole latest
+            // turn is sent, still within historyCap.
+            const recent = selectPromptMessages(context.chat, userRequestedCount, historyCap);
             const maxMessageLength = Number(settings.maxMessageLength) || 0;
             // Shared with prompted-engine.js's identical need - see this
             // file's own header comment and buildRecentMessagesSection's own

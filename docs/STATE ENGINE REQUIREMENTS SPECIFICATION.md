@@ -3011,6 +3011,34 @@ everyone still present, add arrivals, remove only those who left.
 API: Section 24.5 of the API specification. Verification:
 tests/characters.test.js ("runtime state").
 
+1.44 "Latest Turn" Labeling (2026-10-09)
+
+A prompted update triggered by an AI message saw only that one message as
+"Most recent roleplay message" (1.34). In a group chat, or with several AI
+replies in a row, the earlier replies and the user's own action fell into
+"Recent conversation", so an instruction like "how much time passed?"
+measured only part of what happened.
+
+- The latest turn is every message from the last user message on (a hidden,
+  is_system, or blank user message does not start one). With no user
+  message in what is sent, everything sent is the turn.
+- The context section (formatting-utils.js buildRecentMessagesSection) is
+  now: "Recent conversation:" (before the turn), "Latest turn:" (the whole
+  turn, ending with the most recent message) and "Most recent roleplay
+  message:". "Latest turn:" is shown only when the turn is more than one
+  message; a one-message turn is the most recent message and is not
+  repeated.
+- The whole turn is always sent: selectPromptMessages() takes the last
+  contextMessageCount (or an independent preset's historyLimit) messages
+  and reaches back to the last user message when that would cut the turn
+  short - never past maxPromptHistoryMessages, still a hard cap. Used by
+  prompted-engine.js and independent-presets.js.
+- DEFAULT_PROMPTED_HEADER gained one line defining "Latest turn". A
+  customized settings.promptedHeader is unchanged.
+
+Prompt cues for authors: docs/PROMPT MESSAGE CUES.md. Verification:
+tests/formatting-utils.test.js ("Latest turn", selectPromptMessages).
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 

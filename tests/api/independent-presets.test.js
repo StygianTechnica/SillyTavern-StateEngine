@@ -292,7 +292,7 @@ describe('1.29 independent context: extension-provided / chat-history / explicit
         callBackgroundLLM.mockResolvedValue('{"se__mood":"tense"}');
         await runIndy();
         const prompt = callBackgroundLLM.mock.calls[0][2][0].content;
-        expect(prompt).toContain('Recent conversation:');
+        expect(prompt).toContain('Latest turn:');
         expect(prompt).toContain('User: hello there');
         expect(prompt).not.toContain('Independent context:');
     });
@@ -305,7 +305,7 @@ describe('1.29 independent context: extension-provided / chat-history / explicit
         callBackgroundLLM.mockResolvedValue('{"se__mood":"tense"}');
         await runIndy();
         const prompt = callBackgroundLLM.mock.calls[0][2][0].content;
-        expect(prompt).toContain('Recent conversation:\nUser: hello there');
+        expect(prompt).toContain('Latest turn:\nUser: hello there\nBot: hi');
         expect(prompt).toContain('Most recent roleplay message:\nBot: hi');
     });
 

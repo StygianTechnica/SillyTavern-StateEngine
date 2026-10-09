@@ -9,7 +9,7 @@ import { getVar, setVar, applyIncrement, loadChatState } from './chat-state.js';
 import { incrementDelta } from './increment-delta.js';
 import { recalculateDependents } from './calculated-engine.js';
 import { callBackgroundLLM } from './background-llm.js';
-import { extractJsonObject, describeConstraint, buildRecentMessagesSection } from '../ui/formatting-utils.js';
+import { extractJsonObject, describeConstraint, buildRecentMessagesSection, selectPromptMessages } from '../ui/formatting-utils.js';
 import { setStatus } from '../ui/settings-panel-ui.js';
 import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
 import { chunkPromptUnits } from './prompt-chunking.js';
@@ -433,8 +433,9 @@ export async function runPromptedStateUpdate(triggerType) {
             // Hard cap: never send more messages than maxPromptHistoryMessages,
             // regardless of what contextMessageCount asks for.
             const historyCap = Math.max(1, Number(settings.maxPromptHistoryMessages) || userRequestedCount);
-            const count = Math.min(historyCap, userRequestedCount);
-            const recent = context.chat.slice(-count);
+            // Reaches back to the last user message so the whole latest turn is
+            // sent (spec 1.44), still within historyCap.
+            const recent = selectPromptMessages(context.chat, userRequestedCount, historyCap);
             const maxMessageLength = Number(settings.maxMessageLength) || 0;
             // formatting-utils.js's buildRecentMessagesSection() - shared with
             // independent-presets.js's identical need - explicitly labels the
