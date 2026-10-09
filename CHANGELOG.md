@@ -22,8 +22,11 @@
 - **Runtime enum fields (mood) answered off the list:** the prompt now gives an enum as a closed
   list (`EXACTLY one of ["Neutral", ...]`, pick the closest when none fits), and an off-list
   answer keeps the previous value instead of clearing it. Requirements spec 1.43.
+- **"History messages sent" and "Max response length" are back in the settings drawer.** A
+  drawer clean-up had removed both inputs while the settings stayed, so they were stuck at 10
+  messages and 300 tokens. A test now checks every settings input is in the drawer.
 
-**Tests:** 52 files, 2070 tests.
+**Tests:** 53 files, 2085 tests.
 
 ## Unreleased — Character runtime state
 

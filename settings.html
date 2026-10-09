@@ -59,9 +59,22 @@
 
             <div class="se-row se-grid2">
                 <div>
+                    <label for="se_context_count">History messages sent</label>
+                    <input id="se_context_count" type="number" class="text_pole" min="1" max="50" step="1" placeholder="10" />
+                    <small>Recent chat messages sent with each prompted update (default 10). The whole latest turn - since your last message - is always included, even past this number.</small>
+                </div>
+                <div>
+                    <label for="se_response_length">Max response length (tokens)</label>
+                    <input id="se_response_length" type="number" class="text_pole" min="50" max="2000" step="1" placeholder="300" />
+                    <small>Tokens the model may use for its answer (default 300). An answer cut off at this length is not valid JSON and is discarded. With a Connection Profile above, its Max tokens is used when set.</small>
+                </div>
+            </div>
+
+            <div class="se-row se-grid2">
+                <div>
                     <label for="se_max_prompt_history">Max prompt history (messages)</label>
                     <input id="se_max_prompt_history" type="number" class="text_pole" min="1" step="1" placeholder="auto" />
-                    <small>Hard cap on chat messages sent to the background state-update LLM call. Leave blank to auto-derive from SillyTavern's context size.</small>
+                    <small>Hard ceiling on chat messages sent - over History messages sent, the latest turn and an independent preset's own history limit. Leave blank to auto-derive from SillyTavern's context size.</small>
                 </div>
                 <div>
                     <label for="se_max_message_length">Max message length (chars)</label>
