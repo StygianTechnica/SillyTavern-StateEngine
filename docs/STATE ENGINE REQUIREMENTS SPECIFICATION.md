@@ -3047,6 +3047,55 @@ measured only part of what happened.
 Prompt cues for authors: docs/PROMPT MESSAGE CUES.md. Verification:
 tests/formatting-utils.test.js ("Latest turn", selectPromptMessages).
 
+1.45 Built-in Prompts Follow Updates (2026-10-09)
+
+Reported: a user's prompted header was the built-in text from before 1.34 -
+never edited. DEFAULT_SETTINGS stored the built-in header as text, and the
+settings box saved full text on any edit or Reset, so a changed built-in
+never reached existing users.
+
+- settings.promptedHeader / settings.promptedRules: null = the built-in
+  text, always the current one; a string = the user's own. The settings box
+  shows the built-in when null; saving blank or any built-in text (current
+  or past) stores null; Reset stores null.
+- src/core/prompt-defaults.js keeps every earlier built-in text (`past`,
+  oldest first); a prompt's version is past.length + 1. Text is compared with
+  whitespace collapsed and the non-breaking hyphen as "-".
+- Startup (reconcilePromptDefaults, src/events/prompt-default-updates.js):
+  a saved copy of any built-in version becomes null. settings.
+  promptDefaultsSeen[key] records the built-in version the user last saw;
+  when the user's own text is behind (or was saved before versions were
+  recorded), ONE notification (se::prompt-defaults-updated) is posted. Its
+  action shows the user's text and the new built-in side by side: "Use the
+  new built-in" stores null, "Keep mine" keeps it - either marks the version
+  seen. Closing without choosing posts it again.
+- Changing a built-in prompt: edit DEFAULT_* in settings-core.js, add the
+  old text to the end of its `past` list, and pin the new text's hash in
+  tests/prompt-defaults.test.js (which fails on an in-place edit).
+- An independent preset's own header/rules were already blank = global.
+
+Verification: tests/prompt-defaults.test.js.
+
+1.46 Images for Runtime Enum Values (2026-10-09)
+
+An enum runtime field (1.43) may have `images: { [value]: reference }` - a
+URL, user/images/... path or data URL per value, shown in place of the word.
+Keys match values case-insensitively and are stored as the value is spelled;
+an image for a value no longer listed is dropped; an empty reference means
+none; a non-string reference or a non-object map is refused.
+
+A character's runtime view carries `images: { [field name]: src }` for each
+enum field whose CURRENT value has an image, already passed through
+safeImageSrc (image-variables.js) - a reference that may not be loaded is
+left out. runtimeImageSrc(field, value) is the lookup.
+
+Pretty Panels: the Character Manager's Runtime fields tab edits an image per
+value (URL or upload, with a preview); a character template binds
+"icon.<field>" (e.g. "Mood (icon)"), an image field, to show it.
+
+API: Section 24.5 of the API specification. Verification:
+tests/characters.test.js ("enum images").
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 

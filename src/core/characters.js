@@ -58,6 +58,7 @@ import { notifyVariablesChanged } from './variable-change-signal.js';
 import { putNotification, notificationId, setCallback } from './notification-core.js';
 import { genId } from './variable-schema.js';
 import { setCharacterNameResolver, isCharacterDefinition } from './character-display.js';
+import { safeImageSrc } from './image-variables.js';
 
 export const DEFAULT_SETTING_ID = 'default';
 export const CONFIRM_AFTER_MATCHES = 10;
@@ -182,6 +183,19 @@ function normalizeRuntimeField(raw, what = 'runtime field') {
         if (values.length === 0) throw new Error(`runtime field "${name}" is an enum but has no values`);
         if (values.length > MAX_ENUM_VALUES) throw new Error(`runtime field "${name}" has more than ${MAX_ENUM_VALUES} values`);
         out.values = values;
+        // An image per value (spec 1.46): { [value]: reference } - shown in
+        // place of the word. Keys match values case-insensitively and are
+        // stored as the value is spelled; an image for a value no longer
+        // listed is dropped; an empty reference means none.
+        if (raw.images !== undefined && raw.images !== null && !isObject(raw.images)) throw new Error(`runtime field "${name}": images must be an object of value -> image`);
+        const images = {};
+        for (const [key, ref] of Object.entries(raw.images ?? {})) {
+            const value = values.find((v) => v.toLowerCase() === String(key).trim().toLowerCase());
+            if (!value) continue;
+            if (typeof ref !== 'string') throw new Error(`runtime field "${name}": the image for "${value}" must be a string`);
+            if (ref.trim()) images[value] = ref.trim();
+        }
+        if (Object.keys(images).length) out.images = images;
     }
     if (type === 'number') {
         const min = Number.isFinite(raw.min) ? raw.min : null;
@@ -250,19 +264,30 @@ function emptyRuntime() {
 }
 
 // A character's runtime in a chat, by the chat's setting's fields:
-// { present, thought, mood, intent, custom: { [field]: value } } - fields
-// the setting no longer defines are left out.
+// { present, thought, mood, intent, custom: { [field]: value }, images } -
+// fields the setting no longer defines are left out. images (spec 1.46):
+// { [field name]: src } for each enum field whose current value has an
+// image, already checked with safeImageSrc (a reference that may not be
+// loaded is left out).
 function runtimeView(chatId, id) {
     const entry = readChat(chatId).entries[id];
     const stored = isObject(entry?.runtime) ? entry.runtime : emptyRuntime();
-    const out = { present: entry?.present === true, thought: null, mood: null, intent: null, custom: {} };
+    const out = { present: entry?.present === true, thought: null, mood: null, intent: null, custom: {}, images: {} };
     for (const field of getRuntimeFields(effectiveSetting(chatId).id)) {
         const value = BUILT_IN_RUNTIME_FIELDS.includes(field.name) ? stored[field.name] : stored.custom?.[field.name];
         const clean = value === undefined ? null : coerceRuntimeValue(field, value);
         if (BUILT_IN_RUNTIME_FIELDS.includes(field.name)) out[field.name] = clean;
         else out.custom[field.name] = clean;
+        const src = runtimeImageSrc(field, clean);
+        if (src) out.images[field.name] = src;
     }
     return out;
+}
+
+// The image an enum field shows for `value`, ready for <img src>, or null.
+export function runtimeImageSrc(field, value) {
+    if (field?.type !== 'enum' || typeof value !== 'string' || !isObject(field.images)) return null;
+    return safeImageSrc(field.images[value] ?? null);
 }
 
 // The prompted update's runtime answer for the characters present this turn:

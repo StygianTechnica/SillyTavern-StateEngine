@@ -353,7 +353,7 @@ describe('runtime state', () => {
         const rhys = C.createCharacter(story.id, { name: 'Rhys' });
         C.markCharacterPresent(CHAT, rhys.id);
         C.applyRuntimeUpdates(CHAT, { [rhys.id]: { thought: 'Trust no one.', mood: 'suspicious', intent: 'Watch the door' } });
-        expect(C.getCharacter(CHAT, rhys.id).runtime).toEqual({ present: true, thought: 'Trust no one.', mood: 'Suspicious', intent: 'Watch the door', custom: {} });
+        expect(C.getCharacter(CHAT, rhys.id).runtime).toEqual({ present: true, thought: 'Trust no one.', mood: 'Suspicious', intent: 'Watch the door', custom: {}, images: {} });
         expect(C.getCharacter(null, rhys.id, story.id).runtime).toBeNull();
         expect(JSON.stringify(settings.get().variableStore.characterSettings[story.id].characters)).not.toContain('Trust no one');
         C.setChatSetting('chat-2', story.id);
@@ -370,6 +370,42 @@ describe('runtime state', () => {
         expect(C.getCharacter(CHAT, rhys.id).runtime.mood).toBe('Sad');
         C.applyRuntimeUpdates(CHAT, { [rhys.id]: { mood: '' } });
         expect(C.getCharacter(CHAT, rhys.id).runtime.mood).toBeNull();
+    });
+
+    // Spec 1.46: an image per enum value, shown in place of the word.
+    describe('enum images', () => {
+        const moodWith = (images) => ({ name: 'mood', type: 'enum', values: ['Calm', 'Angry'], images });
+
+        it('are stored per value as spelled; unknown values are dropped; empty means none', () => {
+            const [, mood] = C.setRuntimeFields(story.id, [moodWith({ calm: 'user/images/calm.png', Angry: ' ', Gone: 'x.png' })]);
+            expect(mood.images).toEqual({ Calm: 'user/images/calm.png' });
+            const [, plain] = C.setRuntimeFields(story.id, [moodWith({})]);
+            expect(plain.images).toBeUndefined();
+        });
+
+        it('a non-string image or a non-object map is refused', () => {
+            expect(() => C.setRuntimeFields(story.id, [moodWith({ Calm: 5 })])).toThrow(/must be a string/);
+            expect(() => C.setRuntimeFields(story.id, [moodWith('calm.png')])).toThrow(/object of value/);
+        });
+
+        it('runtime.images holds the image for the current value, and only one that may be loaded', () => {
+            C.setRuntimeFields(story.id, [
+                moodWith({ Calm: 'user/images/calm.png', Angry: 'javascript:alert(1)' }),
+                { name: 'stance', type: 'enum', values: ['Guard'], images: { Guard: 'https://example.com/guard.webp' } },
+            ]);
+            const rhys = C.createCharacter(story.id, { name: 'Rhys' });
+            C.markCharacterPresent(CHAT, rhys.id);
+            C.applyRuntimeUpdates(CHAT, { [rhys.id]: { mood: 'calm', stance: 'Guard' } });
+            expect(C.getCharacter(CHAT, rhys.id).runtime.images).toEqual({ mood: 'user/images/calm.png', stance: 'https://example.com/guard.webp' });
+            C.applyRuntimeUpdates(CHAT, { [rhys.id]: { mood: 'Angry' } });
+            expect(C.getCharacter(CHAT, rhys.id).runtime.images).toEqual({ stance: 'https://example.com/guard.webp' });
+            expect(C.runtimeImageSrc({ type: 'string', images: { a: 'a.png' } }, 'a')).toBeNull();
+        });
+
+        it('pass through the API', () => {
+            api('setCharacterRuntimeFields', story.id, [moodWith({ Angry: 'user/images/angry.png' })]);
+            expect(api('getCharacterRuntimeFields', story.id)[1].images).toEqual({ Angry: 'user/images/angry.png' });
+        });
     });
 
     it('leaving the scene clears runtime', () => {

@@ -10,6 +10,7 @@ import { renderVarTable } from './manager-modal-ui.js';
 import { setTrackerPanelVisible } from './tracker-panel-ui.js';
 import { openManagerIfReady, updateManagerButtonState, getCurrentChatId } from './wand-ui.js';
 import { openCharacterManager, hasCharacterManager } from '../core/characters.js';
+import { PROMPT_DEFAULTS, storedPromptValue, acknowledgePromptDefault } from '../core/prompt-defaults.js';
 
 // ---------------------------------------------------------------------------
 // UI — settings panel
@@ -143,31 +144,28 @@ export function bindPanelEvents() {
     });
     updateManagerButtonState();
 
-    $('#se_prompted_header').on('change', (e) => {
-        const settings = getSettings();
-        settings.promptedHeader = e.target.value;
-        persistSettings();
-    });
-
-    $('#se_prompted_header_reset').on('click', () => {
-        const settings = getSettings();
-        settings.promptedHeader = DEFAULT_PROMPTED_HEADER;
-        persistSettings();
-        $('#se_prompted_header').val(DEFAULT_PROMPTED_HEADER);
-    });
-
-    $('#se_prompted_variable_rules').on('change', (e) => {
-        const settings = getSettings();
-        settings.promptedRules = e.target.value;
-        persistSettings();
-    });
-
-    $('#se_prompted_variable_rules_reset').on('click', () => {
-        const settings = getSettings();
-        settings.promptedRules = DEFAULT_UNIFIED_VARIABLE_RULES;
-        persistSettings();
-        $('#se_prompted_variable_rules').val(DEFAULT_UNIFIED_VARIABLE_RULES);
-    });
+    // Spec 1.45: a built-in text (current or past) is stored as null, so it
+    // follows future updates; only the user's own text is saved as text.
+    // Editing either way counts as having seen the current built-in.
+    for (const [key, box, reset] of [
+        ['promptedHeader', '#se_prompted_header', '#se_prompted_header_reset'],
+        ['promptedRules', '#se_prompted_variable_rules', '#se_prompted_variable_rules_reset'],
+    ]) {
+        $(box).on('change', (e) => {
+            const settings = getSettings();
+            settings[key] = storedPromptValue(key, e.target.value);
+            acknowledgePromptDefault(settings, key);
+            persistSettings();
+            if (settings[key] === null) $(box).val(PROMPT_DEFAULTS[key].current);
+        });
+        $(reset).on('click', () => {
+            const settings = getSettings();
+            settings[key] = null;
+            acknowledgePromptDefault(settings, key);
+            persistSettings();
+            $(box).val(PROMPT_DEFAULTS[key].current);
+        });
+    }
 
     $('#se_prompted_increment_rules').on('change', (e) => {
         const settings = getSettings();

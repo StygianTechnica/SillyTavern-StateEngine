@@ -9,6 +9,13 @@
   the whole turn, not only the last AI message. The whole turn is always sent, reaching past
   the context message count when needed (never past the max history cap). Requirements
   spec 1.44; prompt cues are listed in docs/PROMPT MESSAGE CUES.md.
+- **Built-in prompts follow updates:** the prompted-update header and rules are stored only
+  when you write your own; a saved copy of any earlier built-in text is switched back to the
+  built-in at startup. If you use your own text and the built-in changes, one notification
+  offers a side-by-side comparison: use the new built-in or keep yours. Requirements spec 1.45.
+- **Images for runtime enum values:** an enum runtime field (mood) can have an image per value;
+  `character.runtime.images` gives the current value's image, safe for `<img src>`, so a
+  display can show an icon in place of the word. Requirements spec 1.46; API specification 24.5.
 
 **Fixed**
 
@@ -16,7 +23,7 @@
   list (`EXACTLY one of ["Neutral", ...]`, pick the closest when none fits), and an off-list
   answer keeps the previous value instead of clearing it. Requirements spec 1.43.
 
-**Tests:** 51 files, 2056 tests.
+**Tests:** 52 files, 2070 tests.
 
 ## Unreleased — Character runtime state
 

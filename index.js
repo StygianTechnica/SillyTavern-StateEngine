@@ -26,6 +26,7 @@ import { addStateEngineWandUi, watchChatSelection, updateManagerButtonState } fr
 import { initNotificationUi } from './src/ui/notification-ui.js';
 import { initImagePreviews } from './src/ui/image-preview.js';
 import { initExtensionUpdateNotifier, checkForExtensionUpdates, onStateEngineUpdate } from './src/events/extension-updates.js';
+import { initPromptDefaultUpdates } from './src/events/prompt-default-updates.js';
 import { registerTemplates, loadManagerModalStyles } from './src/ui/ui-entrypoints.js';
 
 import { registerEvents, startIndependentPresetScheduler } from './src/events/event-engine.js';
@@ -46,6 +47,7 @@ jQuery(async () => {
         initNotificationUi();
         initImagePreviews();
         initExtensionUpdateNotifier();
+        initPromptDefaultUpdates(); // spec 1.45: saved built-in prompts follow updates; ask once about the user's own
         registerEvents();
         startIndependentPresetScheduler(); // requirements spec 1.32: real wall-clock timer for scheduled independent presets
         registerSlashCommand();

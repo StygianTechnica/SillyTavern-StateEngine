@@ -30,7 +30,9 @@
 // Runtime state (spec 1.43) - per chat, ephemeral; which fields exist is per setting
 //   getCharacterRuntimeFields(settingId) / setCharacterRuntimeFields(settingId, fields)
 //   setCharacterRuntimeValue(chatId, id, field, value)   a NON-prompted field, by hand
-//   (a character's current values: character.runtime = { present, thought, mood, intent, custom })
+//   (a character's current values: character.runtime = { present, thought, mood, intent, custom, images })
+//   (an enum field may have images: { [value]: reference }; runtime.images = { [field]: src } for
+//    the current values that have one, safe for <img src> - spec 1.46)
 // Variants
 //   addCharacterVariant / updateCharacterVariant / deleteCharacterVariant /
 //   setCharacterActiveVariant (one active variant per character, for its setting)
@@ -171,7 +173,7 @@ export function resolveCharacter(extensionId, instanceId, chatId, sourceId, targ
 // ------------------------------------------------------------ runtime state
 
 // A setting's runtime fields: [{ name, type: 'string'|'number'|'enum', prompted,
-// description, values? (enum), min?/max? (number), builtIn }] - thought, mood
+// description, values? (enum), images? (enum: { [value]: reference }), min?/max? (number), builtIn }] - thought, mood
 // and intent first.
 export function getCharacterRuntimeFields(extensionId, instanceId, settingId) {
     return guard('getCharacterRuntimeFields', extensionId, instanceId, () => characters.getRuntimeFields(settingId), []);

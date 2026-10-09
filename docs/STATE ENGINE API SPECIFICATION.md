@@ -2499,9 +2499,15 @@ Manager on the unconfirmed characters).
 **24.5 Runtime state** (requirements spec 1.43)
 
 A character returned with a `chatId` carries
-`runtime: { present, thought, mood, intent, custom: { [field]: value } }` -
+`runtime: { present, thought, mood, intent, custom: { [field]: value }, images: { [field]: src } }` -
 chat-only, cleared when absent. A runtime field:
-`{ name, type: 'string'|'number'|'enum', prompted, description, values?, min?, max?, builtIn }`.
+`{ name, type: 'string'|'number'|'enum', prompted, description, values?, images?, min?, max?, builtIn }`.
+An enum field's optional `images` maps a value to an image reference (URL,
+`user/images/...` path or data URL; keys match values case-insensitively,
+an image for a value not listed is dropped). `runtime.images` holds, per
+enum field whose CURRENT value has an image, that image already checked
+for `<img src>` (requirements spec 1.46) - a display can show it in place
+of the word.
 Prompted fields are written by the prompted update through the
 `"__characters"` key (added when a chunk has a character list, for the
 characters it names); values are coerced (enum case-insensitive, number

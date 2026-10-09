@@ -29,6 +29,10 @@ export const BUILTIN_NAMESPACE = 'se';
 // term to use instead of the ambiguous "latest message" phrasing.
 // "Latest turn" (spec 1.44, 2026-10-09): the same, for every message since the
 // last user message - what a "how much time passed?" instruction needs.
+//
+// CHANGING THIS TEXT (or DEFAULT_UNIFIED_VARIABLE_RULES below): add the old
+// text to its `past` list in prompt-defaults.js (spec 1.45) so users holding
+// a saved copy are upgraded, and pin the new one in tests/prompt-defaults.test.js.
 export const DEFAULT_PROMPTED_HEADER = [
             'You are a silent background state‑tracking process for a roleplay chat application.',
             'You are not a character in the roleplay and must not narrate, comment, or add anything besides the requested output.',
@@ -434,7 +438,12 @@ export const DEFAULT_SETTINGS = Object.freeze({
     // Bindings the user said No to for a chat, so the activate-presets prompt
     // is not repeated on every chat load: { [chatId]: ["world|lorebookId|presetId", ...] }
     lorebookPresetDeclines: {},
-    promptedHeader: DEFAULT_PROMPTED_HEADER,
+    // Prompt texts (spec 1.45, src/core/prompt-defaults.js): null = the
+    // built-in text, always the current one; a string = the user's own.
+    // promptDefaultsSeen: { [key]: built-in version the user last saw }.
+    promptedHeader: null,
+    promptedRules: null,
+    promptDefaultsSeen: {},
     chatVariables: {},
     // Isolated State Engine data store (src/core/chat-state.js). Never
     // read from or written to SillyTavern chat metadata - this is its own

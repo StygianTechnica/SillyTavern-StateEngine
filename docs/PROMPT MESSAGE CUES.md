@@ -57,5 +57,6 @@ it on AI messages only.
   It is still cut at the **max prompt history** setting. When that cut drops the user message,
   everything that is sent counts as the latest turn.
 - A hidden (ghosted) or blank user message does not start a new turn.
-- A custom prompted header replaces the built-in one, which defines these terms. If you use
-  your own header, describe the sections in it yourself.
+- The built-in prompted header defines these terms, and stays current across updates unless
+  you write your own. Your own header replaces it: describe the sections in it yourself. When
+  the built-in changes, State Engine posts one notification so you can compare and choose.
