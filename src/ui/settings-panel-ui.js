@@ -1,14 +1,12 @@
 // State Engine — UI settings panel
 
 import { LOG_PREFIX, EXT_TEMPLATE_PATH, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED_VARIABLE_RULES, getSettings, persistSettings, computeDefaultMaxPromptHistoryMessages, computeDefaultMaxPromptedVariableChars } from '../core/settings-core.js';
-import { runPromptedStateUpdate } from '../core/prompted-engine.js';
 import { seedVariablesForChat, clearMacroVarsForChat } from '../core/chat-state.js';
 import { recalculateAllForChat } from '../core/calculated-engine.js';
 import { refreshVariableMacros, unregisterAllVariableMacros } from '../core/macro-registration.js';
 import { populateConnectionProfileDropdown, populateStateEngineProfileDropdown } from './connection-profile-ui.js';
-import { renderVarTable } from './manager-modal-ui.js';
 import { setTrackerPanelVisible } from './tracker-panel-ui.js';
-import { openManagerIfReady, updateManagerButtonState, getCurrentChatId } from './wand-ui.js';
+import { openManagerIfReady, updateManagerButtonState } from './wand-ui.js';
 import { openCharacterManager, hasCharacterManager } from '../core/characters.js';
 import { PROMPT_DEFAULTS, storedPromptValue, acknowledgePromptDefault } from '../core/prompt-defaults.js';
 
@@ -126,14 +124,6 @@ export function bindPanelEvents() {
         persistSettings();
     });
 
-    $('#se_run_now').on('click', () => {
-        try {
-            runPromptedStateUpdate('manual-all');
-        } catch (err) {
-            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
-        }
-    });
-
     $('#se_open_manager').on('click', () => openManagerIfReady());
     // Characters (spec 1.42): State Engine keeps them; the Character Manager
     // window is a UI extension's (Pretty Panels registers it).
@@ -166,19 +156,6 @@ export function bindPanelEvents() {
             $(box).val(PROMPT_DEFAULTS[key].current);
         });
     }
-
-    $('#se_prompted_increment_rules').on('change', (e) => {
-        const settings = getSettings();
-        settings.incrementedRules = e.target.value;
-        persistSettings();
-    });
-
-    // $('#se_prompted_increment_rules_reset').on('click', () => {
-    //     const settings = getSettings();
-    //     settings.incrementedRules = DEFAULT_INCREMENTED_VARIABLE_RULES;
-    //     persistSettings();
-    //     $('#se_prompted_increment_rules').val(DEFAULT_INCREMENTED_VARIABLE_RULES);
-    // });
 }
 
 export async function initPanel() {
@@ -190,24 +167,10 @@ export async function initPanel() {
         console.error(LOG_PREFIX, 'failed to load settings.html template', err);
         return;
     }
-    const $html = $(html);
-    $html.find('#se_macro_example, #se_macro_example2').text('{{getvar::name}}');
-    $('#extensions_settings2').append($html);
+    $('#extensions_settings2').append($(html));
 
     bindPanelEvents();
     loadGeneralSettingsIntoForm();
-
-    const chatId = getCurrentChatId();
-    if (chatId) {
-        renderVarTable();
-    } else {
-        const $tabContainer = $('#se_preset_tabs');
-        const $tbody = $('#se_var_tbody');
-        const $empty = $('#se_var_empty');
-        if ($tabContainer.length) $tabContainer.empty();
-        if ($tbody.length) $tbody.empty();
-        if ($empty.length) $empty.show().text('Select a chat to view state variables.');
-    }
 
     if (getSettings().showTrackerPanel) {
         setTrackerPanelVisible(true);
