@@ -22,6 +22,11 @@
 - **Character thoughts stopped updating:** the prompt's "currently" value now always lists every
   prompted runtime field (empty ones as null), so a field can't drop out of the answers; the
   thought is never shown there (it was being copied back) and is asked for fresh each turn.
+- **"NEW EACH TURN" fields:** a field that must be answered fresh every turn - the character
+  thought, and a datetime's delta-source variable (deltatime) - is marked NEW EACH TURN and shows
+  no current value; the built-in output rules exempt such fields from "repeat the current value"
+  (a small model answered "" for them every turn). An empty thought keeps the last one. The rules
+  text is a new built-in version: copies that follow the built-in update automatically.
 - **Durations followed by context are understood:** "a few minutes since Lucian left the gym" is
   3 minutes - a deltatime answer like that no longer sticks in the variable unread.
 - **Runtime enum fields (mood) answered off the list:** the prompt now gives an enum as a closed

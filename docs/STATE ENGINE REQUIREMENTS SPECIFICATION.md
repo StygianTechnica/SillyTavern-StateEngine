@@ -3026,7 +3026,20 @@ present character, an empty one as null - a small model answers in the shape
 of the current value, so a field left out once (because it was empty) was
 never answered again. The built-in thought is the exception: it is new every
 turn, so its current value is never shown (it was copied back word for word)
-and the model is asked for "short text, new for this turn".
+and the model is asked for "short text, NEW EACH TURN" ("write a new thought
+for every character, never empty"). An empty thought answer keeps the last
+thought rather than blanking it.
+
+NEW EACH TURN (2026-10-09): the built-in output rules say "if no change is
+needed, repeat the current value unchanged" - and a field whose current value
+is empty was answered "" every turn by a small model. A field that must be
+answered fresh is marked NEW EACH TURN and shows no current value, and the
+rules (built-in rules version 3, spec 1.45) exempt such fields: "A field
+marked NEW EACH TURN is never repeated: always answer it fresh, never empty."
+NEW EACH TURN fields: the runtime thought, and a string variable some active
+datetime reads as its deltaSource (1.31) - asked for as "a duration such as
+"30 minutes" or "2 hours"; NEW EACH TURN". The main prompted update only;
+independent presets build their own lines (1.29).
 
 API: Section 24.5 of the API specification. Verification:
 tests/characters.test.js ("runtime state").

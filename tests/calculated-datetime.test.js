@@ -399,6 +399,23 @@ describe('calculated-datetime extension', () => {
             expect(stored('jump')).toBe('');
         });
 
+        // A real chat (2026-10-09): shown 'currently ""' under "repeat the
+        // current value", a small model answered "" every turn.
+        it('the delta variable is asked for as NEW EACH TURN, with no current value to repeat', async () => {
+            createDeltaSource('jump');
+            createDatetime('clock', { defaultValue: ts(2026, 9, 18, 12), deltaSource: 'pp__jump' });
+            context.chat = [{ is_user: true, mes: 'a week passes' }, { is_user: false, name: 'Bot', mes: 'time moves on' }];
+            callBackgroundLLM.mockResolvedValue(JSON.stringify({ pp__jump: '1 week' }));
+
+            await runPromptedStateUpdate('ai');
+
+            await vi.waitFor(() => expect(callBackgroundLLM).toHaveBeenCalled());
+            const prompt = callBackgroundLLM.mock.calls[0][2][0].content;
+            expect(prompt).toContain('- "pp__jump" [a duration such as "30 minutes" or "2 hours"; NEW EACH TURN]');
+            expect(prompt).not.toMatch(/"pp__jump"[^\n]*currently/);
+            expect(prompt).toContain('A field marked NEW EACH TURN is never repeated');
+        });
+
         it('a plain datetime variable (no deltaSource) still supports its existing direct "update" mode unchanged', async () => {
             createDatetime('clock', {
                 defaultValue: ts(2026, 9, 18, 12),

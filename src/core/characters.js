@@ -311,6 +311,10 @@ export function applyRuntimeUpdates(chatId, updates) {
                     console.warn(LOG_PREFIX, `runtime field "${field.name}": ${JSON.stringify(raw[field.name])} is not one of its values - kept the previous value`);
                     continue;
                 }
+                // The thought is answered fresh each turn; an empty answer
+                // (a small model skipping it) keeps the last one rather than
+                // blanking the card.
+                if (value === null && field.name === 'thought') continue;
                 if (BUILT_IN_RUNTIME_FIELDS.includes(field.name)) runtime[field.name] = value;
                 else runtime.custom[field.name] = value;
             }

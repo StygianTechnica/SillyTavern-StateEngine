@@ -104,9 +104,25 @@ function valueForPrompt(def, value) {
     }
 }
 
+// NEW EACH TURN (2026-10-09): a variable some datetime reads as its
+// deltaSource holds "how much time passed this turn" - consumed and reset to
+// empty each time. Shown with that empty current value under the rule "if no
+// change is needed, repeat the current value", a small model answered
+// nothing every turn and time
+// never moved; so it shows no current value, is marked NEW EACH TURN (the
+// rules exempt such fields from repeating) and asks for a duration.
+function isDeltaSource(chatId, def) {
+    if (def.type !== 'string') return false;
+    return Object.values(getAllVariablesFromPresets(getPresetsForChat(chatId)))
+        .some((other) => other?.type === 'datetime' && other.deltaSource === def.name);
+}
+
 function updateVarLine(chatId, def) {
-    const current = valueForPrompt(def, getVar(chatId, def.name)?.value ?? (def.type === 'datetime' ? getDefaultValue(def) : def.defaultValue));
     const instructions = (def.prompted?.instructions || def.description || '').trim();
+    if (isDeltaSource(chatId, def)) {
+        return `- "${def.name}" [a duration such as "30 minutes" or "2 hours"; NEW EACH TURN]${instructions ? ` ${instructions}` : ''}`;
+    }
+    const current = valueForPrompt(def, getVar(chatId, def.name)?.value ?? (def.type === 'datetime' ? getDefaultValue(def) : def.defaultValue));
     return `- "${def.name}" [${describeConstraint(def)}] currently ${JSON.stringify(current)}.${instructions ? ` ${instructions}` : ''}`;
 }
 
@@ -293,7 +309,7 @@ function describeRuntimeField(field) {
     // inventing a word ("Grateful" for a mood) - an off-list answer is not stored.
     const what = field.type === 'enum' ? `EXACTLY one of ${JSON.stringify(field.values)} (no other word; if none fits exactly, pick the closest)`
         : field.type === 'number' ? `number${field.min !== null && field.max !== null ? ` from ${field.min} to ${field.max}` : ''}`
-            : FRESH_RUNTIME_FIELDS.has(field.name) ? 'short text, new for this turn' : 'short text';
+            : FRESH_RUNTIME_FIELDS.has(field.name) ? 'short text, NEW EACH TURN' : 'short text';
     return `"${field.name}": ${what}${field.description ? ` - ${field.description}` : ''}`;
 }
 
@@ -317,7 +333,7 @@ function runtimeLine(chatId, listDefs) {
     }
     const lists = listDefs.map((d) => `"${d.name}"`).join(' and ');
     return `- "${RUNTIME_KEY}" [object with one entry per character named in ${lists}, keyed by that name: {"<name>": {${fields.map(describeRuntimeField).join(', ')}}}] `
-        + `currently ${JSON.stringify(current)}. Each character's state right now - keep every value short; a field listed with EXACTLY one of [...] must be one of those values, spelled as shown; never change who they are.`;
+        + `currently ${JSON.stringify(current)}. Each character's state right now - keep every value short; a field listed with EXACTLY one of [...] must be one of those values, spelled as shown; write a new thought for every character, never empty; never change who they are.`;
 }
 
 async function runPromptedChunk(context, settings, contextSection, chunk) {

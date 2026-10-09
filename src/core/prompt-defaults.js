@@ -66,6 +66,15 @@ const PAST_PROMPTED_RULES = [
         '- For update variables: return the new value. If no change is needed, repeat the current value unchanged.',
         '- For boolean-condition variables: return true if the condition is met, otherwise false.',
     ].join('\n'),
+    [
+        '',
+        'Output rules:',
+        '- Reply with ONLY a single raw JSON object. No markdown code fences, no explanation, no extra text.',
+        '- The object must contain exactly one key per listed variable.',
+        '- For update variables: return the new value. If no change is needed, repeat the current value unchanged.',
+        '- For boolean-condition variables: return true if the condition is met, otherwise false.',
+        '- The JSON object MUST contain one key for every update variable AND every boolean-condition variable.',
+    ].join('\n'),
 ];
 
 // key (the settings field) -> { label, current, past, version }

@@ -26,9 +26,9 @@ describe('built-in versions', () => {
     it('every version of each built-in prompt is pinned', () => {
         const all = (key) => [...PROMPT_DEFAULTS[key].past, PROMPT_DEFAULTS[key].current].map(hash);
         expect(all('promptedHeader')).toEqual(['b6dc61643f38', 'e09cc8061100', 'ef6a4374fd3c', 'a1228e075ff9', 'b635ad96bc38']);
-        expect(all('promptedRules')).toEqual(['717104ea31f0', 'bb9fad04b900']);
+        expect(all('promptedRules')).toEqual(['717104ea31f0', 'bb9fad04b900', '20bd64b60a2b']);
         expect(PROMPT_DEFAULTS.promptedHeader.version).toBe(5);
-        expect(PROMPT_DEFAULTS.promptedRules.version).toBe(2);
+        expect(PROMPT_DEFAULTS.promptedRules.version).toBe(3);
     });
 
     it('a fresh install stores no prompt text', () => {

@@ -360,6 +360,16 @@ describe('runtime state', () => {
         expect(C.getCharacter('chat-2', rhys.id).runtime.thought).toBeNull();
     });
 
+    it('an empty thought keeps the last one (a small model skipping it) - the card never blanks', () => {
+        const rhys = C.createCharacter(story.id, { name: 'Rhys' });
+        C.markCharacterPresent(CHAT, rhys.id);
+        C.applyRuntimeUpdates(CHAT, { [rhys.id]: { thought: 'Where is she?' } });
+        C.applyRuntimeUpdates(CHAT, { [rhys.id]: { thought: '' } });
+        expect(C.getCharacter(CHAT, rhys.id).runtime.thought).toBe('Where is she?');
+        C.applyRuntimeUpdates(CHAT, { [rhys.id]: { thought: 'Found her.' } });
+        expect(C.getCharacter(CHAT, rhys.id).runtime.thought).toBe('Found her.');
+    });
+
     it('an enum answer off the list keeps the previous value; an empty one clears it; numbers are clamped to min/max', () => {
         C.setRuntimeFields(story.id, [{ name: 'amorousness', type: 'number', min: 0, max: 100 }]);
         const rhys = C.createCharacter(story.id, { name: 'Rhys' });
@@ -463,7 +473,8 @@ describe('runtime state', () => {
         await runPromptedStateUpdate('ai');
         await vi.waitFor(() => expect(callBackgroundLLM).toHaveBeenCalled());
         const prompt = callBackgroundLLM.mock.calls[0][2][0].content;
-        expect(prompt).toContain('"thought": short text, new for this turn');
+        expect(prompt).toContain('"thought": short text, NEW EACH TURN');
+        expect(prompt).toContain('write a new thought for every character, never empty');
         expect(prompt).toContain('currently {"Rhys":{"mood":"Sad","intent":null}}');
         expect(prompt).not.toContain('Old thought.');
     });
