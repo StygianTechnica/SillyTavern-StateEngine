@@ -449,4 +449,22 @@ describe('runtime state', () => {
         expect(C.getCharacter(CHAT, rhys.id).runtime).toMatchObject({ present: true, mood: 'Curious', intent: 'Find Mara', custom: { amorousness: 40 } });
         expect(C.getCharacter(CHAT, mara.id).runtime.thought).toBeNull(); // not in the list
     });
+
+    // A real chat (2026-10-09): a small model answers in the shape of
+    // "currently" - a thought left out of it once (empty) was never answered
+    // again, and a thought shown in it was copied back word for word.
+    it('"currently" never shows the thought, and shows every other prompted field, empty ones as null', async () => {
+        listVar();
+        const rhys = C.createCharacter(story.id, { name: 'Rhys' });
+        C.markCharacterPresent(CHAT, rhys.id);
+        C.applyRuntimeUpdates(CHAT, { [rhys.id]: { thought: 'Old thought.', mood: 'Sad' } });
+        context.chat = [{ is_user: false, name: 'GM', mes: 'Rhys leans on the bar.' }];
+        callBackgroundLLM.mockResolvedValue(JSON.stringify({ pp__cast: ['Rhys'] }));
+        await runPromptedStateUpdate('ai');
+        await vi.waitFor(() => expect(callBackgroundLLM).toHaveBeenCalled());
+        const prompt = callBackgroundLLM.mock.calls[0][2][0].content;
+        expect(prompt).toContain('"thought": short text, new for this turn');
+        expect(prompt).toContain('currently {"Rhys":{"mood":"Sad","intent":null}}');
+        expect(prompt).not.toContain('Old thought.');
+    });
 });

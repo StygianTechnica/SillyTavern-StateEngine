@@ -1184,13 +1184,43 @@ function parseDeltaFor(calendar, delta) {
         return parseDeltaText(calendar, delta, lowered);
     } catch (err) {
         const narrative = normalizeNarrativeDelta(calendar, lowered);
-        if (narrative === null || narrative === lowered) throw err;
-        try {
-            return parseDeltaText(calendar, delta, narrative);
-        } catch {
-            throw err;
+        if (narrative !== null && narrative !== lowered) {
+            try {
+                return parseDeltaText(calendar, delta, narrative);
+            } catch {
+                // fall through to the leading part
+            }
+        }
+        const leading = parseLeadingDelta(calendar, delta, lowered);
+        if (leading) return leading;
+        throw err;
+    }
+}
+
+// Trailing context after a duration (2026-10-09, spec 1.39): "a few minutes
+// since Lucian left the gym", "about an hour after the fight" - the longest
+// leading part that reads as a duration, as written or normalized. The part
+// dropped must start with a plain word - not a number or a unit: "1h 2" is a
+// malformed duration, not "1h" and some context. Never a bare number (that
+// would be seconds): "3 more for the road" is not 3 seconds. Null when no
+// leading part reads as one.
+function parseLeadingDelta(calendar, delta, lowered) {
+    const words = lowered.replace(/[.!?]+$/, '').split(/\s+/);
+    for (let n = words.length - 1; n >= 1; n--) {
+        const next = words[n].replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '');
+        if (!/^[a-z]/.test(next) || /^\d/.test(normalizeWordNumbers(next)) || lookupUnit(calendar, next)) continue;
+        const head = words.slice(0, n).join(' ').replace(/[,;:\-–—]+$/, '').trim();
+        const narrative = normalizeNarrativeDelta(calendar, head);
+        for (const text of [head, narrative]) {
+            if (!text || /^[\d.\s+-]+$/.test(normalizeWordNumbers(text))) continue;
+            try {
+                return parseDeltaText(calendar, delta, text);
+            } catch {
+                // a shorter part next
+            }
         }
     }
+    return null;
 }
 
 // parseDeltaFor()'s grammar for one lowercased text. `delta` is the original,

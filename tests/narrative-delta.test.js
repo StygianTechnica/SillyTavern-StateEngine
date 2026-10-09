@@ -63,6 +63,24 @@ describe('halves', () => {
     });
 });
 
+// A real chat (2026-10-09): the model answered "a few minutes since Lucian
+// left the gym" - the duration, then where it was counted from.
+describe('trailing context after a duration', () => {
+    it.each([
+        ['a few minutes since Lucian left the gym', 3 * 60],
+        ['about an hour since Lucian finished his gym shift', H],
+        ['2 days after the battle', 2 * D],
+        ['30 minutes, give or take', 30 * 60],
+        ['three hours 20 minutes of walking in the rain', 3 * H + 20 * 60],
+    ])('%j -> %i seconds', (text, seconds) => {
+        expect(advance(text)).toBe(seconds);
+    });
+
+    it.each(['later that afternoon', '3 more for the road', 'Lucian left the gym'])('%j is still not a duration (never a bare number of seconds)', (text) => {
+        expect(advance(text)).toBeNull();
+    });
+});
+
 describe('unchanged', () => {
     it('text that already parsed means the same thing', () => {
         expect(advance('1d 2h')).toBe(D + 2 * H);

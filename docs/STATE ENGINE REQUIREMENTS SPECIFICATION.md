@@ -2791,6 +2791,11 @@ duration even if it is not exact.
   the year / number of months or seasons). "Half a month" = 15 days on
   Gregorian; "0.5y" = 6 months. A fraction follows the unit an alias names:
   half a "moon" on a calendar whose moon is a 28-day cycle is 14 days.
+- Trailing context is dropped (2026-10-09): "a few minutes since Lucian left
+  the gym" = 3 minutes, "about an hour after the fight" = 1 hour - the
+  longest leading part that reads as a duration. The dropped part must start
+  with a plain word ("1h 2" stays refused), and a bare number is never taken
+  as seconds ("3 more for the road" is refused).
 - Still refused: text with no duration in it ("later" alone, "no change",
   "banana days").
 
@@ -3015,6 +3020,13 @@ Character Manager's This chat view; prompted fields are read-only there
 
 The character-list prompt starts the model from the current list: keep
 everyone still present, add arrivals, remove only those who left.
+
+The "currently" value in that line (2026-10-09): every prompted field of each
+present character, an empty one as null - a small model answers in the shape
+of the current value, so a field left out once (because it was empty) was
+never answered again. The built-in thought is the exception: it is new every
+turn, so its current value is never shown (it was copied back word for word)
+and the model is asked for "short text, new for this turn".
 
 API: Section 24.5 of the API specification. Verification:
 tests/characters.test.js ("runtime state").

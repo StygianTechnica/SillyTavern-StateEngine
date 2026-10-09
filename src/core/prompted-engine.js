@@ -283,15 +283,24 @@ function applyPromptedResponse(chatId, updateVars, incrementVars, parsed, { sour
 // (the chat's setting's), with the present characters' current values.
 const RUNTIME_KEY = '__characters';
 
+// The built-in thought is new every turn (2026-10-09): its current value is
+// never shown - a small model copied it back word for word each turn - and
+// the model is asked for a fresh one.
+const FRESH_RUNTIME_FIELDS = new Set(['thought']);
+
 function describeRuntimeField(field) {
     // An enum is a closed list: quoted, "EXACTLY", and a way out other than
     // inventing a word ("Grateful" for a mood) - an off-list answer is not stored.
     const what = field.type === 'enum' ? `EXACTLY one of ${JSON.stringify(field.values)} (no other word; if none fits exactly, pick the closest)`
         : field.type === 'number' ? `number${field.min !== null && field.max !== null ? ` from ${field.min} to ${field.max}` : ''}`
-            : 'short text';
+            : FRESH_RUNTIME_FIELDS.has(field.name) ? 'short text, new for this turn' : 'short text';
     return `"${field.name}": ${what}${field.description ? ` - ${field.description}` : ''}`;
 }
 
+// "currently" holds every prompted field but the fresh ones, an empty one as
+// null (2026-10-09): a small model answers in the shape of the current value,
+// so a field missing from it once (left out because empty) was never answered
+// again - every field stays visible.
 function runtimeLine(chatId, listDefs) {
     const fields = getRuntimeFields(getChatSetting(chatId) ?? DEFAULT_SETTING_ID).filter((f) => f.prompted);
     if (fields.length === 0) return '';
@@ -300,8 +309,9 @@ function runtimeLine(chatId, listDefs) {
         if (!c.runtime?.present) continue;
         const values = {};
         for (const f of fields) {
+            if (FRESH_RUNTIME_FIELDS.has(f.name)) continue;
             const v = ['thought', 'mood', 'intent'].includes(f.name) ? c.runtime[f.name] : c.runtime.custom?.[f.name];
-            if (v !== null && v !== undefined) values[f.name] = v;
+            values[f.name] = v ?? null;
         }
         current[c.name] = values;
     }

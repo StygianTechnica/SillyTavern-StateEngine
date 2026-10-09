@@ -19,6 +19,11 @@
 
 **Fixed**
 
+- **Character thoughts stopped updating:** the prompt's "currently" value now always lists every
+  prompted runtime field (empty ones as null), so a field can't drop out of the answers; the
+  thought is never shown there (it was being copied back) and is asked for fresh each turn.
+- **Durations followed by context are understood:** "a few minutes since Lucian left the gym" is
+  3 minutes - a deltatime answer like that no longer sticks in the variable unread.
 - **Runtime enum fields (mood) answered off the list:** the prompt now gives an enum as a closed
   list (`EXACTLY one of ["Neutral", ...]`, pick the closest when none fits), and an off-list
   answer keeps the previous value instead of clearing it. Requirements spec 1.43.
