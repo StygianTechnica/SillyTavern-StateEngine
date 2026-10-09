@@ -139,6 +139,9 @@ export function describeConstraint(def) {
         // answer [] or only the newest arrival.
         return 'list of the characters in the scene right now, each by name exactly as the story calls them. '
             + 'Start from the current list: keep everyone still present, add anyone who arrived, remove only those who left. '
+            + 'Do NOT include groups, crowds, background extras, plural nouns, or generic roles (e.g. “patrons”, “guards”, '
+            + '“reception staff”, “people”, “students”). Only include a person if the story treats them as a specific individual'
+            + '(named or uniquely described).' 
             + 'Reply with a full JSON array of names (e.g. ["Kael","the stranger"]); [] only if nobody at all is in the scene';
     }
     if (def.type === 'array') {
