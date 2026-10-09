@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased — Character runtime state
+
+**Added**
+
+- **Runtime state per character, per chat:** present, thought, mood, intent and your own
+  fields. Ephemeral - never stored in a setting, cleared when a character leaves the scene,
+  overwritten each turn. Requirements spec 1.43.
+- **Runtime fields per setting:** the built-in thought, mood (an enum with editable values) and
+  intent, plus custom string / number / enum fields, each prompted or set by hand. Edited in the
+  Character Manager's Runtime fields tab.
+- **Same call:** when a prompted character list is updated, the model also answers each named
+  character's prompted runtime fields (the `__characters` key) - no extra request.
+- Character API: `getCharacterRuntimeFields`, `setCharacterRuntimeFields`,
+  `setCharacterRuntimeValue` (API specification 24.5).
+
+**Changed**
+
+- The character-list prompt now tells the model to start from the current list (keep those
+  still present, add arrivals, remove only those who left).
+
+**Tests:** 51 files, 2046 tests.
+
 ## Unreleased — Characters and settings
 
 **Added**

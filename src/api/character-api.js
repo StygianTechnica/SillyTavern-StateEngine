@@ -27,6 +27,10 @@
 //   resolveCharacter(chatId, sourceId, targetId)  a detection that is really
 //                               someone known: its name becomes their alias,
 //                               variables follow, they are confirmed
+// Runtime state (spec 1.43) - per chat, ephemeral; which fields exist is per setting
+//   getCharacterRuntimeFields(settingId) / setCharacterRuntimeFields(settingId, fields)
+//   setCharacterRuntimeValue(chatId, id, field, value)   a NON-prompted field, by hand
+//   (a character's current values: character.runtime = { present, thought, mood, intent, custom })
 // Variants
 //   addCharacterVariant / updateCharacterVariant / deleteCharacterVariant /
 //   setCharacterActiveVariant (one active variant per character, for its setting)
@@ -162,6 +166,28 @@ export function confirmCharacter(extensionId, instanceId, chatId, id, options = 
 // (and so in the setting). Returns the target, or null.
 export function resolveCharacter(extensionId, instanceId, chatId, sourceId, targetId, options = {}) {
     return guard('resolveCharacter', extensionId, instanceId, () => characters.resolveCharacter(chatId || null, sourceId, targetId, options));
+}
+
+// ------------------------------------------------------------ runtime state
+
+// A setting's runtime fields: [{ name, type: 'string'|'number'|'enum', prompted,
+// description, values? (enum), min?/max? (number), builtIn }] - thought, mood
+// and intent first.
+export function getCharacterRuntimeFields(extensionId, instanceId, settingId) {
+    return guard('getCharacterRuntimeFields', extensionId, instanceId, () => characters.getRuntimeFields(settingId), []);
+}
+
+// Replaces a setting's runtime fields (the built-in thought, mood and intent
+// cannot be removed - a missing one is kept). Enum values are validated.
+// Returns the new list, or null.
+export function setCharacterRuntimeFields(extensionId, instanceId, settingId, fields) {
+    return guard('setCharacterRuntimeFields', extensionId, instanceId, () => characters.setRuntimeFields(settingId, fields));
+}
+
+// Sets one NON-prompted runtime field of a character in a chat (prompted
+// ones are written by the prompted update). Returns the character, or null.
+export function setCharacterRuntimeValue(extensionId, instanceId, chatId, id, field, value) {
+    return guard('setCharacterRuntimeValue', extensionId, instanceId, () => characters.setRuntimeValue(chatId, id, field, value));
 }
 
 // ----------------------------------------------------------------- variants

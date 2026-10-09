@@ -2970,6 +2970,47 @@ extension.
 
 API: Section 24 of the API specification. Verification: tests/characters.test.js.
 
+1.43 Character Runtime State (2026-10-08)
+
+Each character in a chat has a runtime state:
+    runtime = { present, thought, mood, intent, custom: { [field]: value } }
+It is ephemeral: stored only in the chat layer
+(variableStore.chats[chatId].characters.entries[id].runtime), never in a
+setting; cleared when the character leaves the scene (markCharacterAbsent,
+or a prompted character list that no longer names them); overwritten each
+turn by the prompted update.
+
+Runtime FIELD DEFINITIONS belong to the SETTING
+(characterSettings[id].runtimeFields). Built-ins, always present, never
+removable or renamed: thought (string), mood (enum; default values Neutral,
+Angry, Afraid, Curious, Confident, Sad, Suspicious, Determined), intent
+(string) - their type, values, description and prompted flag may be edited.
+Custom fields: name ^[a-z][a-z0-9_]{0,39}$ (not "present", unique), type
+string | number | enum, a description, a prompted flag; an enum needs 1-30
+unique non-empty values; a number may have min < max. Invalid definitions
+are refused.
+
+Values are coerced on write: an enum matches its values case-insensitively
+(no match clears it), a number is clamped to min/max, a string is trimmed to
+200 characters.
+
+Generation: in the SAME prompted call as the variables. When a chunk holds
+a prompted character LIST (array of itemType character), the update list
+gains one line - the "__characters" key: for every character named in that
+list, an object of its PROMPTED runtime fields (the chat's setting's), with
+the present characters' current values. The answer is matched by name/alias
+and applied only to characters the list named this turn. No extra call.
+
+Non-prompted fields are set by hand (setCharacterRuntimeValue) - in the
+Character Manager's This chat view; prompted fields are read-only there
+(setting one by hand is refused).
+
+The character-list prompt starts the model from the current list: keep
+everyone still present, add arrivals, remove only those who left.
+
+API: Section 24.5 of the API specification. Verification:
+tests/characters.test.js ("runtime state").
+
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:
 

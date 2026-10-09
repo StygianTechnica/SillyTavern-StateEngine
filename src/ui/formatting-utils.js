@@ -135,8 +135,11 @@ export function describeConstraint(def) {
             + 'Reply with the name only; "" if nobody fits';
     }
     if (def.type === 'array' && def.itemType === 'character') {
-        return 'list of character names, each exactly as the story calls them. Reply with a full JSON array of names '
-            + '(e.g. ["Kael","the stranger"]); [] if nobody fits';
+        // Start from the current list (spec 1.43): small models otherwise
+        // answer [] or only the newest arrival.
+        return 'list of the characters in the scene right now, each by name exactly as the story calls them. '
+            + 'Start from the current list: keep everyone still present, add anyone who arrived, remove only those who left. '
+            + 'Reply with a full JSON array of names (e.g. ["Kael","the stranger"]); [] only if nobody at all is in the scene';
     }
     if (def.type === 'array') {
         const itemType = def.itemType || 'any';

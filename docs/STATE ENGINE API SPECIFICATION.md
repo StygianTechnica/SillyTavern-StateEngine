@@ -2474,6 +2474,9 @@ updateCharacterVariant(chatId, id, variantId, { name?, overrides? }, { settingId
 deleteCharacterVariant(chatId, id, variantId, { settingId? })
 setCharacterActiveVariant(chatId, id, variantId | null, { settingId? })
 registerCharacterManager(opener) / openCharacterManager(options) / hasCharacterManager()
+getCharacterRuntimeFields(settingId)         built-ins (thought, mood, intent) first, flagged builtIn
+setCharacterRuntimeFields(settingId, fields) replaces the custom ones (built-ins kept); validated; returns the list
+setCharacterRuntimeValue(chatId, id, field, value)   a NON-prompted field only; returns the character
 ```
 
 `chatId` may be null with `{ settingId }` to act on a setting's character
@@ -2492,3 +2495,14 @@ Manager on the unconfirmed characters).
 **24.4 Verification**
 
 `tests/characters.test.js`.
+
+**24.5 Runtime state** (requirements spec 1.43)
+
+A character returned with a `chatId` carries
+`runtime: { present, thought, mood, intent, custom: { [field]: value } }` -
+chat-only, cleared when absent. A runtime field:
+`{ name, type: 'string'|'number'|'enum', prompted, description, values?, min?, max?, builtIn }`.
+Prompted fields are written by the prompted update through the
+`"__characters"` key (added when a chunk has a character list, for the
+characters it names); values are coerced (enum case-insensitive, number
+clamped, string at most 200 characters).

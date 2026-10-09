@@ -14,7 +14,10 @@ import { setStatus } from '../ui/settings-panel-ui.js';
 import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
 import { chunkPromptUnits } from './prompt-chunking.js';
 import { isCharacterDefinition, characterValueText } from './character-display.js';
-import { resolveCharacterNames, applyPresence, ensureChatSetting } from './characters.js';
+import {
+    resolveCharacterNames, applyPresence, ensureChatSetting, getChatSetting, getRuntimeFields, listCharacters, getCharacterByAlias,
+    applyRuntimeUpdates, DEFAULT_SETTING_ID,
+} from './characters.js';
 import { askChatSetting } from '../ui/setting-prompt.js';
 
 export function shouldSkipPromptedRefresh(def) {
@@ -141,6 +144,9 @@ export function chunkPromptedVariables(chatId, updateVars, incrementVars, maxCha
 // this same response from being written.
 function applyPromptedResponse(chatId, updateVars, incrementVars, parsed, { source = '' } = {}) {
     let updatedCount = 0;
+    // Characters named in a character LIST this turn - the present ones,
+    // whose runtime state the "__characters" answer carries (spec 1.43).
+    const listedIds = new Set();
     for (const def of updateVars) {
         try {
             if (!Object.prototype.hasOwnProperty.call(parsed, def.name)) continue;
@@ -162,6 +168,7 @@ function applyPromptedResponse(chatId, updateVars, incrementVars, parsed, { sour
                 const value = def.type === 'character' ? (ids[0] ?? '') : ids;
                 const previous = def.type === 'character' ? (before ? [before] : []) : (Array.isArray(before) ? before : []);
                 applyPresence(chatId, ids, def.type === 'character' ? [] : previous.filter((id) => !ids.includes(id)));
+                if (def.type === 'array') for (const id of ids) listedIds.add(id);
                 setVar(chatId, def.name, value, def);
                 recalculateDependents(chatId, def.name);
                 updatedCount++;
@@ -233,6 +240,21 @@ function applyPromptedResponse(chatId, updateVars, incrementVars, parsed, { sour
         }
     }
 
+    // Runtime state (spec 1.43): the answer's "__characters" object, by name,
+    // for the characters present this turn only.
+    if (listedIds.size && parsed[RUNTIME_KEY] && typeof parsed[RUNTIME_KEY] === 'object' && !Array.isArray(parsed[RUNTIME_KEY])) {
+        try {
+            const updates = {};
+            for (const [name, fields] of Object.entries(parsed[RUNTIME_KEY])) {
+                const match = getCharacterByAlias(chatId, name);
+                if (match && listedIds.has(match.id)) updates[match.id] = fields;
+            }
+            applyRuntimeUpdates(chatId, updates);
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'character runtime update failed (gracefully handled)', err);
+        }
+    }
+
     let incrementedCount = 0;
     for (const def of incrementVars) {
         try {
@@ -255,9 +277,49 @@ function applyPromptedResponse(chatId, updateVars, incrementVars, parsed, { sour
 // status message by the caller - this function's own job is just the one
 // call/parse/apply cycle, so it can be awaited per-chunk in a sequential
 // loop without duplicating that error handling at every call site).
+// Character runtime state (spec 1.43): one more line in the update list when
+// this chunk has a prompted character LIST - the "__characters" key: for
+// every character the model names in that list, its PROMPTED runtime fields
+// (the chat's setting's), with the present characters' current values.
+const RUNTIME_KEY = '__characters';
+
+function describeRuntimeField(field) {
+    const what = field.type === 'enum' ? `one of: ${field.values.join(', ')}`
+        : field.type === 'number' ? `number${field.min !== null && field.max !== null ? ` from ${field.min} to ${field.max}` : ''}`
+            : 'short text';
+    return `"${field.name}": ${what}${field.description ? ` - ${field.description}` : ''}`;
+}
+
+function runtimeLine(chatId, listDefs) {
+    const fields = getRuntimeFields(getChatSetting(chatId) ?? DEFAULT_SETTING_ID).filter((f) => f.prompted);
+    if (fields.length === 0) return '';
+    const current = {};
+    for (const c of listCharacters(chatId)) {
+        if (!c.runtime?.present) continue;
+        const values = {};
+        for (const f of fields) {
+            const v = ['thought', 'mood', 'intent'].includes(f.name) ? c.runtime[f.name] : c.runtime.custom?.[f.name];
+            if (v !== null && v !== undefined) values[f.name] = v;
+        }
+        current[c.name] = values;
+    }
+    const lists = listDefs.map((d) => `"${d.name}"`).join(' and ');
+    return `- "${RUNTIME_KEY}" [object with one entry per character named in ${lists}, keyed by that name: {"<name>": {${fields.map(describeRuntimeField).join(', ')}}}] `
+        + `currently ${JSON.stringify(current)}. Each character's state right now - keep every value short; a mood is one of the listed values; never change who they are.`;
+}
+
 async function runPromptedChunk(context, settings, contextSection, chunk) {
     const chatId = context.chatId;
-    const { updateVars, updateVarLines, incrementVars, incrementVarLines } = chunk;
+    const { updateVars, incrementVars, incrementVarLines } = chunk;
+    let { updateVarLines } = chunk;
+    // A character answer needs the chat's setting (asked on first use) - its
+    // runtime fields too, so before the prompt is built.
+    if (updateVars.some(isCharacterDefinition)) await ensureChatSetting(chatId, askChatSetting);
+    const listDefs = updateVars.filter((def) => def.type === 'array' && def.itemType === 'character');
+    if (listDefs.length) {
+        const line = runtimeLine(chatId, listDefs);
+        if (line) updateVarLines = `${updateVarLines}\n${line}`;
+    }
 
     const promptSections = [
         settings.promptedHeader || DEFAULT_PROMPTED_HEADER,
@@ -280,8 +342,6 @@ async function runPromptedChunk(context, settings, contextSection, chunk) {
         console.warn(LOG_PREFIX, 'could not parse a JSON object from the model response:', raw);
         throw new Error('response was not valid JSON');
     }
-    // A character answer needs the chat's setting (asked on first use).
-    if (updateVars.some(isCharacterDefinition)) await ensureChatSetting(chatId, askChatSetting);
     const latest = Array.isArray(context.chat) ? context.chat[context.chat.length - 1] : null;
     return applyPromptedResponse(chatId, updateVars, incrementVars, parsed, { source: typeof latest?.mes === 'string' ? latest.mes : '' });
 }

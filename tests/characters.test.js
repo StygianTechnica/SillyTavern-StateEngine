@@ -319,3 +319,92 @@ describe('migration to "confirmed <=> in the setting"', () => {
         expect(C.migrateCharacterData()).toBe(0);
     });
 });
+
+// Requirements spec 1.43: runtime state - per chat, ephemeral, fields per setting.
+describe('runtime state', () => {
+    const listVar = () => {
+        api('createPreset', { namespace: 'pp', name: 'Scene' });
+        api('activatePreset', CHAT, 'pp', 'Scene');
+        api('createVariable', { namespace: 'pp', presetName: 'Scene', name: 'cast', type: 'array', itemType: 'character', behaviors: { prompted: true, increment: false }, prompted: { instructions: 'who is present' } });
+    };
+
+    it('every setting starts with thought, mood (enum) and intent', () => {
+        expect(C.getRuntimeFields(story.id).map((f) => [f.name, f.type, f.prompted, f.builtIn])).toEqual([
+            ['thought', 'string', true, true], ['mood', 'enum', true, true], ['intent', 'string', true, true],
+        ]);
+        expect(C.getRuntimeFields(story.id)[1].values).toEqual([...C.DEFAULT_MOODS]);
+    });
+
+    it('custom fields are added and removed; built-ins stay; enum values and names are validated', () => {
+        const fields = C.setRuntimeFields(story.id, [
+            { name: 'amorousness', type: 'number', prompted: true, min: 0, max: 100 },
+            { name: 'fear_level', type: 'enum', prompted: false, values: ['Low', 'Medium', 'High'] },
+        ]);
+        expect(fields.map((f) => f.name)).toEqual(['thought', 'mood', 'intent', 'amorousness', 'fear_level']);
+        expect(C.setRuntimeFields(story.id, []).map((f) => f.name)).toEqual(['thought', 'mood', 'intent']);
+        expect(() => C.setRuntimeFields(story.id, [{ name: 'x', type: 'enum', values: [] }])).toThrow(/no values/);
+        expect(() => C.setRuntimeFields(story.id, [{ name: 'x', type: 'enum', values: ['A', 'a'] }])).toThrow(/twice/);
+        expect(() => C.setRuntimeFields(story.id, [{ name: 'Bad Name' }])).toThrow(/not valid/);
+        expect(() => C.setRuntimeFields(story.id, [{ name: 'present' }])).toThrow(/presence/);
+        expect(api('setCharacterRuntimeFields', story.id, [{ name: 'x', type: 'colour' }])).toBeNull();
+    });
+
+    it('runtime lives in the chat, never in the setting; outside a chat it is null', () => {
+        const rhys = C.createCharacter(story.id, { name: 'Rhys' });
+        C.markCharacterPresent(CHAT, rhys.id);
+        C.applyRuntimeUpdates(CHAT, { [rhys.id]: { thought: 'Trust no one.', mood: 'suspicious', intent: 'Watch the door' } });
+        expect(C.getCharacter(CHAT, rhys.id).runtime).toEqual({ present: true, thought: 'Trust no one.', mood: 'Suspicious', intent: 'Watch the door', custom: {} });
+        expect(C.getCharacter(null, rhys.id, story.id).runtime).toBeNull();
+        expect(JSON.stringify(settings.get().variableStore.characterSettings[story.id].characters)).not.toContain('Trust no one');
+        C.setChatSetting('chat-2', story.id);
+        expect(C.getCharacter('chat-2', rhys.id).runtime.thought).toBeNull();
+    });
+
+    it('an invalid enum value clears the field; numbers are clamped to min/max', () => {
+        C.setRuntimeFields(story.id, [{ name: 'amorousness', type: 'number', min: 0, max: 100 }]);
+        const rhys = C.createCharacter(story.id, { name: 'Rhys' });
+        C.applyRuntimeUpdates(CHAT, { [rhys.id]: { mood: 'Elated', amorousness: 250 } });
+        expect(C.getCharacter(CHAT, rhys.id).runtime).toMatchObject({ mood: null, custom: { amorousness: 100 } });
+    });
+
+    it('leaving the scene clears runtime', () => {
+        const rhys = C.createCharacter(story.id, { name: 'Rhys' });
+        C.markCharacterPresent(CHAT, rhys.id);
+        C.applyRuntimeUpdates(CHAT, { [rhys.id]: { thought: 'Hm.' } });
+        C.markCharacterAbsent(CHAT, rhys.id);
+        expect(C.getCharacter(CHAT, rhys.id).runtime).toMatchObject({ present: false, thought: null });
+    });
+
+    it('non-prompted fields are set by hand; prompted ones are refused', () => {
+        C.setRuntimeFields(story.id, [{ name: 'fear_level', type: 'enum', prompted: false, values: ['Low', 'High'] }]);
+        const rhys = C.createCharacter(story.id, { name: 'Rhys' });
+        expect(api('setCharacterRuntimeValue', CHAT, rhys.id, 'fear_level', 'high').runtime.custom.fear_level).toBe('High');
+        expect(api('setCharacterRuntimeValue', CHAT, rhys.id, 'mood', 'Sad')).toBeNull();
+        expect(api('setCharacterRuntimeValue', CHAT, rhys.id, 'fear_level', 'Extreme')).toBeNull();
+    });
+
+    it('the prompted update asks for "__characters" and writes runtime for the characters in the list only', async () => {
+        listVar();
+        C.setRuntimeFields(story.id, [
+            { name: 'amorousness', type: 'number', prompted: true, min: 0, max: 100 },
+            { name: 'fear_level', type: 'enum', prompted: false, values: ['Low', 'High'] },
+        ]);
+        const rhys = C.createCharacter(story.id, { name: 'Rhys' });
+        const mara = C.createCharacter(story.id, { name: 'Mara' });
+        context.chat = [{ is_user: false, name: 'GM', mes: 'Rhys leans on the bar.' }];
+        callBackgroundLLM.mockResolvedValue(JSON.stringify({
+            pp__cast: ['Rhys'],
+            __characters: { Rhys: { thought: 'Where is she?', mood: 'Curious', intent: 'Find Mara', amorousness: '40' }, Mara: { thought: 'not here' } },
+        }));
+        await runPromptedStateUpdate('ai');
+        await vi.waitFor(() => expect(C.getCharacter(CHAT, rhys.id).runtime.thought).toBe('Where is she?'));
+        const prompt = callBackgroundLLM.mock.calls[0][2][0].content;
+        expect(prompt).toContain('"__characters"');
+        expect(prompt).toContain('"mood": one of: Neutral, Angry');
+        expect(prompt).toContain('"amorousness": number from 0 to 100');
+        expect(prompt).not.toContain('fear_level');
+        expect(prompt).toContain('Start from the current list');
+        expect(C.getCharacter(CHAT, rhys.id).runtime).toMatchObject({ present: true, mood: 'Curious', intent: 'Find Mara', custom: { amorousness: 40 } });
+        expect(C.getCharacter(CHAT, mara.id).runtime.thought).toBeNull(); // not in the list
+    });
+});

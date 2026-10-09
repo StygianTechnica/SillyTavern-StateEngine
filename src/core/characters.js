@@ -40,6 +40,17 @@
 //
 // Variable values hold character ids (a character variable one id, an array
 // of item type character a list); character-display.js shows names.
+//
+// RUNTIME STATE (spec 1.43): per chat, ephemeral - never in a setting. Each
+// character in a chat has runtime = { present, thought, mood, intent,
+// custom: { [field]: value } }, overwritten each turn by the prompted update
+// (for the characters named in a prompted character list) and cleared when
+// the character is not present. WHICH fields exist is per setting
+// (setting.runtimeFields): the built-in thought, mood and intent, plus the
+// user's own; each is a string, number or enum, prompted or not (a
+// non-prompted field is set by hand in the Character Manager, or through
+// the API). Stored on the chat's entry: entries[id].runtime = { thought,
+// mood, intent, custom } (present stays entries[id].present).
 
 import { LOG_PREFIX, BUILTIN_NAMESPACE, getSettings, persistSettings } from './settings-core.js';
 import { loadChatState, saveChatState, hydrateMacroStoreForChat } from './chat-state.js';
@@ -134,6 +145,173 @@ export function normalizeCharacter(raw, id = raw?.id) {
     return out;
 }
 
+// ------------------------------------------------------- runtime fields
+
+export const RUNTIME_FIELD_TYPES = Object.freeze(['string', 'number', 'enum']);
+export const BUILT_IN_RUNTIME_FIELDS = Object.freeze(['thought', 'mood', 'intent']);
+export const DEFAULT_MOODS = Object.freeze(['Neutral', 'Angry', 'Afraid', 'Curious', 'Confident', 'Sad', 'Suspicious', 'Determined']);
+const RUNTIME_FIELD_NAME = /^[a-z][a-z0-9_]{0,39}$/;
+const MAX_RUNTIME_TEXT = 200;
+const MAX_ENUM_VALUES = 30;
+
+export function defaultRuntimeFields() {
+    return {
+        thought: { name: 'thought', type: 'string', prompted: true, description: 'A short internal thought, in their voice (under 20 words).' },
+        mood: { name: 'mood', type: 'enum', prompted: true, values: [...DEFAULT_MOODS], description: 'Their mood right now.' },
+        intent: { name: 'intent', type: 'string', prompted: true, description: 'A short phrase: what they mean to do next.' },
+    };
+}
+
+// One runtime field definition, validated. Throws with a reason.
+function normalizeRuntimeField(raw, what = 'runtime field') {
+    if (!isObject(raw)) throw new Error(`${what} must be an object`);
+    const name = typeof raw.name === 'string' ? raw.name.trim() : '';
+    if (!RUNTIME_FIELD_NAME.test(name)) throw new Error(`${what} name ${JSON.stringify(raw.name)} is not valid - lowercase letters, digits and _, starting with a letter (max 40)`);
+    if (name === 'present') throw new Error('"present" is not a runtime field you define - it is the character\'s presence');
+    const type = raw.type ?? 'string';
+    if (!RUNTIME_FIELD_TYPES.includes(type)) throw new Error(`runtime field "${name}" has unknown type ${JSON.stringify(type)} (string, number or enum)`);
+    const out = { name, type, prompted: raw.prompted !== false, description: text(raw.description, 300) };
+    if (type === 'enum') {
+        const values = [];
+        for (const v of Array.isArray(raw.values) ? raw.values : []) {
+            const value = text(typeof v === 'string' ? v : String(v ?? ''), 60);
+            if (!value) continue;
+            if (values.some((x) => x.toLowerCase() === value.toLowerCase())) throw new Error(`runtime field "${name}" lists "${value}" twice`);
+            values.push(value);
+        }
+        if (values.length === 0) throw new Error(`runtime field "${name}" is an enum but has no values`);
+        if (values.length > MAX_ENUM_VALUES) throw new Error(`runtime field "${name}" has more than ${MAX_ENUM_VALUES} values`);
+        out.values = values;
+    }
+    if (type === 'number') {
+        const min = Number.isFinite(raw.min) ? raw.min : null;
+        const max = Number.isFinite(raw.max) ? raw.max : null;
+        if (min !== null && max !== null && min >= max) throw new Error(`runtime field "${name}": min must be below max`);
+        out.min = min;
+        out.max = max;
+    }
+    return out;
+}
+
+// A setting's runtime fields, built-ins first then the user's, in order:
+// [{ name, type, prompted, description, values?, min?, max?, builtIn }].
+export function getRuntimeFields(settingId) {
+    const setting = settingStore()[settingId];
+    if (!setting) return [];
+    const fields = Object.values(setting.runtimeFields);
+    const order = (f) => (BUILT_IN_RUNTIME_FIELDS.includes(f.name) ? BUILT_IN_RUNTIME_FIELDS.indexOf(f.name) : 100);
+    return fields
+        .map((f, i) => ({ ...structuredClone(f), builtIn: BUILT_IN_RUNTIME_FIELDS.includes(f.name), _i: i }))
+        .sort((a, b) => order(a) - order(b) || a._i - b._i)
+        .map(({ _i, ...f }) => f);
+}
+
+// Replaces a setting's runtime fields with `fields` (validated - throws).
+// The built-in thought, mood and intent cannot be removed (a missing one
+// keeps its current definition); their type, values, description and
+// prompted switch can change. Returns the new list.
+export function setRuntimeFields(settingId, fields) {
+    const setting = settingStore()[settingId];
+    if (!setting) throw new Error(`setting ${JSON.stringify(settingId)} does not exist`);
+    if (!Array.isArray(fields)) throw new Error('runtime fields must be an array');
+    const next = {};
+    fields.forEach((raw, i) => {
+        const field = normalizeRuntimeField(raw, `runtime field #${i + 1}`);
+        if (next[field.name]) throw new Error(`runtime field "${field.name}" is listed twice`);
+        next[field.name] = field;
+    });
+    for (const name of BUILT_IN_RUNTIME_FIELDS) {
+        if (!next[name]) next[name] = setting.runtimeFields[name] ?? defaultRuntimeFields()[name];
+    }
+    setting.runtimeFields = next;
+    persistSettings();
+    changed(null);
+    return getRuntimeFields(settingId);
+}
+
+// A runtime value for `field`, or null when it is not a valid one (enum: one
+// of the values, case-insensitive, given back as defined; number: finite,
+// within min/max; string: trimmed, at most MAX_RUNTIME_TEXT characters).
+export function coerceRuntimeValue(field, raw) {
+    if (raw === null || raw === undefined || raw === '') return null;
+    if (field.type === 'number') {
+        const n = typeof raw === 'number' ? raw : Number(String(raw).trim());
+        if (!Number.isFinite(n)) return null;
+        return Math.min(field.max ?? Infinity, Math.max(field.min ?? -Infinity, n));
+    }
+    const value = String(raw).trim();
+    if (!value) return null;
+    if (field.type === 'enum') return field.values.find((v) => v.toLowerCase() === value.toLowerCase()) ?? null;
+    return value.length > MAX_RUNTIME_TEXT ? `${value.slice(0, MAX_RUNTIME_TEXT - 1).trim()}…` : value;
+}
+
+function emptyRuntime() {
+    return { thought: null, mood: null, intent: null, custom: {} };
+}
+
+// A character's runtime in a chat, by the chat's setting's fields:
+// { present, thought, mood, intent, custom: { [field]: value } } - fields
+// the setting no longer defines are left out.
+function runtimeView(chatId, id) {
+    const entry = readChat(chatId).entries[id];
+    const stored = isObject(entry?.runtime) ? entry.runtime : emptyRuntime();
+    const out = { present: entry?.present === true, thought: null, mood: null, intent: null, custom: {} };
+    for (const field of getRuntimeFields(effectiveSetting(chatId).id)) {
+        const value = BUILT_IN_RUNTIME_FIELDS.includes(field.name) ? stored[field.name] : stored.custom?.[field.name];
+        const clean = value === undefined ? null : coerceRuntimeValue(field, value);
+        if (BUILT_IN_RUNTIME_FIELDS.includes(field.name)) out[field.name] = clean;
+        else out.custom[field.name] = clean;
+    }
+    return out;
+}
+
+// The prompted update's runtime answer for the characters present this turn:
+// `updates` = { [characterId]: { [field]: rawValue } }. Only PROMPTED
+// fields are written (each validated; an invalid value clears it).
+export function applyRuntimeUpdates(chatId, updates) {
+    if (!chatId || !isObject(updates)) return;
+    const fields = getRuntimeFields(effectiveSetting(chatId).id).filter((f) => f.prompted);
+    writeChat(chatId, (layer) => {
+        for (const [id, raw] of Object.entries(updates)) {
+            if (!isObject(raw)) continue;
+            const entry = { present: false, matches: 0, ...(layer.entries[id] ?? {}) };
+            const runtime = isObject(entry.runtime) ? { ...entry.runtime, custom: { ...(entry.runtime.custom ?? {}) } } : emptyRuntime();
+            for (const field of fields) {
+                if (!(field.name in raw)) continue;
+                const value = coerceRuntimeValue(field, raw[field.name]);
+                if (BUILT_IN_RUNTIME_FIELDS.includes(field.name)) runtime[field.name] = value;
+                else runtime.custom[field.name] = value;
+            }
+            entry.runtime = runtime;
+            layer.entries[id] = entry;
+        }
+    });
+    changed(chatId);
+}
+
+// Sets one NON-prompted runtime field by hand (the Character Manager, or an
+// extension). Prompted fields are the prompted update's. Throws with the
+// reason; returns the character.
+export function setRuntimeValue(chatId, id, fieldName, value) {
+    if (!chatId) throw new Error('setRuntimeValue needs a chat');
+    mustLocate(chatId, id);
+    const field = getRuntimeFields(effectiveSetting(chatId).id).find((f) => f.name === fieldName);
+    if (!field) throw new Error(`runtime field ${JSON.stringify(fieldName)} is not defined in this chat's setting`);
+    if (field.prompted) throw new Error(`runtime field "${fieldName}" is prompted - the prompted update writes it`);
+    const clean = coerceRuntimeValue(field, value);
+    if (clean === null && value !== null && value !== undefined && value !== '') throw new Error(`${JSON.stringify(value)} is not a valid ${field.type} for "${fieldName}"`);
+    writeChat(chatId, (layer) => {
+        const entry = { present: false, matches: 0, ...(layer.entries[id] ?? {}) };
+        const runtime = isObject(entry.runtime) ? { ...entry.runtime, custom: { ...(entry.runtime.custom ?? {}) } } : emptyRuntime();
+        if (BUILT_IN_RUNTIME_FIELDS.includes(fieldName)) runtime[fieldName] = clean;
+        else runtime.custom[fieldName] = clean;
+        entry.runtime = runtime;
+        layer.entries[id] = entry;
+    });
+    changed(chatId);
+    return getCharacter(chatId, id);
+}
+
 // ----------------------------------------------------------------- settings
 
 function settingStore() {
@@ -141,10 +319,11 @@ function settingStore() {
     if (!isObject(store.characterSettings)) store.characterSettings = {};
     const settings = store.characterSettings;
     if (!isObject(settings[DEFAULT_SETTING_ID])) {
-        settings[DEFAULT_SETTING_ID] = { id: DEFAULT_SETTING_ID, name: 'Default', autoConfirm: true, createdAt: Date.now(), characters: {} };
+        settings[DEFAULT_SETTING_ID] = { id: DEFAULT_SETTING_ID, name: 'Default', autoConfirm: true, createdAt: Date.now(), characters: {}, runtimeFields: defaultRuntimeFields() };
     }
     for (const setting of Object.values(settings)) {
         if (!isObject(setting.characters)) setting.characters = {};
+        if (!isObject(setting.runtimeFields)) setting.runtimeFields = defaultRuntimeFields();
         // autoPromote was this option's name before confirmation and
         // promotion became one thing.
         if ('autoPromote' in setting) {
@@ -179,7 +358,7 @@ export function createSetting({ name, autoConfirm = false } = {}) {
     if (!clean) throw new Error('a setting needs a name');
     if (listSettings().some((s) => s.name.toLowerCase() === clean.toLowerCase())) throw new Error(`a setting named "${clean}" already exists`);
     const id = `set_${genId()}`;
-    settingStore()[id] = { id, name: clean, autoConfirm: autoConfirm === true, createdAt: Date.now(), characters: {} };
+    settingStore()[id] = { id, name: clean, autoConfirm: autoConfirm === true, createdAt: Date.now(), characters: {}, runtimeFields: defaultRuntimeFields() };
     persistSettings();
     changed(null);
     return getSetting(id);
@@ -333,6 +512,8 @@ function view(chatId, found) {
         settingId: found.settingId,
         present: entry?.present === true,
         matches: Number.isFinite(entry?.matches) ? entry.matches : 0,
+        // Per-chat, ephemeral state (spec 1.43); null outside a chat.
+        runtime: chatId ? runtimeView(chatId, record.id) : null,
         activeVariant: record.activeVariant,
         variants: Object.values(record.variants).map((v) => ({ id: v.id, name: v.name, overrides: structuredClone(v.overrides) })),
         base: {
@@ -484,7 +665,11 @@ export function confirmCharacter(chatId, id, options = {}) {
 function setPresence(chatId, ids, present) {
     if (!chatId || ids.length === 0) return;
     writeChat(chatId, (layer) => {
-        for (const id of ids) layer.entries[id] = { matches: 0, ...(layer.entries[id] ?? {}), present };
+        for (const id of ids) {
+            layer.entries[id] = { matches: 0, ...(layer.entries[id] ?? {}), present };
+            // Runtime state belongs to the scene: gone when they leave it.
+            if (!present) layer.entries[id].runtime = emptyRuntime();
+        }
     });
     changed(chatId);
 }
@@ -715,7 +900,11 @@ export function applyPresence(chatId, presentIds = [], absentIds = []) {
     const present = new Set(presentIds);
     writeChat(chatId, (layer) => {
         for (const id of present) layer.entries[id] = { matches: 0, ...(layer.entries[id] ?? {}), present: true };
-        for (const id of absentIds) if (!present.has(id) && layer.entries[id]) layer.entries[id].present = false;
+        for (const id of absentIds) {
+            if (present.has(id) || !layer.entries[id]) continue;
+            layer.entries[id].present = false;
+            layer.entries[id].runtime = emptyRuntime();
+        }
     });
     changed(chatId);
 }
