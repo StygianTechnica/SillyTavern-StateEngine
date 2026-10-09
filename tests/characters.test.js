@@ -360,11 +360,16 @@ describe('runtime state', () => {
         expect(C.getCharacter('chat-2', rhys.id).runtime.thought).toBeNull();
     });
 
-    it('an invalid enum value clears the field; numbers are clamped to min/max', () => {
+    it('an enum answer off the list keeps the previous value; an empty one clears it; numbers are clamped to min/max', () => {
         C.setRuntimeFields(story.id, [{ name: 'amorousness', type: 'number', min: 0, max: 100 }]);
         const rhys = C.createCharacter(story.id, { name: 'Rhys' });
         C.applyRuntimeUpdates(CHAT, { [rhys.id]: { mood: 'Elated', amorousness: 250 } });
         expect(C.getCharacter(CHAT, rhys.id).runtime).toMatchObject({ mood: null, custom: { amorousness: 100 } });
+        C.applyRuntimeUpdates(CHAT, { [rhys.id]: { mood: 'Sad' } });
+        C.applyRuntimeUpdates(CHAT, { [rhys.id]: { mood: 'Resigned' } });
+        expect(C.getCharacter(CHAT, rhys.id).runtime.mood).toBe('Sad');
+        C.applyRuntimeUpdates(CHAT, { [rhys.id]: { mood: '' } });
+        expect(C.getCharacter(CHAT, rhys.id).runtime.mood).toBeNull();
     });
 
     it('leaving the scene clears runtime', () => {
@@ -400,7 +405,8 @@ describe('runtime state', () => {
         await vi.waitFor(() => expect(C.getCharacter(CHAT, rhys.id).runtime.thought).toBe('Where is she?'));
         const prompt = callBackgroundLLM.mock.calls[0][2][0].content;
         expect(prompt).toContain('"__characters"');
-        expect(prompt).toContain('"mood": one of: Neutral, Angry');
+        expect(prompt).toContain('"mood": EXACTLY one of ["Neutral","Angry","Afraid","Curious","Confident","Sad","Suspicious","Determined"] (no other word; if none fits exactly, pick the closest)');
+        expect(prompt).toContain('must be one of those values, spelled as shown');
         expect(prompt).toContain('"amorousness": number from 0 to 100');
         expect(prompt).not.toContain('fear_level');
         expect(prompt).toContain('Start from the current list');

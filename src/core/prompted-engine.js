@@ -284,7 +284,9 @@ function applyPromptedResponse(chatId, updateVars, incrementVars, parsed, { sour
 const RUNTIME_KEY = '__characters';
 
 function describeRuntimeField(field) {
-    const what = field.type === 'enum' ? `one of: ${field.values.join(', ')}`
+    // An enum is a closed list: quoted, "EXACTLY", and a way out other than
+    // inventing a word ("Grateful" for a mood) - an off-list answer is not stored.
+    const what = field.type === 'enum' ? `EXACTLY one of ${JSON.stringify(field.values)} (no other word; if none fits exactly, pick the closest)`
         : field.type === 'number' ? `number${field.min !== null && field.max !== null ? ` from ${field.min} to ${field.max}` : ''}`
             : 'short text';
     return `"${field.name}": ${what}${field.description ? ` - ${field.description}` : ''}`;
@@ -305,7 +307,7 @@ function runtimeLine(chatId, listDefs) {
     }
     const lists = listDefs.map((d) => `"${d.name}"`).join(' and ');
     return `- "${RUNTIME_KEY}" [object with one entry per character named in ${lists}, keyed by that name: {"<name>": {${fields.map(describeRuntimeField).join(', ')}}}] `
-        + `currently ${JSON.stringify(current)}. Each character's state right now - keep every value short; a mood is one of the listed values; never change who they are.`;
+        + `currently ${JSON.stringify(current)}. Each character's state right now - keep every value short; a field listed with EXACTLY one of [...] must be one of those values, spelled as shown; never change who they are.`;
 }
 
 async function runPromptedChunk(context, settings, contextSection, chunk) {

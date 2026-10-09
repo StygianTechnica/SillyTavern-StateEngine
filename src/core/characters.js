@@ -157,7 +157,7 @@ const MAX_ENUM_VALUES = 30;
 export function defaultRuntimeFields() {
     return {
         thought: { name: 'thought', type: 'string', prompted: true, description: 'A short internal thought, in their voice (under 20 words).' },
-        mood: { name: 'mood', type: 'enum', prompted: true, values: [...DEFAULT_MOODS], description: 'Their mood right now.' },
+        mood: { name: 'mood', type: 'enum', prompted: true, values: [...DEFAULT_MOODS], description: 'Their mood right now - the closest listed value, never another word.' },
         intent: { name: 'intent', type: 'string', prompted: true, description: 'A short phrase: what they mean to do next.' },
     };
 }
@@ -279,6 +279,13 @@ export function applyRuntimeUpdates(chatId, updates) {
             for (const field of fields) {
                 if (!(field.name in raw)) continue;
                 const value = coerceRuntimeValue(field, raw[field.name]);
+                // An enum answer off the list ("Grateful" for a mood) keeps the
+                // value it had - a model drifting off the list never blanks it.
+                // An empty answer still clears it.
+                if (value === null && field.type === 'enum' && String(raw[field.name] ?? '').trim() !== '') {
+                    console.warn(LOG_PREFIX, `runtime field "${field.name}": ${JSON.stringify(raw[field.name])} is not one of its values - kept the previous value`);
+                    continue;
+                }
                 if (BUILT_IN_RUNTIME_FIELDS.includes(field.name)) runtime[field.name] = value;
                 else runtime.custom[field.name] = value;
             }

@@ -2990,9 +2990,17 @@ string | number | enum, a description, a prompted flag; an enum needs 1-30
 unique non-empty values; a number may have min < max. Invalid definitions
 are refused.
 
-Values are coerced on write: an enum matches its values case-insensitively
-(no match clears it), a number is clamped to min/max, a string is trimmed to
-200 characters.
+Values are coerced on write: an enum matches its values case-insensitively,
+a number is clamped to min/max, a string is trimmed to 200 characters. A
+prompted enum answer that matches no value keeps the field's previous value
+(logged); an empty answer clears it. Set by hand, an off-list value is
+refused.
+
+The prompt lists an enum as a closed list (2026-10-09): `"mood": EXACTLY
+one of ["Neutral", ...] (no other word; if none fits exactly, pick the
+closest)`, and the line ends by repeating that such a field must be one of
+those values, spelled as shown. Reported: "one of: Neutral, Angry, ..."
+read as examples, and the model answered "Grateful" / "Resigned".
 
 Generation: in the SAME prompted call as the variables. When a chunk holds
 a prompted character LIST (array of itemType character), the update list

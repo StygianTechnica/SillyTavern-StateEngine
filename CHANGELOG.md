@@ -10,6 +10,12 @@
   the context message count when needed (never past the max history cap). Requirements
   spec 1.44; prompt cues are listed in docs/PROMPT MESSAGE CUES.md.
 
+**Fixed**
+
+- **Runtime enum fields (mood) answered off the list:** the prompt now gives an enum as a closed
+  list (`EXACTLY one of ["Neutral", ...]`, pick the closest when none fits), and an off-list
+  answer keeps the previous value instead of clearing it. Requirements spec 1.43.
+
 **Tests:** 51 files, 2056 tests.
 
 ## Unreleased — Character runtime state
