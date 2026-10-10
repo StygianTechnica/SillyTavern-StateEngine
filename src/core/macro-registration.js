@@ -1,14 +1,20 @@
 // State Engine — {{identifier}} macro registration
 //
-// SillyTavern's macro engine already exposes context.registerMacro(key,
-// valueOrFn, description) / context.unregisterMacro(key) - a public,
-// documented extension point (SillyTavern-Launcher/public/scripts/
-// st-context.js binds these to MacrosParser.registerMacro/unregisterMacro;
-// MacrosParser.registerMacro accepts a function as the value, resolved live
-// at substitution time, exactly like {{getvar::name}}'s own handler reads
-// ctx.variables.local.get(name) live). Registering a State Engine variable
-// name here makes {{name}} resolve directly, with no custom pre-macro
-// interception needed - SillyTavern's own engine does the {{...}} matching.
+// SillyTavern exposes its macro engine on the context as
+// context.macros (scripts/macros/macro-system.js). Registering a State
+// Engine variable name there makes {{name}} resolve directly, with the
+// handler read live at substitution time - no custom pre-macro
+// interception needed, SillyTavern's own engine does the {{...}} matching.
+//
+// SillyTavern has two macro engines, chosen by the user's
+// power_user.experimental_macro_engine setting (on by default since 1.19):
+// - new engine: context.macros.register / registry.unregisterMacro.
+// - legacy engine: context.registerMacro / unregisterMacro
+//   (MacrosParser), deprecated - every call logs a [DEPRECATED] console
+//   warning - but still the only path the legacy engine reads from.
+// We use the new API whenever the new engine is active, and fall back to
+// the legacy one only for users who switched it off, the same split
+// SillyTavern's own built-in extensions use (e.g. extensions/memory).
 //
 // Scoped to whichever presets are active for the *current* chat, refreshed
 // on chat change, engine enable/disable, and variable create/edit/delete/
@@ -18,7 +24,36 @@ import { getSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
 import { getMacroValue } from './macro-store.js';
 
-let registeredNames = new Set();
+// name -> which engine it was registered with ('new' | 'legacy'), so a
+// user toggling the engine setting between refreshes still unregisters
+// from the right one.
+let registeredNames = new Map();
+
+function useNewMacroEngine(context) {
+    return context.powerUserSettings?.experimental_macro_engine !== false
+        && typeof context.macros?.register === 'function';
+}
+
+function registerOne(context, name, handler, description) {
+    if (useNewMacroEngine(context)) {
+        context.macros.register(name, {
+            category: context.macros.category?.VARIABLE ?? 'variable',
+            description,
+            handler,
+        });
+        return 'new';
+    }
+    if (typeof context.registerMacro === 'function') {
+        context.registerMacro(name, handler, description);
+        return 'legacy';
+    }
+    return null;
+}
+
+function unregisterOne(context, name, engine) {
+    if (engine === 'new') context.macros?.registry?.unregisterMacro(name);
+    else if (typeof context.unregisterMacro === 'function') context.unregisterMacro(name);
+}
 
 // Unregisters every macro this module previously registered. Used on
 // engine disable, and internally before re-registering the current set so
@@ -26,13 +61,12 @@ let registeredNames = new Set();
 export function unregisterAllVariableMacros() {
     try {
         const context = SillyTavern.getContext();
-        if (typeof context.unregisterMacro !== 'function') return;
-        for (const name of registeredNames) {
+        for (const [name, engine] of registeredNames) {
             try {
-                context.unregisterMacro(name);
+                unregisterOne(context, name, engine);
             } catch { /* already gone - fine */ }
         }
-        registeredNames = new Set();
+        registeredNames = new Map();
     } catch { /* SillyTavern context unavailable - nothing to do */ }
 }
 
@@ -49,7 +83,6 @@ export function refreshVariableMacros() {
         if (!settings.enabled) return;
 
         const context = SillyTavern.getContext();
-        if (typeof context.registerMacro !== 'function') return;
 
         const chatId = context.chatId;
         if (!chatId) return;
@@ -57,12 +90,12 @@ export function refreshVariableMacros() {
         const activePresetIds = getPresetsForChat(chatId);
         const variables = getAllVariablesFromPresets(activePresetIds);
 
-        const nextNames = new Set();
+        const nextNames = new Map();
         for (const def of Object.values(variables)) {
             if (!def.name || nextNames.has(def.name)) continue;
-            nextNames.add(def.name);
 
-            context.registerMacro(
+            const engine = registerOne(
+                context,
                 def.name,
                 () => {
                     try {
@@ -74,6 +107,7 @@ export function refreshVariableMacros() {
                 },
                 def.description || def.label || `State Engine variable "${def.name}"`,
             );
+            if (engine) nextNames.set(def.name, engine);
         }
 
         registeredNames = nextNames;
