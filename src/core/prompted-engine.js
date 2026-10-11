@@ -13,11 +13,12 @@ import { extractJsonObject, describeConstraint, buildRecentMessagesSection, sele
 import { setStatus } from '../ui/settings-panel-ui.js';
 import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
 import { chunkPromptUnits } from './prompt-chunking.js';
-import { isCharacterDefinition, characterValueText } from './character-display.js';
+import { isObjectDefinition, isObjectList, objectTypeOf, objectValueText } from './object-display.js';
+import { getObjectType } from './object-types.js';
 import {
-    resolveCharacterNames, applyPresence, ensureChatSetting, getChatSetting, getRuntimeFields, listCharacters, getCharacterByAlias,
+    resolveObjectNames, applyPresence, ensureChatSetting, getChatSetting, getRuntimeFields, listObjects, getObject, getObjectByAlias,
     applyRuntimeUpdates, DEFAULT_SETTING_ID,
-} from './characters.js';
+} from './objects.js';
 import { askChatSetting } from '../ui/setting-prompt.js';
 
 export function shouldSkipPromptedRefresh(def) {
@@ -94,8 +95,8 @@ export function classifyPromptedVariables(chatId, variables) {
 // never raw scalar seconds. Every other type is shown as stored. A value the
 // calendar cannot format is shown as stored.
 function valueForPrompt(def, value) {
-    // Character ids are shown as the names the model answers with (spec 1.42).
-    if (isCharacterDefinition(def)) return def.type === 'character' ? characterValueText(def, value) : characterValueText(def, value).split(', ').filter(Boolean);
+    // Object ids are shown as the names the model answers with.
+    if (isObjectDefinition(def)) return def.type === 'object' ? objectValueText(def, value) : objectValueText(def, value).split(', ').filter(Boolean);
     if (def.type !== 'datetime') return value;
     try {
         return format(def.calendar || DEFAULT_CALENDAR_ID, Number(value), { style: 'full' });
@@ -160,31 +161,36 @@ export function chunkPromptedVariables(chatId, updateVars, incrementVars, maxCha
 // this same response from being written.
 function applyPromptedResponse(chatId, updateVars, incrementVars, parsed, { source = '' } = {}) {
     let updatedCount = 0;
-    // Characters named in a character LIST this turn - the present ones,
-    // whose runtime state the "__characters" answer carries (spec 1.43).
-    const listedIds = new Set();
+    // Objects named in an object LIST this turn, per type - the ones in play,
+    // whose runtime state the type's runtime key ("__characters") carries.
+    const listedIds = {};
     for (const def of updateVars) {
         try {
             if (!Object.prototype.hasOwnProperty.call(parsed, def.name)) continue;
 
             const rawValue = parsed[def.name];
 
-            // Characters (spec 1.42): the model answered with names. Each is
-            // matched to a character (or recorded as a new, unconfirmed one,
-            // with the sentence it was met in), the variable stores the ids,
-            // the named characters are present, and - for a list - anyone it
-            // held before and no longer does is not.
-            if (isCharacterDefinition(def)) {
-                const names = def.type === 'character'
+            // Objects: the model answered with names. Each is matched to an
+            // object of the variable's type (or recorded as a new one, with
+            // the sentence it was met in), the variable stores the ids, and -
+            // for a type with presence - the named ones are present and, for
+            // a list, whatever it held before and no longer does is not.
+            if (isObjectDefinition(def)) {
+                const type = objectTypeOf(def);
+                const single = def.type === 'object';
+                const names = single
                     ? (typeof rawValue === 'string' ? [rawValue] : [])
                     : (Array.isArray(rawValue) ? rawValue.filter((n) => typeof n === 'string') : null);
                 if (names === null) continue;
                 const before = getVar(chatId, def.name)?.value;
-                const { ids } = resolveCharacterNames(chatId, names, { source });
-                const value = def.type === 'character' ? (ids[0] ?? '') : ids;
-                const previous = def.type === 'character' ? (before ? [before] : []) : (Array.isArray(before) ? before : []);
-                applyPresence(chatId, ids, def.type === 'character' ? [] : previous.filter((id) => !ids.includes(id)));
-                if (def.type === 'array') for (const id of ids) listedIds.add(id);
+                const { ids } = resolveObjectNames(chatId, type, names, { source });
+                const value = single ? (ids[0] ?? '') : ids;
+                const previous = single ? (before ? [before] : []) : (Array.isArray(before) ? before : []);
+                applyPresence(chatId, type, ids, single ? [] : previous.filter((id) => !ids.includes(id)));
+                if (!single) {
+                    listedIds[type] ??= new Set();
+                    for (const id of ids) listedIds[type].add(id);
+                }
                 setVar(chatId, def.name, value, def);
                 recalculateDependents(chatId, def.name);
                 updatedCount++;
@@ -256,18 +262,20 @@ function applyPromptedResponse(chatId, updateVars, incrementVars, parsed, { sour
         }
     }
 
-    // Runtime state (spec 1.43): the answer's "__characters" object, by name,
-    // for the characters present this turn only.
-    if (listedIds.size && parsed[RUNTIME_KEY] && typeof parsed[RUNTIME_KEY] === 'object' && !Array.isArray(parsed[RUNTIME_KEY])) {
+    // Runtime state: each type's runtime key ("__characters"), by name, for
+    // the objects named in that type's lists this turn only.
+    for (const [type, ids] of Object.entries(listedIds)) {
+        const answer = parsed[runtimeKey(getObjectType(type))];
+        if (!ids.size || !answer || typeof answer !== 'object' || Array.isArray(answer)) continue;
         try {
             const updates = {};
-            for (const [name, fields] of Object.entries(parsed[RUNTIME_KEY])) {
-                const match = getCharacterByAlias(chatId, name);
-                if (match && listedIds.has(match.id)) updates[match.id] = fields;
+            for (const [name, fields] of Object.entries(answer)) {
+                const match = getObjectByAlias(chatId, type, name);
+                if (match && ids.has(match.id)) updates[match.id] = fields;
             }
-            applyRuntimeUpdates(chatId, updates);
+            applyRuntimeUpdates(chatId, type, updates);
         } catch (err) {
-            console.warn(LOG_PREFIX, 'character runtime update failed (gracefully handled)', err);
+            console.warn(LOG_PREFIX, `${type} runtime update failed (gracefully handled)`, err);
         }
     }
 
@@ -293,59 +301,70 @@ function applyPromptedResponse(chatId, updateVars, incrementVars, parsed, { sour
 // status message by the caller - this function's own job is just the one
 // call/parse/apply cycle, so it can be awaited per-chunk in a sequential
 // loop without duplicating that error handling at every call site).
-// Character runtime state (spec 1.43): one more line in the update list when
-// this chunk has a prompted character LIST - the "__characters" key: for
-// every character the model names in that list, its PROMPTED runtime fields
-// (the chat's setting's), with the present characters' current values.
-const RUNTIME_KEY = '__characters';
-
-// The built-in thought is new every turn (2026-10-09): its current value is
-// never shown - a small model copied it back word for word each turn - and
-// the model is asked for a fresh one.
-const FRESH_RUNTIME_FIELDS = new Set(['thought']);
+// Runtime state: one more line in the update list per object type with a
+// prompted LIST in this chunk - the type's runtime key ("__characters",
+// "__locations"...): for every object the model names in that list, its
+// PROMPTED runtime fields (the chat's setting's), with the current values of
+// the ones in play. One key per type, flat - small models fill that shape
+// far more reliably than a nested one.
+function runtimeKey(t) {
+    return `__${t.plural.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`;
+}
 
 function describeRuntimeField(field) {
     // An enum is a closed list: quoted, "EXACTLY", and a way out other than
     // inventing a word ("Grateful" for a mood) - an off-list answer is not stored.
     const what = field.type === 'enum' ? `EXACTLY one of ${JSON.stringify(field.values)} (no other word; if none fits exactly, pick the closest)`
         : field.type === 'number' ? `number${field.min !== null && field.max !== null ? ` from ${field.min} to ${field.max}` : ''}`
-            : FRESH_RUNTIME_FIELDS.has(field.name) ? 'short text, NEW EACH TURN' : 'short text';
+            : field.fresh ? 'short text, NEW EACH TURN' : 'short text';
     return `"${field.name}": ${what}${field.description ? ` - ${field.description}` : ''}`;
+}
+
+// The objects of a type in play now: for a type with presence, the present
+// ones; otherwise the ones its lists in this chunk currently hold.
+function objectsInPlay(chatId, t, listDefs) {
+    if (t.hasPresence) return listObjects(chatId, t.id).filter((o) => o.runtime?.present);
+    const ids = new Set(listDefs.flatMap((d) => {
+        const value = getVar(chatId, d.name)?.value;
+        return Array.isArray(value) ? value : [];
+    }));
+    return [...ids].map((id) => getObject(chatId, id)).filter(Boolean);
 }
 
 // "currently" holds every prompted field but the fresh ones, an empty one as
 // null (2026-10-09): a small model answers in the shape of the current value,
 // so a field missing from it once (left out because empty) was never answered
-// again - every field stays visible.
-function runtimeLine(chatId, listDefs) {
-    const fields = getRuntimeFields(getChatSetting(chatId) ?? DEFAULT_SETTING_ID).filter((f) => f.prompted);
+// again - every field stays visible. A fresh field's current value is never
+// shown - a small model copied it back word for word each turn.
+function runtimeLine(chatId, t, listDefs) {
+    const fields = getRuntimeFields(getChatSetting(chatId) ?? DEFAULT_SETTING_ID, t.id).filter((f) => f.prompted);
     if (fields.length === 0) return '';
     const current = {};
-    for (const c of listCharacters(chatId)) {
-        if (!c.runtime?.present) continue;
+    for (const object of objectsInPlay(chatId, t, listDefs)) {
         const values = {};
         for (const f of fields) {
-            if (FRESH_RUNTIME_FIELDS.has(f.name)) continue;
-            const v = ['thought', 'mood', 'intent'].includes(f.name) ? c.runtime[f.name] : c.runtime.custom?.[f.name];
-            values[f.name] = v ?? null;
+            if (f.fresh) continue;
+            values[f.name] = object.runtime?.values?.[f.name] ?? null;
         }
-        current[c.name] = values;
+        current[object.name] = values;
     }
     const lists = listDefs.map((d) => `"${d.name}"`).join(' and ');
-    return `- "${RUNTIME_KEY}" [object with one entry per character named in ${lists}, keyed by that name: {"<name>": {${fields.map(describeRuntimeField).join(', ')}}}] `
-        + `currently ${JSON.stringify(current)}. Each character's state right now - keep every value short; a field listed with EXACTLY one of [...] must be one of those values, spelled as shown; write a new thought for every character, never empty; never change who they are.`;
+    return `- "${runtimeKey(t)}" [object with one entry per ${t.noun} named in ${lists}, keyed by that name: {"<name>": {${fields.map(describeRuntimeField).join(', ')}}}] `
+        + `currently ${JSON.stringify(current)}. Each ${t.noun}'s state right now - keep every value short; a field listed with EXACTLY one of [...] must be one of those values, spelled as shown;`
+        + `${t.prompt.runtimeNote ? ` ${t.prompt.runtimeNote}` : ''}`;
 }
 
 async function runPromptedChunk(context, settings, contextSection, chunk) {
     const chatId = context.chatId;
     const { updateVars, incrementVars, incrementVarLines } = chunk;
     let { updateVarLines } = chunk;
-    // A character answer needs the chat's setting (asked on first use) - its
+    // An object answer needs the chat's setting (asked on first use) - its
     // runtime fields too, so before the prompt is built.
-    if (updateVars.some(isCharacterDefinition)) await ensureChatSetting(chatId, askChatSetting);
-    const listDefs = updateVars.filter((def) => def.type === 'array' && def.itemType === 'character');
-    if (listDefs.length) {
-        const line = runtimeLine(chatId, listDefs);
+    if (updateVars.some(isObjectDefinition)) await ensureChatSetting(chatId, askChatSetting);
+    const listsByType = {};
+    for (const def of updateVars.filter(isObjectList)) (listsByType[def.itemObjectType] ??= []).push(def);
+    for (const [type, listDefs] of Object.entries(listsByType)) {
+        const line = runtimeLine(chatId, getObjectType(type), listDefs);
         if (line) updateVarLines = `${updateVarLines}\n${line}`;
     }
 

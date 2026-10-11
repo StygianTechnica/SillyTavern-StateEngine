@@ -37,7 +37,7 @@ import { notifyVariablesChanged } from './variable-change-signal.js';
 // The role types and the variable types each accepts. A calculated
 // variable's result type is not known in advance, so it is accepted for
 // the scalar types; 'any' accepts every variable.
-export const ROLE_TYPES = Object.freeze(['text', 'number', 'boolean', 'date', 'image', 'list', 'any']);
+export const ROLE_TYPES = Object.freeze(['text', 'number', 'boolean', 'date', 'image', 'list', 'object', 'any']);
 const ACCEPTED_VARIABLE_TYPES = {
     text: ['string', 'enum', 'calculated'],
     number: ['number', 'calculated'],
@@ -45,6 +45,8 @@ const ACCEPTED_VARIABLE_TYPES = {
     date: ['datetime'],
     image: ['image', 'imageList', 'imageMap'],
     list: ['array'],
+    // An object (a character, a location...): object cards bind by role.
+    object: ['object'],
 };
 
 // publicName: "scene.title", "character.health", "quest_current" -

@@ -31,6 +31,7 @@
 // an expression through the real engine, not just checking the stored
 // dependency string matched - see this pass's implementation report.
 
+import { isObjectType, OBJECT_TYPE_IDS } from '../core/object-types.js';
 import { LOG_PREFIX, persistSettings } from '../core/settings-core.js';
 import { validateNamespace } from './namespace-manager.js';
 import { validateCallerIdentity, resolveCallerRecord } from './identity.js';
@@ -172,13 +173,18 @@ function checkedImage(def, fnName, hadDefault) {
     return { ok: true };
 }
 
-// A character variable (spec 1.42): no default (a chat assigns a character -
-// characters belong to settings and chats, not to definitions), and nothing
-// to increment. Returns { ok: true } or { ok: false, error }; never throws.
-function checkedCharacter(def, fnName) {
-    if (def.type !== 'character') return { ok: true };
+// An object variable or object list: its object type must be a known one
+// (object-types.js). A single object has no default (a chat assigns one -
+// objects belong to settings and chats, not to definitions), and nothing to
+// increment. Returns { ok: true } or { ok: false, error }; never throws.
+function checkedObject(def, fnName) {
+    if (def.type === 'array' && def.itemType === 'object' && !isObjectType(def.itemObjectType)) {
+        return { ok: false, error: `${fnName}: an object list needs itemObjectType - one of ${OBJECT_TYPE_IDS.join(', ')}` };
+    }
+    if (def.type !== 'object') return { ok: true };
+    if (!isObjectType(def.objectType)) return { ok: false, error: `${fnName}: an object variable needs objectType - one of ${OBJECT_TYPE_IDS.join(', ')}` };
     def.defaultValue = '';
-    if (def.behaviors?.increment === true) return { ok: false, error: `${fnName}: a character variable cannot be incremented` };
+    if (def.behaviors?.increment === true) return { ok: false, error: `${fnName}: an object variable cannot be incremented` };
     return { ok: true };
 }
 
@@ -379,9 +385,9 @@ export function createVariable(extensionId, instanceId, def) {
             console.warn(LOG_PREFIX, imageCheck.error);
             return null;
         }
-        const characterCheck = checkedCharacter(fullDef, 'createVariable');
-        if (!characterCheck.ok) {
-            console.warn(LOG_PREFIX, characterCheck.error);
+        const objectCheck = checkedObject(fullDef, 'createVariable');
+        if (!objectCheck.ok) {
+            console.warn(LOG_PREFIX, objectCheck.error);
             return null;
         }
         const flagCheck = checkedFlagMode(fullDef, 'createVariable');
@@ -508,9 +514,9 @@ export function updateVariable(extensionId, instanceId, ref, patch) {
             console.warn(LOG_PREFIX, imageCheck.error);
             return null;
         }
-        const characterCheck = checkedCharacter(newDef, 'updateVariable');
-        if (!characterCheck.ok) {
-            console.warn(LOG_PREFIX, characterCheck.error);
+        const objectCheck = checkedObject(newDef, 'updateVariable');
+        if (!objectCheck.ok) {
+            console.warn(LOG_PREFIX, objectCheck.error);
             return null;
         }
 

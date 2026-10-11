@@ -7,7 +7,7 @@
 import { getSettings } from '../core/settings-core.js';
 import { getPresetsForChat } from '../core/preset-manager.js';
 import { getMacroValue } from '../core/macro-store.js';
-import { typeLabel, formatValueForDisplay } from './formatting-utils.js';
+import { definitionTypeLabel, objectTypeStyle, formatValueForDisplay } from './formatting-utils.js';
 
 // Session state (not persisted)
 export let currentPresetId = null;
@@ -87,7 +87,12 @@ export function renderVarTable() {
         // $row.append($('<td></td>').append(
         //     $('<span></span>').addClass(`se-badge se-badge-${def.category}`).text(categoryLabel(def.category)),
         // ));
-        $row.append($('<td></td>').text(typeLabel(def.type)));
+        const objectStyle = objectTypeStyle(def);
+        $row.append($('<td></td>').append(objectStyle
+            ? $('<span></span>').addClass('se-object-chip').css('--se-object-color', objectStyle.color)
+                .append($('<i></i>').addClass(`fa-solid ${objectStyle.icon}`), ` ${objectStyle.label}`)
+            : document.createTextNode(definitionTypeLabel(def))));
+        if (objectStyle) $row.addClass('se-object-variable').css('--se-object-color', objectStyle.color);
         $row.append($('<td></td>').text(def.scope === 'global' ? 'Global' : 'Chat'));
         $row.append($('<td></td>').addClass('se-col-value').text(formatValueForDisplay(value, def)));
 

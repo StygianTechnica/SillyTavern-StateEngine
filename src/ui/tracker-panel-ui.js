@@ -13,8 +13,9 @@ import { formatValueForDisplay } from './formatting-utils.js';
 import { isImageType, activeImageRef } from '../core/image-variables.js';
 import { thumbHtml } from './image-preview.js';
 import { setStatus } from './settings-panel-ui.js';
-import { isCharacterDefinition } from '../core/character-display.js';
-import { listCharacters, createUnconfirmedCharacter, ensureChatSetting } from '../core/characters.js';
+import { isObjectDefinition, objectTypeOf } from '../core/object-display.js';
+import { getObjectType } from '../core/object-types.js';
+import { listObjects, createChatObject, ensureChatSetting } from '../core/objects.js';
 import { askChatSetting } from './setting-prompt.js';
 
 // A variable is runtime-editable from the tracker unless its value is not
@@ -143,37 +144,40 @@ function datetimeDetail(def, scalar) {
 // entered/selected/toggled; the caller is responsible for coercing and
 // writing it. `onCancel()` discards the edit. Both are guarded by the
 // caller against double-invocation (blur firing after Enter/Escape).
-// Asks for a new character's name (SillyTavern's input popup, or prompt()).
-async function askCharacterName() {
+// Asks for a new object's name (SillyTavern's input popup, or prompt()).
+async function askObjectName(t) {
     const context = SillyTavern.getContext();
+    const story = t.scope === 'story';
+    const note = story ? `It belongs to this chat - edit it in the object manager.` : 'It starts unconfirmed - review it in the object manager.';
     if (context.Popup && context.POPUP_TYPE?.INPUT !== undefined) {
-        const result = await new context.Popup('<h3>New character</h3><p>Name, as the story calls them. It starts unconfirmed - review it in the Character Manager.</p>', context.POPUP_TYPE.INPUT, '').show();
+        const result = await new context.Popup(`<h3>New ${t.noun}</h3><p>Name, as the story calls it. ${note}</p>`, context.POPUP_TYPE.INPUT, '').show();
         return typeof result === 'string' ? result.trim() : '';
     }
-    return (window.prompt('New character - name, as the story calls them:') || '').trim();
+    return (window.prompt(`New ${t.noun} - name, as the story calls it:`) || '').trim();
 }
 
-// Character variables (spec 1.42): choose from the chat's CONFIRMED
-// characters (an unconfirmed one shows only while it is the current value),
-// or create a new, unconfirmed one. A list is a multi-select, committed on
-// blur or Enter. Characters themselves are edited in the Character Manager.
-function buildCharacterEditor(def, currentValue, onCommit, onCancel, chatId) {
+// Object variables: choose from the chat's CONFIRMED objects of the type (an
+// unconfirmed one shows only while it is the current value), or create a
+// new one. A list is a multi-select, committed on blur or Enter. Objects
+// themselves are edited in the object manager.
+function buildObjectEditor(def, currentValue, onCommit, onCancel, chatId) {
+    const t = getObjectType(objectTypeOf(def));
     const multiple = def.type === 'array';
     const current = multiple ? (Array.isArray(currentValue) ? currentValue : []) : [currentValue].filter(Boolean);
-    const all = listCharacters(chatId);
-    const offered = all.filter((c) => c.confirmed || current.includes(c.id));
+    const all = listObjects(chatId, t.id);
+    const offered = all.filter((o) => o.confirmed || current.includes(o.id));
     const $input = $(`<select class="text_pole se-tracker-edit-input"${multiple ? ' multiple size="5"' : ''}></select>`);
     if (!multiple) $('<option></option>').val('').text('— none —').appendTo($input);
-    for (const c of offered) {
-        $('<option></option>').val(c.id).text(c.confirmed ? c.name : `${c.name} (unconfirmed)`)
-            .attr('title', c.id).prop('selected', current.includes(c.id)).appendTo($input);
+    for (const o of offered) {
+        $('<option></option>').val(o.id).text(o.confirmed ? o.name : `${o.name} (unconfirmed)`)
+            .attr('title', o.id).prop('selected', current.includes(o.id)).appendTo($input);
     }
-    $('<option></option>').val('__new__').text('New character…').appendTo($input);
+    $('<option></option>').val('__new__').text(`New ${t.noun}…`).appendTo($input);
     const commit = async () => {
         const picked = [].concat($input.val() ?? []).filter(Boolean);
         if (picked.includes('__new__')) {
-            const name = await askCharacterName();
-            const created = name ? createUnconfirmedCharacter(chatId, name) : null;
+            const name = await askObjectName(t);
+            const created = name ? createChatObject(chatId, t.id, name) : null;
             const rest = picked.filter((id) => id !== '__new__');
             if (created) rest.push(created.id);
             onCommit(multiple ? rest : (created?.id ?? current[0] ?? ''));
@@ -195,7 +199,7 @@ function buildCharacterEditor(def, currentValue, onCommit, onCancel, chatId) {
 }
 
 function buildStaticValueEditor(def, currentValue, onCommit, onCancel, chatId = null) {
-    if (isCharacterDefinition(def)) return buildCharacterEditor(def, currentValue, onCommit, onCancel, chatId);
+    if (isObjectDefinition(def)) return buildObjectEditor(def, currentValue, onCommit, onCancel, chatId);
     if (def.type === 'boolean') {
         // Deliberately NOT .se-tracker-edit-input - that class's flex-grow
         // and padding (meant for the text input/select below) fought with
@@ -279,16 +283,18 @@ export function renderTrackerPanel() {
     }
 
     for (const def of defs) {
-        // Image and character values come from the isolated store: the macro
-        // mirror holds a character variable's NAMES (for {{getvar::...}}), not
+        // Image and object values come from the isolated store: the macro
+        // mirror holds an object variable's NAMES (for {{getvar::...}}), not
         // the ids the tracker resolves and edits.
         const value = isImageType(def)
             ? imageVariableValue(chatId, def, context)
-            : isCharacterDefinition(def)
+            : isObjectDefinition(def)
                 ? (getVar(chatId, def.name)?.value ?? getDefaultValue(def))
                 : getMacroValue(context, def);
         const $row = $('<div></div>').addClass('se-tracker-row');
         if (def.showInTracker === false) $row.addClass('se-tracker-row-hidden');
+        const objectType = getObjectType(objectTypeOf(def));
+        if (objectType) $row.addClass('se-object-row').css('--se-object-color', objectType.color);
 
         const $label = $('<span></span>')
             .addClass('se-tracker-label')
@@ -363,11 +369,11 @@ export function renderTrackerPanel() {
                     const cid = ctx.chatId;
                     if (!cid) return;
 
-                    // A character variable's macro shows names; its ids live in the store.
-                    const current = isCharacterDefinition(def) ? getVar(cid, def.name)?.value : getMacroValue(ctx, def);
+                    // An object variable's macro shows names; its ids live in the store.
+                    const current = isObjectDefinition(def) ? getVar(cid, def.name)?.value : getMacroValue(ctx, def);
                     let committed = false;
-                    // Characters need the chat's setting (asked on first use).
-                    if (isCharacterDefinition(def)) void ensureChatSetting(cid, askChatSetting);
+                    // Objects need the chat's setting (asked on first use).
+                    if (isObjectDefinition(def)) void ensureChatSetting(cid, askChatSetting);
 
                     const $input = buildStaticValueEditor(
                         def,

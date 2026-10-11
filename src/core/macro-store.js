@@ -9,7 +9,7 @@
 import { LOG_PREFIX } from './settings-core.js';
 import { getDefaultValue } from './variable-schema.js';
 import { validateValueStrict } from './variable-validation.js';
-import { isCharacterDefinition, characterValueText } from './character-display.js';
+import { isObjectDefinition, objectValueText } from './object-display.js';
 
 export function macroStore(context, def) {
     return def.scope === 'global' ? context.variables.global : context.variables.local;
@@ -36,8 +36,8 @@ export function setMacroValue(context, def, rawValue) {
     }
 
     try {
-        // A character variable holds ids; macros ({{getvar::...}}) show names.
-        store.set(def.name, isCharacterDefinition(def) ? characterValueText(def, validation.value) : validation.value);
+        // An object variable holds ids; macros ({{getvar::...}}) show names.
+        store.set(def.name, isObjectDefinition(def) ? objectValueText(def, validation.value) : validation.value);
     } catch (err) {
         console.error(LOG_PREFIX, `could not write variable "${def.name}"`, err);
     }

@@ -1044,3 +1044,31 @@
     margin: 0;
     min-width: 0;
 }
+
+/* Object variables (characters, locations, items...) - a family of their own:
+   a chip in the type's colour, and a coloured edge on their rows. */
+.se-object-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 0.85em;
+    font-weight: 600;
+    color: #fff;
+    background: var(--se-object-color, #888);
+    white-space: nowrap;
+}
+
+.se-manager-variable-row.se-object-variable {
+    border-left: 4px solid var(--se-object-color, #888);
+}
+
+tr.se-object-variable > td:first-child {
+    box-shadow: inset 4px 0 0 var(--se-object-color, #888);
+}
+
+.se-tracker-row.se-object-row .se-tracker-value {
+    color: var(--se-object-color, inherit);
+    font-weight: 600;
+}

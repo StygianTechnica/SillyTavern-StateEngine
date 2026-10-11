@@ -2422,93 +2422,61 @@ re-request).
 `tests/roles.test.js`; assignment copying on a new chat in
 `tests/new-chat-start.test.js`.
 
-SECTION 24 — CHARACTER API (2026-10-08)
+SECTION 24 — OBJECT API (2026-10-10, replaces the Character API)
 
-Characters and settings - requirements spec 1.42. `src/api/character-api.js`
-(rules and storage: `src/core/characters.js`). Open to any registered caller
-(resolveCallerRecord) - characters belong to settings and chats, not to a
-namespace. Identity failures throw; any other rejection logs a warning and
-returns `null` (`false` for deletes), with nothing written. Changes emit
-`VARIABLES_CHANGED_EVENT`.
+Objects - requirements spec 1.47 (which supersedes 1.42/1.43: characters
+are now one object type). `src/api/object-api.js` (rules and storage:
+`src/core/objects.js`; the type registry: `src/core/object-types.js`;
+names for display: `src/core/object-display.js`). Open to any registered
+caller (resolveCallerRecord) - objects belong to settings and chats, not to
+a namespace. Identity failures throw; any other rejection logs a warning
+and returns null (false for deletes). Changes emit VARIABLES_CHANGED_EVENT.
 
 **24.1 Storage**
 
-- `settings.variableStore.characterSettings = { [settingId]: { id, name, autoConfirm, createdAt, characters: { [id]: character } } }`;
-  `default` always exists (autoConfirm on).
-- Confirmed <=> in the setting: a chat's `local` characters are its unconfirmed ones; confirming
-  (confirmCharacter, or saving an edit with updateCharacter) moves one into the setting.
-- A chat's layer on its chat state: `state.characters = { setting, entries: { [id]: { present, matches } }, local: { [id]: character } }`.
-- A character: `{ id, name, aliases, image, introduction_snippet, biography, personality, faction, role, confirmed, variants: { [variantId]: { id, name, overrides } }, activeVariant, createdAt, updatedAt }`.
-- Variable values: a `character` variable holds one id; an array of itemType `character` a list of ids.
+    settings.variableStore.settings[id] = { id, name, autoConfirm, createdAt,
+        objects: { [type]: { [objectId]: record } },
+        runtimeFields: { [type]: { [name]: field } } }
+    chatState.setting = settingId | null
+    chatState.objects[type] = { entries: { [id]: { present?, matches, runtime: { values } } },
+                                local: { [id]: record } }
 
-A character as returned (the active variant's overrides applied; `base` = the baseline):
-
-```
-{ id, name, aliases, image, introduction_snippet, biography, personality, faction, role,
-  confirmed, scope: 'chat' | 'setting', settingId, present, matches,
-  activeVariant, variants: [{ id, name, overrides }], base: { name, aliases, image, ... },
-  createdAt, updatedAt }
-```
+World objects (character, location, faction, item, creature, lore) live
+canonically in a setting, unconfirmed ones in their chat's `local`. Story
+objects (quest, scene, event) live only in their chat's `local`, always
+confirmed. migrateObjectData() (startup, idempotent) converts the old
+`variableStore.characterSettings`, `chatState.characters`, `type:
+'character'` variables and schema'd `itemType: 'object'` arrays (now
+`itemType: 'record'`).
 
 **24.2 Functions** (every one takes `(extensionId, instanceId, ...)` first)
 
-```
-listCharacterSettings() / getCharacterSetting(settingId)
-createCharacterSetting({ name, autoConfirm? }) / updateCharacterSetting(settingId, { name?, autoConfirm? })
-deleteCharacterSetting(settingId)            not Default; its characters leave every variable
-getChatCharacterSetting(chatId) / setChatCharacterSetting(chatId, settingId)
-ensureChatCharacterSetting(chatId)           async; asks the user when the chat has none
-listCharacters(chatId, { settingId? })       a chat's (own + setting's), or a setting's
-getCharacter(chatId, id, settingId?) / getCharacterByAlias(chatId, name)
-createUnconfirmedCharacter(chatId, name, snippet?)
-createCharacter(settingId, data)             canonical, confirmed
-updateCharacter(chatId, id, patch, { settingId? })   baseline fields; confirms (-> the setting)
-updateCharacterAliases(chatId, id, alias) / updateCharacterImage(chatId, id, url)
-markCharacterPresent(chatId, id) / markCharacterAbsent(chatId, id)
-mergeCharacters(chatId, sourceId, targetId, { settingId? })
-deleteCharacter(chatId, id, { settingId? }) / confirmCharacter(chatId, id, { settingId? })   confirm -> the setting
-resolveCharacter(chatId, sourceId, targetId, { settingId? })   a detection that is really someone known:
-                                             its name becomes their alias, variables follow, they are confirmed
-addCharacterVariant(chatId, id, { name, overrides }, { settingId? })
-updateCharacterVariant(chatId, id, variantId, { name?, overrides? }, { settingId? })
-deleteCharacterVariant(chatId, id, variantId, { settingId? })
-setCharacterActiveVariant(chatId, id, variantId | null, { settingId? })
-registerCharacterManager(opener) / openCharacterManager(options) / hasCharacterManager()
-getCharacterRuntimeFields(settingId)         built-ins (thought, mood, intent) first, flagged builtIn
-setCharacterRuntimeFields(settingId, fields) replaces the custom ones (built-ins kept); validated; returns the list
-setCharacterRuntimeValue(chatId, id, field, value)   a NON-prompted field only; returns the character
-```
+See the API Reference, section 6.7, for the full list: listObjectTypes,
+settings (listSettings ... ensureChatSetting), objects (listObjects,
+getObject, getObjectByAlias, createChatObject, createObject, updateObject,
+addObjectAlias, confirmObject, resolveObject, mergeObjects, deleteObject,
+markObjectPresent/Absent), runtime (getObjectRuntimeFields,
+setObjectRuntimeFields, setObjectRuntimeValue), variants (add/update/
+delete/setObjectActiveVariant), prompt text (describeObject,
+getVariablePromptTexts) and the manager hook (registerObjectManager,
+openObjectManager, hasObjectManager).
 
-`chatId` may be null with `{ settingId }` to act on a setting's character
-directly (the Character Manager's Settings view).
+**24.3 Extraction and runtime in the prompted update**
 
-**24.3 Extraction**
-
-Through prompted variables (prompted-engine.js): a character variable is
-described to the model as a name, a character list as a JSON array of names;
-the answer goes through `resolveCharacterNames` (alias match, else a new
-unconfirmed chat character with its introduction snippet), presence is
-updated, and the ids are stored. New characters post the
-`se::characters-detected` notification (its callback opens the Character
-Manager on the unconfirmed characters).
+An object variable is described to the model in its type's own words and
+answered with a name (a list: a JSON array of names). resolveObjectNames()
+matches or creates per type; presence follows for types with presence.
+For each type with a prompted list in a chunk, one flat runtime key
+(`"__characters"`, `"__locations"`...) asks for the prompted runtime fields
+of the objects that list names, with the current values of those in play
+(present ones, or for a type without presence the ones its lists hold);
+"fresh" fields (the character's thought) are never shown back. No extra
+LLM calls.
 
 **24.4 Verification**
 
-`tests/characters.test.js`.
-
-**24.5 Runtime state** (requirements spec 1.43)
-
-A character returned with a `chatId` carries
-`runtime: { present, thought, mood, intent, custom: { [field]: value }, images: { [field]: src } }` -
-chat-only, cleared when absent. A runtime field:
-`{ name, type: 'string'|'number'|'enum', prompted, description, values?, images?, min?, max?, builtIn }`.
-An enum field's optional `images` maps a value to an image reference (URL,
-`user/images/...` path or data URL; keys match values case-insensitively,
-an image for a value not listed is dropped). `runtime.images` holds, per
-enum field whose CURRENT value has an image, that image already checked
-for `<img src>` (requirements spec 1.46) - a display can show it in place
-of the word.
-Prompted fields are written by the prompted update through the
-`"__characters"` key (added when a chunk has a character list, for the
-characters it names); values are coerced (enum case-insensitive, number
-clamped, string at most 200 characters).
+`tests/objects.test.js` - every behaviour the Character API had, run
+against type "character", plus every world type, story types, references,
+the registry, extraction for a location list, prompt texts, the object
+role type, migration, and a check that nothing outside object-types.js
+special-cases the character type.

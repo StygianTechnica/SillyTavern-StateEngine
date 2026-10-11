@@ -2900,6 +2900,9 @@ Verification: tests/roles.test.js (rewritten), tests/new-chat-start.test.js.
 
 1.42 Characters and Settings (2026-10-08)
 
+SUPERSEDED by 1.47 (2026-10-10): characters are now one object type. The rules
+below still hold, for every world object type.
+
 A character variable type, a two-layer character store, extraction of new
 characters through prompted variables, and a shared Character Manager whose
 window lives in a UI extension (Pretty Panels) while every rule and all data
@@ -2976,6 +2979,9 @@ extension.
 API: Section 24 of the API specification. Verification: tests/characters.test.js.
 
 1.43 Character Runtime State (2026-10-08)
+
+SUPERSEDED by 1.47 (2026-10-10): runtime state now exists for every object
+type, stored as runtime = { present?, values: { [field]: value } }.
 
 Each character in a chat has a runtime state:
     runtime = { present, thought, mood, intent, custom: { [field]: value } }
@@ -3119,7 +3125,47 @@ value (URL or upload, with a preview); a character template binds
 "icon.<field>" (e.g. "Mood (icon)"), an image field, to show it.
 
 API: Section 24.5 of the API specification. Verification:
-tests/characters.test.js ("enum images").
+tests/objects.test.js ("enum images").
+
+1.47 Object Variables (2026-10-10)
+
+Characters generalised into OBJECTS: story entities with stable ids, so
+memories (Story Engine) and guidance (Scenario Builder) can point at a
+location, a faction or an item as well as a character.
+
+- One `object` variable type with a subtype: `{ type: 'object', objectType }`
+  holds one object id; `{ type: 'array', itemType: 'object', itemObjectType }`
+  a list. Types (src/core/object-types.js, the only place a type is
+  described): character, location, faction, item, creature, lore (WORLD:
+  canonical in a setting, unconfirmed per chat, confirm/resolve/merge,
+  aliases, variants, extraction by name) and quest, scene, event (STORY:
+  their chat's only, always confirmed).
+- Every object has common fields (name, aliases, image, description,
+  introduction_snippet, related_entity_ids, related_memory_ids) and its
+  type's own fields (kinds: text, longtext, list, enum, timestamp, ref,
+  refs). References are object ids; deleting or merging an object rewrites
+  them everywhere. related_memory_ids is plain storage until Story Engine.
+- Every type has per-chat runtime state with built-in fields from the
+  registry; settings add their own per type. Presence is a type capability
+  (character, creature).
+- Nothing outside the registry special-cases a type - characters included
+  (the Character API, characters.js and character-display.js are retired;
+  objects.js, object-api.js and object-display.js replace them).
+- Prompted extraction and runtime answers work for every type with no extra
+  LLM calls (one flat runtime key per type, "__characters", "__locations"...).
+- Role type `object` accepts object variables.
+- The manager shows object variables in their type's colour (a chip and a
+  coloured row edge); Object -> type in the type picker and the array item
+  type; "Manage objects" opens the UI extension's object manager.
+- Data from before is migrated on startup (migrateObjectData): character
+  settings -> settings holding objects; chat character layers ->
+  state.setting + state.objects.character (biography -> description,
+  runtime -> { values }); character variables -> object/character; the
+  vestigial schema'd `itemType: 'object'` arrays -> `itemType: 'record'`.
+- Room is left for a future Memory variable kind (with its own subtypes)
+  beside objects.
+
+API: Section 24 of the API specification. Verification: tests/objects.test.js.
 
 SECTION 2 — MODULE BOUNDARIES
 Claude must respect the following module responsibilities:

@@ -117,12 +117,12 @@ export function validateValueStrict(def, raw) {
                 break;
             }
 
-            case 'character': {
-                // A character id (spec 1.42) - a string; '' is "none".
+            case 'object': {
+                // An object id (objects.js) - a string; '' is "none".
                 if (typeof raw === 'string') {
                     coerced = raw.trim();
                 } else {
-                    errors.push(`Expected a character id, got ${typeof raw}`);
+                    errors.push(`Expected an object id, got ${typeof raw}`);
                     coerced = '';
                 }
                 break;
@@ -201,7 +201,7 @@ export function coerceValue(def, raw) {
         }
         case 'datetime':
             return toScalar(def.calendar || DEFAULT_CALENDAR_ID, raw) ?? getDefaultValue(def);
-        case 'character':
+        case 'object':
             return typeof raw === 'string' ? raw.trim() : '';
         case 'image':
         case 'imageList':

@@ -14,4 +14,4 @@ export * from './independent-presets.js';
 export * from './notification-api.js';
 export * from './image-api.js';
 export * from './role-api.js';
-export * from './character-api.js';
+export * from './object-api.js';

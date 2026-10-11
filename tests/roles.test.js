@@ -57,7 +57,7 @@ describe('names, ids and types', () => {
     });
 
     it('getRoleTypes lists them', () => {
-        expect(stateEngine.getRoleTypes()).toEqual(['text', 'number', 'boolean', 'date', 'image', 'list', 'any']);
+        expect(stateEngine.getRoleTypes()).toEqual(['text', 'number', 'boolean', 'date', 'image', 'list', 'object', 'any']);
     });
 });
 

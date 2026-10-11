@@ -1,6 +1,7 @@
 // State Engine — Manager modal event wiring
 // Uses ES6 modules - imported by manager-modal.js
 
+import { OBJECT_TYPE_IDS } from '../../core/object-types.js';
 import * as presetManager from './preset-manager.js';
 import { exportPresetWithImages, importPresetWithImages } from '../../core/preset-export.js';
 import { downloadJson, pickJsonFile } from '../file-io.js';
@@ -620,8 +621,8 @@ export function wireEvents(managerApi, managerState) {
         // ⭐ FIX: Save or update the variable in the preset
         const previousDef = preset.variables[newVariable.id];
 
-        // Object arrays are created through the API only (see protectObjectArray).
-        variableSchema.protectObjectArray(newVariable, previousDef);
+        // Record arrays are created through the API only (see protectRecordArray).
+        variableSchema.protectRecordArray(newVariable, previousDef);
 
         // Same trap for a datetime's calendar/unit (requirements spec 1.21):
         // the editor has a calendar selector (1.22) only while the type is
@@ -1125,6 +1126,13 @@ export function wireEvents(managerApi, managerState) {
             }
         }
 
+        // An object variable always has an object type (a character to
+        // start with), and nothing to increment.
+        if (values.type === 'object') {
+            if (!OBJECT_TYPE_IDS.includes(values.objectType)) values.objectType = OBJECT_TYPE_IDS[0];
+            values.behaviors = { ...(values.behaviors || {}), increment: false };
+        }
+
         // Re-render the editor with updated working copy
         showInlineVariableEditor(values, $row);
     });
@@ -1153,6 +1161,7 @@ export function wireEvents(managerApi, managerState) {
         const $row = $(this).closest('.se-manager-variable-row');
         const values = collectInlineVariableValues($row);
         values.itemType = $(this).val();
+        if (values.itemType === 'object' && !OBJECT_TYPE_IDS.includes(values.itemObjectType)) values.itemObjectType = OBJECT_TYPE_IDS[0];
         showInlineVariableEditor(values, $row);
     });
 
@@ -1253,8 +1262,8 @@ export function wireEvents(managerApi, managerState) {
             });
             const opts = allowed.map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
             itemHtml = `<select class="text_pole se-manager-array-item">${opts}</select>`;
-        } else if (itemType === 'object') {
-            itemHtml = `<span class="se-manager-array-item-placeholder">Object item editor coming soon</span>`;
+        } else if (itemType === 'record') {
+            itemHtml = `<span class="se-manager-array-item-placeholder">Record item editor coming soon</span>`;
         } else {
             // "New Entry" placeholder text, matching the enum/item-enum
             // add-row pattern above - a blank value made every freshly-added
@@ -1642,7 +1651,7 @@ export function wireEvents(managerApi, managerState) {
                 if ($input.length) {
                     items.push($input.val());
                 } else {
-                    // Object-array placeholder rows have no editable content yet.
+                    // Record-array placeholder rows have no editable content yet.
                     items.push({});
                 }
             });

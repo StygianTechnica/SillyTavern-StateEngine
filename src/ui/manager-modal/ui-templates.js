@@ -8,6 +8,21 @@ import { listCalendars } from '../../core/calendar-engine.js';
 import { BUILTIN_CALENDAR_IDS } from '../../core/settings-core.js';
 import { isImageType } from '../../core/image-variables.js';
 import { thumbHtml } from '../image-preview.js';
+import { OBJECT_TYPES, OBJECT_TYPE_IDS } from '../../core/object-types.js';
+import { objectTypeStyle } from '../formatting-utils.js';
+
+// The coloured chip an object variable is shown with ("◆ Location"); '' for
+// a basic type - objects read as a family of their own.
+export function objectChipHtml(def) {
+    const style = objectTypeStyle(def);
+    return style
+        ? `<span class="se-object-chip" style="--se-object-color:${style.color}"><i class="fa-solid ${style.icon}"></i> ${escapeHtml(style.label)}</span>`
+        : '';
+}
+
+function objectTypeOptions(selected) {
+    return OBJECT_TYPE_IDS.map((id) => `<option value="${id}" ${selected === id ? 'selected' : ''}>${escapeHtml(OBJECT_TYPES[id].label)}${OBJECT_TYPES[id].scope === 'story' ? ' (story)' : ''}</option>`).join('');
+}
 
 export function buildPresetRow(presetId, preset, chatPresets, TRIGGER_KEYS, currentChatId) {
     const isActive = chatPresets.includes(presetId);
@@ -80,8 +95,9 @@ export function buildPresetRow(presetId, preset, chatPresets, TRIGGER_KEYS, curr
 export function buildVariablesListRow(varId, varDef, index, total, selectedPresetId) {
     // Show label (display name) if available, otherwise just the name
     const displayLabel = varDef.label ? `<span class="se-manager-variable-label">${escapeHtml(varDef.label)}</span>` : '';
+    const objectStyle = objectTypeStyle(varDef);
     return `
-                <div class="se-manager-variable-row" data-var-id="${varId}" data-var-name="${(varDef.name || varId).toLowerCase()}" data-var-label="${(varDef.label || '').toLowerCase()}" data-show-in-tracker="${varDef.showInTracker !== false}">
+                <div class="se-manager-variable-row${objectStyle ? ' se-object-variable' : ''}" ${objectStyle ? `style="--se-object-color:${objectStyle.color}"` : ''} data-var-id="${varId}" data-var-name="${(varDef.name || varId).toLowerCase()}" data-var-label="${(varDef.label || '').toLowerCase()}" data-show-in-tracker="${varDef.showInTracker !== false}">
                     <div class="se-manager-variable-row-header">
                         <span class="se-manager-variable-grip" title="Drag to reorder"><i class="fa-solid fa-grip-vertical"></i></span>
                         <div class="se-manager-variable-info">
@@ -90,7 +106,7 @@ export function buildVariablesListRow(varId, varDef, index, total, selectedPrese
                                 ${displayLabel}
                             </div>
                             <small class="se-manager-variable-meta">
-                                ${escapeHtml(varDef.category || 'manual')} • ${escapeHtml(varDef.type || 'string')}
+                                ${escapeHtml(varDef.category || 'manual')} • ${objectStyle ? objectChipHtml(varDef) : escapeHtml(varDef.type || 'string')}
                             </small>
                         </div>
                         <div class="se-manager-variable-actions">
@@ -118,7 +134,7 @@ export function buildVariablesListRow(varId, varDef, index, total, selectedPrese
 
 // One row of the array-default-value editor (Section 3: row-based, not
 // textarea-based). itemType 'enum' renders a <select> of itemEnumValues;
-// 'object' is a placeholder (no per-item editing yet, add/remove/reorder
+// 'record' is a placeholder (no per-item editing yet, add/remove/reorder
 // still work); everything else is a plain text input, per spec.
 function buildArrayItemRow(val, i, itemType, itemEnumValuesArray) {
     let itemHtml;
@@ -127,8 +143,8 @@ function buildArrayItemRow(val, i, itemType, itemEnumValuesArray) {
             .map((ev) => `<option value="${escapeHtml(ev)}" ${ev === val ? 'selected' : ''}>${escapeHtml(ev)}</option>`)
             .join('');
         itemHtml = `<select class="text_pole se-manager-array-item">${opts}</select>`;
-    } else if (itemType === 'object') {
-        itemHtml = `<span class="se-manager-array-item-placeholder">Object item editor coming soon</span>`;
+    } else if (itemType === 'record') {
+        itemHtml = `<span class="se-manager-array-item-placeholder">Record item editor coming soon</span>`;
     } else {
         const displayVal = (typeof val === 'object' && val !== null) ? JSON.stringify(val) : val;
         itemHtml = `<input class="text_pole se-manager-array-item" value="${escapeHtml(displayVal)}" />`;
@@ -279,8 +295,13 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                 <option value="image" ${d.type === 'image' ? 'selected' : ''}>Image</option>
                 <option value="imageList" ${d.type === 'imageList' ? 'selected' : ''}>Image list</option>
                 <option value="imageMap" ${d.type === 'imageMap' ? 'selected' : ''}>Image map</option>
-                <option value="character" ${d.type === 'character' ? 'selected' : ''}>Character</option>
+                <option value="object" ${d.type === 'object' ? 'selected' : ''}>Object (character, location, item…)</option>
             </select>
+
+            ${d.type === 'object' ? `
+                <label class="se-manager-label">Object type</label>
+                <select class="text_pole se-manager-var-field" data-field="objectType">${objectTypeOptions(d.objectType)}</select>
+            ` : ''}
 
             ${d.type === 'datetime' ? `
                 <label class="se-manager-label">Calendar</label>
@@ -376,8 +397,8 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                         ? `<option value="${escapeHtml(d.currentKeyVariable)}" selected>${escapeHtml(d.currentKeyVariable)} (not in this preset)</option>` : ''}
                 </select>
                 <div class="se-empty">The tracker shows the image under that variable's current value (a string, an enum, an array's current value or a calculated result, read as text). No matching key: a placeholder - there is no default key. Only references are stored; nothing is fetched or checked. Drop an image file on a row to set its image, or on empty space to add a row.</div>
-            ` : d.type === 'character' ? `
-                <div class="se-empty">A character variable holds one character of the chat (for a list of characters, use an Array of Character items). It starts empty: characters belong to a setting and a chat, so the chat assigns one - by prompting it (the model answers with a name, matched to the setting's characters or recorded as a new one), or in the tracker. Characters are edited in the Character Manager.</div>
+            ` : d.type === 'object' ? `
+                <div class="se-empty">An object variable holds one ${escapeHtml(OBJECT_TYPES[d.objectType]?.noun ?? 'object')} of the chat (for several, use an Array of Object items). It starts empty: ${OBJECT_TYPES[d.objectType]?.scope === 'story' ? 'it belongs to this chat' : 'objects belong to a setting and a chat'}, so the chat assigns one - by prompting it (the model answers with a name, matched to the known ones or recorded as a new one), or in the tracker. Objects are edited in the object manager.</div>
             ` : d.type === 'calculated' ? `
                 <div class="se-empty">Calculated variables have no manually-set default value - they evaluate automatically.</div>
             ` : `
@@ -468,8 +489,8 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                     <option value="number" ${itemType === 'number' ? 'selected' : ''}>Number</option>
                     <option value="boolean" ${itemType === 'boolean' ? 'selected' : ''}>Boolean</option>
                     <option value="enum" ${itemType === 'enum' ? 'selected' : ''}>Enum</option>
-                    <option value="character" ${itemType === 'character' ? 'selected' : ''}>Character</option>
-                    ${itemType === 'object' ? '<option value="object" selected>Object (created through the API)</option>' : ''}
+                    <option value="object" ${itemType === 'object' ? 'selected' : ''}>Object (character, location, item…)</option>
+                    ${itemType === 'record' ? '<option value="record" selected>Record (created through the API)</option>' : ''}
                     <option value="any" ${itemType === 'any' ? 'selected' : ''}>Any</option>
                 </select>
 
@@ -493,8 +514,13 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                 ` : ''}
 
                 ${itemType === 'object' ? `
-                    <div class="se-empty">Object item editor coming soon. Object items are validated against itemSchema (per-field type checks), configured outside this editor.</div>
-                    <div class="se-empty">Object arrays cannot be used in World Info conditions.</div>
+                    <label class="se-manager-label">Object type</label>
+                    <select class="text_pole se-manager-var-field" data-field="itemObjectType">${objectTypeOptions(d.itemObjectType)}</select>
+                ` : ''}
+
+                ${itemType === 'record' ? `
+                    <div class="se-empty">Record item editor coming soon. Record items are validated against itemSchema (per-field type checks), configured outside this editor.</div>
+                    <div class="se-empty">Record arrays cannot be used in World Info conditions.</div>
                 ` : ''}
 
                 <div class="se-manager-array-constraints">
@@ -620,7 +646,7 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                                 <option value="toggle" ${d.increment.operation === 'toggle' ? 'selected' : ''}>Toggle value</option>
                                 <option value="cycle" ${d.increment.operation === 'cycle' ? 'selected' : ''}>Cycle (replace with next item enum value)</option>
                             ` : ''}
-                            ${itemType === 'object' ? `
+                            ${itemType === 'record' ? `
                                 <option value="incrementField" ${d.increment.operation === 'incrementField' ? 'selected' : ''}>Increment field (coming soon)</option>
                                 <option value="toggleField" ${d.increment.operation === 'toggleField' ? 'selected' : ''}>Toggle field (coming soon)</option>
                             ` : ''}

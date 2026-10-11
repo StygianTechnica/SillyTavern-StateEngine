@@ -205,11 +205,11 @@ export function evaluateCondition(varName, operator, condValue) {
             || Object.values(variables).find((d) => d?.name === varName)
             || { name: varName, type: 'string' };
 
-        // World Info conditions are primitive-only: an array of objects has no
+        // World Info conditions are primitive-only: an array of records has no
         // field to compare, and the editor does not offer one. A stored condition
         // on one (old or hand-edited data) is treated as met, never as a failure.
-        if (def.type === 'array' && def.itemType === 'object') {
-            console.warn(`${LOG_PREFIX} Object-array variable "${varName}" cannot be used in WI conditions — treating condition as met.`);
+        if (def.type === 'array' && def.itemType === 'record') {
+            console.warn(`${LOG_PREFIX} Record-array variable "${varName}" cannot be used in WI conditions — treating condition as met.`);
             return true;
         }
 
@@ -323,8 +323,8 @@ export function getAvailableVariablesForConditions() {
             if (seenNames.has(varName)) continue;
             seenNames.add(varName);
 
-            // Arrays of objects cannot be used in World Info conditions.
-            if (def.type === 'array' && def.itemType === 'object') continue;
+            // Arrays of records cannot be used in World Info conditions.
+            if (def.type === 'array' && def.itemType === 'record') continue;
 
             // Neither can image variables (image, imageList, imageMap).
             if (isImageType(def)) continue;

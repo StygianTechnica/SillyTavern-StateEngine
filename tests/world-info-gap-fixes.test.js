@@ -182,7 +182,7 @@ describe('3. the WI editor escapes everything it renders', () => {
 describe('4. arrays of objects are kept out of World Info conditions', () => {
     it('the editor never offers them: they are left out of the variable list', () => {
         const presetId = makePreset('Party', {
-            'v-party': { name: 'se__party', type: 'array', itemType: 'object', defaultValue: [] },
+            'v-party': { name: 'se__party', type: 'array', itemType: 'record', defaultValue: [] },
             'v-tags': { name: 'se__tags', type: 'array', itemType: 'string', defaultValue: [] },
             'v-hp': { name: 'se__hp' },
         });
@@ -191,7 +191,7 @@ describe('4. arrays of objects are kept out of World Info conditions', () => {
     });
 
     it('a stored condition on one is treated as met (no failure)', () => {
-        const presetId = makePreset('Party', { 'v-party': { name: 'se__party', type: 'array', itemType: 'object', defaultValue: [] } });
+        const presetId = makePreset('Party', { 'v-party': { name: 'se__party', type: 'array', itemType: 'record', defaultValue: [] } });
         addPresetToChat('chat-1', presetId);
         context.variables.local.set('se__party', [{ n: 1 }]);
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -769,37 +769,37 @@ describe('every kind of attached lorebook is seen', () => {
     });
 });
 
-describe('object arrays are created through the API only (manager modal)', () => {
-    it('the Item type dropdown lists Object only for a variable that already is an object array', () => {
+describe('record arrays are created through the API only (manager modal)', () => {
+    it('the Item type dropdown lists Record only for a variable that already is a record array', () => {
         const src = read('src', 'ui', 'manager-modal', 'ui-templates.js');
-        expect(src).toContain(`\${itemType === 'object' ? '<option value="object" selected>`);
-        expect(src).not.toContain(`<option value="object" \${itemType === 'object' ? 'selected' : ''}>Object</option>`);
+        expect(src).toContain(`\${itemType === 'record' ? '<option value="record" selected>`);
+        expect(src).not.toContain(`<option value="record" \${itemType === 'record' ? 'selected' : ''}>`);
     });
 
-    it('a new variable, or one that was not an object array, cannot become one', async () => {
-        const { protectObjectArray } = await import('../src/ui/manager-modal/variable-ui-schema.js');
-        expect(protectObjectArray({ type: 'array', itemType: 'object' }, undefined).itemType).toBe('any');
-        expect(protectObjectArray({ type: 'array', itemType: 'object' }, { type: 'array', itemType: 'string' }).itemType).toBe('any');
-        expect(protectObjectArray({ type: 'array', itemType: 'object' }, { type: 'number' }).itemType).toBe('any');
+    it('a new variable, or one that was not a record array, cannot become one', async () => {
+        const { protectRecordArray } = await import('../src/ui/manager-modal/variable-ui-schema.js');
+        expect(protectRecordArray({ type: 'array', itemType: 'record' }, undefined).itemType).toBe('any');
+        expect(protectRecordArray({ type: 'array', itemType: 'record' }, { type: 'array', itemType: 'string' }).itemType).toBe('any');
+        expect(protectRecordArray({ type: 'array', itemType: 'record' }, { type: 'number' }).itemType).toBe('any');
     });
 
-    it('saving an API-created object array keeps its schema and default items', async () => {
-        const { protectObjectArray } = await import('../src/ui/manager-modal/variable-ui-schema.js');
-        const previous = { type: 'array', itemType: 'object', itemSchema: { hp: { type: 'number' } }, defaultValue: '[{"hp":5}]' };
-        const next = protectObjectArray({ type: 'array', itemType: 'object', itemSchema: {}, defaultValue: '[{}]' }, previous);
-        expect(next.itemType).toBe('object');
+    it('saving an API-created record array keeps its schema and default items', async () => {
+        const { protectRecordArray } = await import('../src/ui/manager-modal/variable-ui-schema.js');
+        const previous = { type: 'array', itemType: 'record', itemSchema: { hp: { type: 'number' } }, defaultValue: '[{"hp":5}]' };
+        const next = protectRecordArray({ type: 'array', itemType: 'record', itemSchema: {}, defaultValue: '[{}]' }, previous);
+        expect(next.itemType).toBe('record');
         expect(next.itemSchema).toEqual({ hp: { type: 'number' } });
         expect(next.defaultValue).toBe('[{"hp":5}]');
     });
 
     it('other variables are left alone', async () => {
-        const { protectObjectArray } = await import('../src/ui/manager-modal/variable-ui-schema.js');
+        const { protectRecordArray } = await import('../src/ui/manager-modal/variable-ui-schema.js');
         const v = { type: 'array', itemType: 'string', defaultValue: '["a"]' };
-        expect(protectObjectArray({ ...v }, { type: 'array', itemType: 'object' })).toEqual(v);
-        expect(protectObjectArray({ type: 'number' }, undefined)).toEqual({ type: 'number' });
+        expect(protectRecordArray({ ...v }, { type: 'array', itemType: 'record' })).toEqual(v);
+        expect(protectRecordArray({ type: 'number' }, undefined)).toEqual({ type: 'number' });
     });
 
     it('the save handler applies it', () => {
-        expect(read('src', 'ui', 'manager-modal', 'ui-events.js')).toContain('variableSchema.protectObjectArray(newVariable, previousDef);');
+        expect(read('src', 'ui', 'manager-modal', 'ui-events.js')).toContain('variableSchema.protectRecordArray(newVariable, previousDef);');
     });
 });

@@ -33,15 +33,15 @@ const SCHEMA_VERSION = 1;
 // Typed-array validation, constraints, and operations
 // ---------------------------------------------------------------------------
 
-// One array item's validity against def.itemType (and, for object items,
+// One array item's validity against def.itemType (and, for record items,
 // def.itemSchema's per-field type checks). Never throws - an item that
 // can't be checked safely (e.g. a malformed itemSchema) is just rejected.
 function isValidArrayItem(item, itemType, def) {
     switch (itemType) {
         case 'string':
             return typeof item === 'string';
-        case 'character':
-            // A character id (spec 1.42).
+        case 'object':
+            // An object id (objects.js).
             return typeof item === 'string' && item !== '';
         case 'number':
             return typeof item === 'number' && Number.isFinite(item);
@@ -51,7 +51,7 @@ function isValidArrayItem(item, itemType, def) {
             const allowed = Array.isArray(def?.itemEnumValues) ? def.itemEnumValues : [];
             return typeof item === 'string' && allowed.includes(item);
         }
-        case 'object': {
+        case 'record': {
             if (typeof item !== 'object' || item === null || Array.isArray(item)) return false;
             const schema = (def?.itemSchema && typeof def.itemSchema === 'object') ? def.itemSchema : {};
             return Object.entries(schema).every(([fieldName, fieldSpec]) => {
@@ -90,7 +90,7 @@ function sortArrayItems(items, itemType, def) {
         case 'number':
             return copy.sort((a, b) => a - b);
         case 'string':
-        case 'character':
+        case 'object':
             return copy.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
         case 'enum': {
             const order = Array.isArray(def?.itemEnumValues) ? def.itemEnumValues : [];
@@ -103,7 +103,7 @@ function sortArrayItems(items, itemType, def) {
         }
         case 'boolean':
             return copy.sort((a, b) => (a === b ? 0 : a ? 1 : -1));
-        case 'object':
+        case 'record':
         case 'any':
         default:
             return copy.sort((a, b) => {

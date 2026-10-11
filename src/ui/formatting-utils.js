@@ -2,7 +2,8 @@
 
 import { DEFAULT_CALENDAR_ID } from '../core/settings-core.js';
 import { formatScalar, getCalendar } from '../core/calendar-engine.js';
-import { isCharacterDefinition, characterValueText } from '../core/character-display.js';
+import { isObjectDefinition, objectValueText, objectTypeOf } from '../core/object-display.js';
+import { getObjectType } from '../core/object-types.js';
 
 export function stripHtml(str) {
     return String(str ?? '').replace(/<[^>]*>/g, '').trim();
@@ -160,21 +161,12 @@ export function describeConstraint(def) {
             + 'If no time has passed, repeat the current value';
     }
     if (def.type === 'enum') return `one of: ${def.enumValues.join(', ')}`;
-    // Characters (spec 1.42): the model answers with NAMES; State Engine
-    // matches them to its characters (or records new ones).
-    if (def.type === 'character') {
-        return 'a character\'s name, exactly as the story calls them (e.g. "Kael" or "the stranger"). '
-            + 'Reply with the name only; "" if nobody fits';
-    }
-    if (def.type === 'array' && def.itemType === 'character') {
-        // Start from the current list (spec 1.43): small models otherwise
-        // answer [] or only the newest arrival.
-        return 'list of the characters in the scene right now, each by name exactly as the story calls them. '
-            + 'Start from the current list: keep everyone still present, add anyone who arrived, remove only those who left. '
-            + 'Do NOT include groups, crowds, background extras, plural nouns, or generic roles (e.g. “patrons”, “guards”, '
-            + '“reception staff”, “people”, “students”). Only include a person if the story treats them as a specific individual'
-            + '(named or uniquely described).' 
-            + 'Reply with a full JSON array of names (e.g. ["Kael","the stranger"]); [] only if nobody at all is in the scene';
+    // Objects: the model answers with NAMES (a list: a JSON array of names);
+    // State Engine matches them to its objects of that type (or records new
+    // ones). The wording is the type's own (object-types.js).
+    if (isObjectDefinition(def)) {
+        const t = getObjectType(objectTypeOf(def));
+        return def.type === 'object' ? t.prompt.single : t.prompt.list;
     }
     if (def.type === 'array') {
         const itemType = def.itemType || 'any';
@@ -206,6 +198,22 @@ export function describeConstraint(def) {
 //     return 'Manual';
 // }
 
+// A variable's type as shown in the manager: an object variable as its
+// object type ("Location"), a list as "List of Locations"; anything else by
+// typeLabel(). `def` may be a definition or a bare type.
+export function definitionTypeLabel(def) {
+    const objectType = getObjectType(objectTypeOf(def));
+    if (objectType) return def.type === 'object' ? objectType.label : `List of ${objectType.plural}`;
+    return typeLabel(typeof def === 'string' ? def : def?.type);
+}
+
+// The colour and icon an object variable is shown with, or null for a
+// basic type - objects read as a family of their own.
+export function objectTypeStyle(def) {
+    const t = getObjectType(objectTypeOf(def));
+    return t ? { color: t.color, icon: t.icon, label: definitionTypeLabel(def) } : null;
+}
+
 export function typeLabel(type) {
     if (type === 'number') return 'Number';
     if (type === 'boolean') return 'True/False';
@@ -215,7 +223,7 @@ export function typeLabel(type) {
     if (type === 'image') return 'Image';
     if (type === 'imageList') return 'Image list';
     if (type === 'imageMap') return 'Image map';
-    if (type === 'character') return 'Character';
+    if (type === 'object') return 'Object';
     return 'Text';
 }
 
@@ -240,8 +248,8 @@ export function formatValueForDisplay(value, def) {
         const style = def.datetimeMode === 'dateOnly' ? 'date' : def.datetimeMode === 'timeOnly' ? 'time' : 'full';
         return formatScalar(def.calendar || DEFAULT_CALENDAR_ID, value, style) ?? String(value);
     }
-    // Character ids show as names (spec 1.42).
-    if (isCharacterDefinition(def)) return characterValueText(def, value) || '—';
+    // Object ids show as names.
+    if (isObjectDefinition(def)) return objectValueText(def, value) || '—';
     if (def?.type === 'boolean') {
         const isTrue = value === true || value === 'true'
             || (typeof value === 'number' && value !== 0);

@@ -8,7 +8,7 @@ import { getDefaultValue } from './variable-schema.js';
 import { shouldSkipPromptedRefresh, runPromptedStateUpdate } from './prompted-engine.js';
 import { recalculateDependents, recalculateAllForChat } from './calculated-engine.js';
 import { copyChatRoles, migrateRoleData } from './roles.js';
-import { getChatSetting, setChatSetting, ensureChatSetting, migrateCharacterData } from './characters.js';
+import { getChatSetting, setChatSetting, ensureChatSetting, migrateObjectData } from './objects.js';
 import { askChatSetting } from '../ui/setting-prompt.js';
 
 
@@ -198,7 +198,7 @@ const askedThisSession = new Set();
 // Settings (spec 1.42): a new chat started from an earlier one with its
 // presets ("Same presets" / "Continue") uses the same setting; a brand-new
 // chat, or a clean slate, is asked which setting to use (only when there is
-// more than the Default setting - see characters.js ensureChatSetting).
+// more than the Default setting - see objects.js ensureChatSetting).
 // `askSetting` is replaceable for tests.
 export async function offerNewChatStart(chatId, ask = askNewChatStart, askSetting = askChatSetting) {
     try {
@@ -291,11 +291,12 @@ export function runStartupOnce() {
     } catch (err) {
         console.warn(LOG_PREFIX, 'role data migration failed (gracefully handled)', err);
     }
-    // Characters from before "confirmed <=> in the setting" (spec 1.42).
+    // Characters, character settings and character variables from before
+    // object variables, and objects from before "confirmed <=> in the setting".
     try {
-        migrateCharacterData();
+        migrateObjectData();
     } catch (err) {
-        console.warn(LOG_PREFIX, 'character data migration failed (gracefully handled)', err);
+        console.warn(LOG_PREFIX, 'object data migration failed (gracefully handled)', err);
     }
     runPromptedStateUpdate('startup');
 }

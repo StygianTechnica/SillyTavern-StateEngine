@@ -54,7 +54,7 @@ function makeVariables() {
             'v-hp': { id: 'v-hp', name: 'se__hp', type: 'number', defaultValue: 0 },
             'v-inv': { id: 'v-inv', name: 'se__inventory', type: 'array', itemType: 'string', defaultValue: [] },
             'v-tags': { id: 'v-tags', name: 'se__tags', type: 'array', itemType: 'enum', itemEnumValues: ['red', 'green'], defaultValue: [] },
-            'v-party': { id: 'v-party', name: 'se__party', type: 'array', itemType: 'object', defaultValue: [] },
+            'v-party': { id: 'v-party', name: 'se__party', type: 'array', itemType: 'record', defaultValue: [] },
         },
     };
     addPresetToChat('chat-1', id);

@@ -38,6 +38,8 @@ export { VARIABLES_CHANGED_EVENT } from '../core/variable-change-signal.js';
 const DISPLAY_FIELDS = [
     'name', 'label', 'description', 'type', 'scope',
     'min', 'max', 'enumValues', 'itemType', 'calendar', 'datetimeMode', 'currentKeyVariable',
+    // An object variable / object list says which object type it holds.
+    'objectType', 'itemObjectType',
 ];
 
 function displayDef(def) {
