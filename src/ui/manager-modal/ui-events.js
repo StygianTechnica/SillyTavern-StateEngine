@@ -163,6 +163,20 @@ export function wireEvents(managerApi, managerState) {
         }
     });
 
+    // A second paragraph for a confirmation, when the preset belongs to an
+    // extension that is installed and running right now: changing that
+    // extension's preset behind its back can break it. '' otherwise - an
+    // extension that was removed or disabled needs no warning, so its
+    // leftover presets can be cleaned up freely. `consequence` says what
+    // this particular change risks.
+    function runningExtensionWarning(presetId, consequence) {
+        const owner = managerApi.getPresetOwner?.(presetId);
+        if (!owner?.active) return '';
+        return `
+
+This preset is managed by the extension "${owner.extensionId}", which is installed and running. ${consequence}`;
+    }
+
     $overlay.on('click', '.se-manager-toggle-active', function () {
         const presetId = $(this).attr('data-preset-id');
         // The chat open NOW - not the one the button was drawn for (data-chat-id
@@ -174,6 +188,8 @@ export function wireEvents(managerApi, managerState) {
         if (!preset) return;
 
         if (managerApi.getPresetsForChat(chatId).includes(presetId)) {
+            const warning = runningExtensionWarning(presetId, 'Deactivating it can stop that extension from working in this chat, and the extension may switch it back on.');
+            if (warning && !window.confirm(`Deactivate "${preset.name}" for this chat?${warning}`)) return;
             managerApi.removePresetFromChat(chatId, presetId);
         } else {
             managerApi.addPresetToChat(chatId, presetId);
@@ -256,7 +272,8 @@ export function wireEvents(managerApi, managerState) {
         const preset = settings.presets[presetId];
         if (!preset) return;
 
-        if (window.confirm(`Delete preset "${preset.name}"? This will also delete all variables in this preset.`)) {
+        const warning = runningExtensionWarning(presetId, 'Deleting it can stop that extension from working, and erases what it stored in these variables in every chat - the extension may recreate the preset, but not those values.');
+        if (window.confirm(`Delete preset "${preset.name}"? This will also delete all variables in this preset.${warning}`)) {
             managerApi.deletePreset(presetId);
             if (managerState.currentPresetId === presetId) managerState.currentPresetId = null;
             uiRender.renderPresetsTab(managerApi, managerState.currentPresetId, managerState.presetsSubtab);
@@ -301,7 +318,8 @@ export function wireEvents(managerApi, managerState) {
         const presetId = $(this).attr('data-preset-id');
         const preset = managerApi.getSettings().presets[presetId];
         if (!preset) return;
-        if (window.confirm(`Delete independent preset "${preset.name}"? This will also delete all variables in this preset.`)) {
+        const warning = runningExtensionWarning(presetId, 'Deleting it can stop that extension from working, and erases what it stored in these variables in every chat - the extension may recreate the preset, but not those values.');
+        if (window.confirm(`Delete independent preset "${preset.name}"? This will also delete all variables in this preset.${warning}`)) {
             managerApi.deleteIndependentPreset(presetId);
             uiRender.renderPresetsTab(managerApi, managerState.currentPresetId, managerState.presetsSubtab);
             managerApi.setStatus(`Deleted "${preset.name}" and all its variables.`);
@@ -464,7 +482,8 @@ export function wireEvents(managerApi, managerState) {
         const preset = settings.presets[presetId];
         if (!preset || !preset.variables[varId]) return;
 
-        if (window.confirm(`Delete variable "${preset.variables[varId].name || varId}"?`)) {
+        const warning = runningExtensionWarning(presetId, 'Deleting one of its variables can stop that extension from working, and erases what it stored there in every chat.');
+        if (window.confirm(`Delete variable "${preset.variables[varId].name || varId}"?${warning}`)) {
             const deletedName = preset.variables[varId].name;
             presetManager.deleteVariable(presetId, varId);
             const chatId = managerApi.getCurrentChatId();

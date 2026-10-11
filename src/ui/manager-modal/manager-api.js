@@ -17,7 +17,10 @@
 
 import { setManagerApi } from './manager-modal.js';
 import { getSettings, persistSettings, toggleDebugMode, debugLog, BUILTIN_NAMESPACE } from '../../core/settings-core.js';
-import { getPresetsForChat, restoreDefaultPresets, isVariableNameTaken, generateUniqueVariableName } from '../../core/preset-manager.js';
+import { getPresetsForChat, restoreDefaultPresets, isVariableNameTaken, generateUniqueVariableName, deletePreset as deletePresetCore } from '../../core/preset-manager.js';
+import { deleteVariableValueEverywhere } from '../../core/chat-state.js';
+import { refreshVariableMacros } from '../../core/macro-registration.js';
+import { getExtensionsStore, isNamespaceActive } from '../../api/namespace-manager.js';
 import { stateEngine } from '../../api/index.js';
 import { ensureInstanceId } from '../../api/identity.js';
 import { getDebugInfo } from '../../core/debug-engine.js';
@@ -33,6 +36,32 @@ import { ROLE_TYPES, listChatRoles, defineRole, deleteRole, assignChatRole, cand
 
 function findPresetById(presetId) {
     return getSettings().presets[presetId] || null;
+}
+
+// The extension that owns a preset, for the manager's warnings:
+// { namespace, extensionId, active } - `active` when that extension is
+// installed and running right now (isNamespaceActive) - or null for State
+// Engine's own presets.
+export function getPresetOwnerAdapter(presetId) {
+    const namespace = findPresetById(presetId)?.namespace;
+    if (!namespace || namespace === BUILTIN_NAMESPACE) return null;
+    return { namespace, extensionId: getExtensionsStore()[namespace]?.id || namespace, active: isNamespaceActive(namespace) };
+}
+
+// Deleting a preset another extension owns, as the USER's decision from the
+// manager. stateEngine.deletePreset() is owner-only, so called as `se` it
+// refuses - which left presets of an uninstalled extension impossible to
+// remove. This does exactly what deletePreset() does once ownership has
+// passed (preset, its chat bindings, its stored values everywhere, macros).
+// The manager warns first while the owning extension is running.
+function deleteExtensionPreset(presetId) {
+    const preset = findPresetById(presetId);
+    if (!preset) return false;
+    const varNames = Object.values(preset.variables || {}).map((def) => def?.name).filter(Boolean);
+    deletePresetCore(presetId);
+    for (const varName of varNames) deleteVariableValueEverywhere(varName);
+    refreshVariableMacros();
+    return true;
 }
 
 // Every stateEngine.* call below is made AS the built-in extension:
@@ -95,6 +124,10 @@ export function renamePresetAdapter(presetId, newName) {
 export function deletePresetAdapter(presetId) {
     const preset = findPresetById(presetId);
     if (!preset) return;
+    if (getPresetOwnerAdapter(presetId)) {
+        deleteExtensionPreset(presetId);
+        return;
+    }
     callAsBuiltin((extId, instId) => stateEngine.deletePreset(extId, instId, preset.namespace || BUILTIN_NAMESPACE, preset.name));
 }
 
@@ -139,6 +172,7 @@ export function updateIndependentPresetAdapter(presetId, patch) {
 export function deleteIndependentPresetAdapter(presetId) {
     const preset = findPresetById(presetId);
     if (!preset) return false;
+    if (getPresetOwnerAdapter(presetId)) return deleteExtensionPreset(presetId);
     return !!callAsBuiltin((extId, instId) => stateEngine.deleteIndependentPreset(extId, instId, preset.namespace || BUILTIN_NAMESPACE, preset.name));
 }
 
@@ -240,6 +274,7 @@ setManagerApi({
     getPresetsForChat,
     addPresetToChat: addPresetToChatAdapter,
     removePresetFromChat: removePresetFromChatAdapter,
+    getPresetOwner: getPresetOwnerAdapter,
     setStatus,
     renderVarTable,
     renderTrackerPanel,

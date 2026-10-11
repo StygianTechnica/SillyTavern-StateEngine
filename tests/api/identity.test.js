@@ -421,19 +421,20 @@ describe('identity', () => {
                 setStatus.mockClear();
             });
 
-            it.each([
-                ['deletePresetAdapter', () => adapters.deletePresetAdapter(foreignId)],
-                ['renamePresetAdapter', () => adapters.renamePresetAdapter(foreignId, 'Mine now')],
-            ])('%s reports the rejection through setStatus instead of throwing into the UI handler', (_name, act) => {
-                expect(act).not.toThrow();
+            it('renamePresetAdapter reports the rejection through setStatus instead of throwing into the UI handler', () => {
+                expect(() => adapters.renamePresetAdapter(foreignId, 'Mine now')).not.toThrow();
                 expect(setStatus).toHaveBeenCalledWith("Extension 'se' does not own namespace 'pp'", true);
             });
 
-            it('and the other namespace\'s preset definition is untouched', () => {
-                adapters.deletePresetAdapter(foreignId);
+            it('and the other namespace\'s preset definition is untouched by a rename', () => {
                 adapters.renamePresetAdapter(foreignId, 'Mine now');
-
                 expect(settings.get().presets[foreignId]).toMatchObject({ name: 'Theirs', namespace: 'pp' });
+            });
+
+            it('deletePresetAdapter deletes it - the user may remove any extension\'s preset (the manager warns first while that extension runs)', () => {
+                expect(() => adapters.deletePresetAdapter(foreignId)).not.toThrow();
+                expect(settings.get().presets[foreignId]).toBeUndefined();
+                expect(setStatus).not.toHaveBeenCalledWith(expect.stringMatching(/does not own/), true);
             });
 
             it('but it CAN be activated/deactivated for a chat (binding is not an edit)', () => {

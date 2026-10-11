@@ -57,6 +57,21 @@ const NAMESPACE_PATTERN = /^[A-Za-z][A-Za-z0-9]*$/;
 // idempotent - returns the existing record, writes nothing - because
 // settings persist across page loads and an extension calling this on
 // every startup must not fail on its second load.
+// Namespaces claimed during THIS page load. Every namespace record is
+// persisted, so the store alone cannot tell an extension that is installed
+// and running from one that was removed or disabled - but a running
+// extension claims its namespace on every startup (the extension template
+// does it unconditionally), so a claim this session is that signal. In
+// memory only, by design: a reload starts empty.
+const claimedThisSession = new Set();
+
+// True if the extension owning `namespace` claimed it during this page
+// load - i.e. it is installed, enabled and has started. Discovery, open to
+// any caller. Always false for a namespace nobody owns.
+export function isNamespaceActive(namespace) {
+    return claimedThisSession.has(namespace);
+}
+
 export function createNamespace(extensionId, instanceId, namespace) {
     validateInstanceId(instanceId);
 
@@ -69,7 +84,10 @@ export function createNamespace(extensionId, instanceId, namespace) {
 
     const store = getExtensionsStore();
     if (Object.prototype.hasOwnProperty.call(store, namespace)) {
-        if (store[namespace].id === extensionId) return { ...store[namespace] };
+        if (store[namespace].id === extensionId) {
+            claimedThisSession.add(namespace);
+            return { ...store[namespace] };
+        }
         throw new Error(`Namespace '${namespace}' is already taken`);
     }
 
@@ -81,6 +99,7 @@ export function createNamespace(extensionId, instanceId, namespace) {
     const record = { id: extensionId, namespace, name: extensionId, registeredAt: Date.now() };
     store[namespace] = record;
     persistSettings();
+    claimedThisSession.add(namespace);
     return { ...record };
 }
 
