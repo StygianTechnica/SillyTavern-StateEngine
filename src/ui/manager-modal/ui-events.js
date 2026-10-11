@@ -329,7 +329,9 @@ export function wireEvents(managerApi, managerState) {
         const raw = $(this).val();
 
         let value;
-        if (field === 'temperature' || field === 'maxTokens' || field === 'historyLimit') {
+        if (field === 'joinMainUpdate') {
+            value = $(this).is(':checked');
+        } else if (field === 'temperature' || field === 'maxTokens' || field === 'historyLimit') {
             // An emptied box must send `null`, not `undefined`: configureIndependentPreset
             // only merges fields that are PRESENT (pickConfigFields skips `undefined` so a
             // patch can touch just one field at a time), so `undefined` here would be

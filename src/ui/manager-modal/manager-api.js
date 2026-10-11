@@ -125,7 +125,7 @@ export function createIndependentPresetAdapter(name) {
 }
 
 // patch: { name?, description?, connectionProfileId?, temperature?, maxTokens?,
-// historyLimit?, promptedHeader?, enabled? } - anything not present is
+// historyLimit?, promptedHeader?, enabled?, joinMainUpdate? } - anything not present is
 // left untouched (updateIndependentPreset/configureIndependentPreset both merge).
 export function updateIndependentPresetAdapter(presetId, patch) {
     const preset = findPresetById(presetId);

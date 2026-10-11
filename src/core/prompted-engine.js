@@ -455,14 +455,20 @@ export async function runPromptedStateUpdate(triggerType) {
         loadChatState(chatId); // ensure this chat's state exists before anything else runs
         const activePresetIds = getPresetsForChat(chatId);
 
-        // Filter presets that have this trigger enabled
+        // Filter presets that have this trigger enabled. An independent
+        // preset runs on its own (runIndependentPreset) and is left out of
+        // this shared call unless its owner opted it in with
+        // independentConfig.joinMainUpdate - and even then not while it is
+        // disabled, since `enabled: false` suspends every execution path.
+        const joinsMainUpdate = (preset) => preset && (preset.independentPreset !== true
+            || (preset.independentConfig?.joinMainUpdate === true && preset.independentConfig?.enabled !== false));
         let presetsToUpdate = [];
         if (triggerType === 'manual-all') {
-            presetsToUpdate = activePresetIds;
+            presetsToUpdate = activePresetIds.filter(presetId => joinsMainUpdate(settings.presets[presetId]));
         } else {
             presetsToUpdate = activePresetIds.filter(presetId => {
                 const preset = settings.presets[presetId];
-                return preset && Array.isArray(preset.triggers) && preset.triggers.includes(triggerType);
+                return joinsMainUpdate(preset) && Array.isArray(preset.triggers) && preset.triggers.includes(triggerType);
             });
         }
 

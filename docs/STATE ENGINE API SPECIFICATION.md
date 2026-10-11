@@ -1642,6 +1642,15 @@ settings copy - the real settings object is never touched). New fields:
   makes `runIndependentPreset` refuse immediately (before the concurrency
   lock, before any LLM call) whether triggered manually, by an extension, or
   (once built) by a schedule or an event.
+- `joinMainUpdate` (boolean, default `false`) - lets an independent preset
+  ALSO ride the main per-message prompted update (`runPromptedStateUpdate`)
+  for chats it is active in, under its ordinary `triggers`, so its variables
+  share that one LLM call instead of costing a separate one. It still runs
+  on its own through `runIndependentPreset`/its schedule as before. Ignored
+  while `enabled` is `false`. Left at `false`, an independent preset is
+  never part of the main update - even if it was activated for a chat (it
+  previously was, by accident: the main update filtered only on activation
+  and `triggers`, and every preset defaults to `triggers: ['ai']`).
 
 `context` is deliberately NOT accepted through `configureIndependentPreset` /
 create / update - see 13.4.

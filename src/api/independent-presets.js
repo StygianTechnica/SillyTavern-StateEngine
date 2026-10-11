@@ -66,7 +66,7 @@ import { chunkPromptUnits } from '../core/prompt-chunking.js';
 // updateIndependentPreset() accept. `context` is deliberately NOT among them
 // - see updateIndependentPresetContext() below for why it needs its own,
 // narrower entry point.
-const CONFIG_FIELDS = ['connectionProfileId', 'temperature', 'maxTokens', 'promptedHeader', 'promptedRules', 'enabled', 'historyLimit'];
+const CONFIG_FIELDS = ['connectionProfileId', 'temperature', 'maxTokens', 'promptedHeader', 'promptedRules', 'enabled', 'historyLimit', 'joinMainUpdate'];
 
 function pickConfigFields(source) {
     const out = {};
@@ -81,7 +81,10 @@ function pickConfigFields(source) {
 // stateEngineMaxTokens override mechanism (src/core/background-llm.js) but
 // scoped per-preset: connectionProfileId, temperature, maxTokens,
 // promptedHeader, promptedRules,
-// enabled (1.29: false suspends every execution path - see runIndependentPreset).
+// enabled (1.29: false suspends every execution path - see runIndependentPreset),
+// joinMainUpdate (default false: true lets the preset, when active for a
+// chat and triggered like a regular preset, also ride the main per-message
+// prompted update - see runPromptedStateUpdate in prompted-engine.js).
 // `context` is never accepted here - only updateIndependentPresetContext()
 // may set it. There is no "which variable batch" field any more
 // (requirements spec 1.20, rewritten 2026-09-22) - a run always operates on

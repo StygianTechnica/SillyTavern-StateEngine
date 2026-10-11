@@ -913,6 +913,12 @@ export function buildIndependentPresetRow(presetId, preset, currentChatId, statu
                                 <small class="se-empty-inline">Chat-history context mode only.</small>
                             </div>
                             <div>
+                                <label class="checkbox_label" title="Also include this preset's variables in the regular per-message update for chats it is active in, instead of only running on its own.">
+                                    <input type="checkbox" class="se-indy-field" data-preset-id="${presetId}" data-field="joinMainUpdate" ${config.joinMainUpdate === true ? 'checked' : ''} />
+                                    <span>Join main update</span>
+                                </label>
+                            </div>
+                            <div>
                                 <label class="se-manager-label">Context</label>
                                 <div class="se-indy-context-indicator" title="Set only by the extension that owns this preset - not editable here.">
                                     ${escapeHtml(CONTEXT_MODE_LABEL[status.contextMode] || status.contextMode)}
