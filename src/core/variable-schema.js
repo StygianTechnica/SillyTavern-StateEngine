@@ -144,6 +144,12 @@ export function blankDefinition() {
         // Prompted increment configuration
         prompted: {
             instructions: '',   // LLM instructions
+            // NEW EACH TURN (opt-in, any prompted update variable): the model
+            // is shown no current value and answers fresh every turn instead
+            // of repeating the last answer - for a value that is consumed
+            // each turn (a list of this turn's new facts, a per-turn note).
+            // See prompted-engine.js isNewEachTurn().
+            newEachTurn: false,
         },
         version: 1
     };

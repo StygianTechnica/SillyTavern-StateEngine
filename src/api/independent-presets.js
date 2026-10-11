@@ -58,7 +58,7 @@ import { incrementDelta } from '../core/increment-delta.js';
 import { recalculateDependents } from '../core/calculated-engine.js';
 import { callBackgroundLLM } from '../core/background-llm.js';
 import { extractJsonObject, describeConstraint, buildRecentMessagesSection, selectPromptMessages } from '../ui/formatting-utils.js';
-import { shouldSkipPromptedRefresh, isDoneFlag } from '../core/prompted-engine.js';
+import { shouldSkipPromptedRefresh, isDoneFlag, isNewEachTurn, newEachTurnLine } from '../core/prompted-engine.js';
 import { parseScheduleTarget, scheduleAfterRun } from '../core/schedule-engine.js';
 import { chunkPromptUnits } from '../core/prompt-chunking.js';
 
@@ -540,7 +540,10 @@ async function runIndependentPresetInternal(chatId, presetRef) {
             ...updateVars.map((def) => {
                 const current = getVar(chatId, def.name)?.value ?? def.defaultValue;
                 const instructions = (def.prompted?.instructions || def.description || '').trim();
-                const line = `- "${def.name}" [${describeConstraint(def)}] currently ${JSON.stringify(current)}.${instructions ? ` ${instructions}` : ''}`;
+                // NEW EACH TURN reads the same as in the main update.
+                const line = isNewEachTurn(chatId, def)
+                    ? newEachTurnLine(chatId, def, instructions)
+                    : `- "${def.name}" [${describeConstraint(def)}] currently ${JSON.stringify(current)}.${instructions ? ` ${instructions}` : ''}`;
                 return { def, kind: 'update', line, size: line.length };
             }),
             ...incrementVars.map((def) => {

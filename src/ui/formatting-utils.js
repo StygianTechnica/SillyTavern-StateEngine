@@ -170,7 +170,13 @@ export function describeConstraint(def) {
     }
     if (def.type === 'array') {
         const itemType = def.itemType || 'any';
-        let desc = `array of ${itemType}`;
+        // A record list is a list of OBJECTS: "array of record" with a
+        // list-of-strings example misled small models. Its example shows the
+        // record's own fields (itemSchema).
+        const recordExample = itemType === 'record'
+            ? JSON.stringify([Object.fromEntries(Object.keys(def.itemSchema && typeof def.itemSchema === 'object' ? def.itemSchema : {}).map((field) => [field, '...']))])
+            : null;
+        let desc = itemType === 'record' ? 'array of JSON objects' : `array of ${itemType}`;
         if (itemType === 'enum') {
             const allowed = Array.isArray(def.itemEnumValues) ? def.itemEnumValues : [];
             desc += ` (each item one of: ${allowed.join(', ')})`;
@@ -184,7 +190,7 @@ export function describeConstraint(def) {
         // model is never asked to perform an increment-style operation
         // itself (that's applyIncrement's job, triggered deterministically
         // or via the incrementVars true/false path, never described here).
-        desc += `. Reply with a full JSON array of items matching this description (e.g. ["a","b"]) - `
+        desc += `. Reply with a full JSON array of items matching this description (e.g. ${recordExample ?? '["a","b"]'}) - `
             + `never an operation object, never a partial update, never anything besides the JSON array value for this key`;
         return desc;
     }

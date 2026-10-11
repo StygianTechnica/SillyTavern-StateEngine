@@ -4,6 +4,29 @@
 
 **Added**
 
+- **"New each turn" for any variable:** a prompted variable can opt in (`prompted.newEachTurn`,
+  or *New each turn* under its prompted instructions in the manager). It is then shown without
+  its current value and marked NEW EACH TURN, so the model answers fresh every turn instead of
+  repeating its last answer - for a value consumed each turn, such as a list of what is new.
+  A list may be `[]` when nothing new applies (the rules now say so); independent presets
+  treat it the same way. Until now only a datetime's delta-source variable got this.
+- **Record lists described as objects:** a prompted `itemType: 'record'` list is described to
+  the model as an array of JSON objects, with an example built from its `itemSchema` fields,
+  instead of "array of record" with a list-of-strings example.
+- **Independent presets can join the main update** (`independentConfig.joinMainUpdate`, *Join
+  main update* in the manager): their variables share the per-message call for chats they are
+  active in. Off by default - an independent preset is otherwise never part of the main update.
+- **Warning before changing a running extension's preset:** deactivating or deleting a preset
+  (or deleting one of its variables) that belongs to an extension installed and running right
+  now asks first, naming the extension. `isNamespaceActive(namespace)` tells whether a
+  namespace's extension claimed it this session.
+
+**Fixed**
+
+- **Presets of other extensions could not be deleted from the manager** - including the
+  leftovers of an uninstalled extension. They can now (after the warning above while that
+  extension runs).
+
 - **"Latest turn" in the update prompt:** every message since the last user message (the
   user's action and every reply after it), so instructions like "how much time passed?" see
   the whole turn, not only the last AI message. The whole turn is always sent, reaching past

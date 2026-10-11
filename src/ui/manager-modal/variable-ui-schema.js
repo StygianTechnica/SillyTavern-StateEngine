@@ -298,6 +298,7 @@ export function normalizeCollectedValues(values) {
     if (values.prompted !== undefined) {
         out.prompted = {
             instructions: values.prompted.instructions || '',
+            newEachTurn: values.prompted.newEachTurn === true,
         };
     }
 

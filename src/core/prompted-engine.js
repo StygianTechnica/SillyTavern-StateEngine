@@ -118,11 +118,28 @@ function isDeltaSource(chatId, def) {
         .some((other) => other?.type === 'datetime' && other.deltaSource === def.name);
 }
 
+// NEW EACH TURN for ANY variable (2026-10-11): a variable opts in with
+// def.prompted.newEachTurn - the same treatment a deltaSource gets: no
+// current value shown, marked NEW EACH TURN, so the model answers fresh
+// rather than repeating the last answer (which, for a value its owner
+// consumes and empties each turn, would always be the empty one). A list
+// may be empty when nothing new applies; the rules' "never empty" is for
+// single values.
+export function isNewEachTurn(chatId, def) {
+    return def?.prompted?.newEachTurn === true || isDeltaSource(chatId, def);
+}
+
+// The update line for a NEW EACH TURN variable (isNewEachTurn() true).
+export function newEachTurnLine(chatId, def, instructions) {
+    const text = instructions ? ` ${instructions}` : '';
+    if (isDeltaSource(chatId, def)) return `- "${def.name}" [a duration such as "30 minutes" or "2 hours"; NEW EACH TURN]${text}`;
+    const empty = def.type === 'array' ? ' - [] when nothing new applies' : '';
+    return `- "${def.name}" [${describeConstraint(def)}; NEW EACH TURN${empty}]${text}`;
+}
+
 function updateVarLine(chatId, def) {
     const instructions = (def.prompted?.instructions || def.description || '').trim();
-    if (isDeltaSource(chatId, def)) {
-        return `- "${def.name}" [a duration such as "30 minutes" or "2 hours"; NEW EACH TURN]${instructions ? ` ${instructions}` : ''}`;
-    }
+    if (isNewEachTurn(chatId, def)) return newEachTurnLine(chatId, def, instructions);
     const current = valueForPrompt(def, getVar(chatId, def.name)?.value ?? (def.type === 'datetime' ? getDefaultValue(def) : def.defaultValue));
     return `- "${def.name}" [${describeConstraint(def)}] currently ${JSON.stringify(current)}.${instructions ? ` ${instructions}` : ''}`;
 }

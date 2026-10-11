@@ -563,6 +563,10 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                     <textarea class="text_pole se-manager-var-field"
                             data-field="prompted.instructions"
                             placeholder="Prompted variable instructions">${escapeHtml(d.prompted.instructions)}</textarea>
+                    <label class="checkbox_label" title="The model is not shown the current value and answers fresh every turn, instead of repeating its last answer. For a value consumed each turn - e.g. a list of what is new this turn.">
+                        <input type="checkbox" class="se-manager-var-field" data-field="prompted.newEachTurn" ${d.prompted?.newEachTurn === true ? 'checked' : ''} />
+                        <span>New each turn</span>
+                    </label>
                 </div>
                 ` : `
                 <div class="se-empty">Calculated variables are read-only: prompted and incremented behavior are not available.</div>
