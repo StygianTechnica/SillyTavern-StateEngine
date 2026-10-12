@@ -14,6 +14,7 @@ import { refreshManagerButtonLater } from '../ui/wand-ui.js';
 import { renderNotificationUi } from '../ui/notification-ui.js';
 import { populateConnectionProfileDropdown } from '../ui/connection-profile-ui.js';
 import { checkAndRunDueSchedules } from '../api/independent-presets.js';
+import { syncObjectReviewNotifications } from '../core/objects.js';
 
 // Independent Preset scheduling (requirements spec 1.32): fire-and-forget,
 // like runPromptedStateUpdate's own background LLM call - checkAndRunDueSchedules
@@ -132,6 +133,15 @@ export function registerEvents() {
 
         try {
             hydrateMacroStoreForChat(chatId);
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
+        }
+
+        // "New characters detected for review" are about the open chat: the
+        // last chat's go, this chat's still-unreviewed ones come back. Runs
+        // on the chat SillyTavern opens at load too.
+        try {
+            syncObjectReviewNotifications(chatId || null);
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine error (gracefully handled)', err);
         }

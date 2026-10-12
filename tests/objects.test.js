@@ -278,6 +278,24 @@ describe('extraction (resolveObjectNames)', () => {
         expect(listNotifications().find((n) => n.message.startsWith('New locations detected for review'))).toMatchObject({ callbackId: 'objects.review.location' });
     });
 
+    it('review notifications follow the open chat, and go once everything is reviewed', () => {
+        const review = () => listNotifications().filter((n) => n.callbackId === 'objects.review.character').map((n) => n.message);
+        O.resolveObjectNames(CHAT, 'character', ['Syrvanus', 'the gremlin']);
+        expect(review()).toEqual(['New characters detected for review: Syrvanus, the gremlin']);
+
+        O.syncObjectReviewNotifications('another-chat');
+        expect(review()).toEqual([]);
+        O.syncObjectReviewNotifications(null);
+        expect(review()).toEqual([]);
+
+        O.syncObjectReviewNotifications(CHAT);
+        expect(review()).toEqual(['Characters to review in this chat: Syrvanus, the gremlin']);
+
+        context.chatId = CHAT;
+        for (const object of O.listObjects(CHAT, 'character').filter((o) => !o.confirmed)) O.confirmObject(CHAT, object.id);
+        expect(review()).toEqual([]);
+    });
+
     it('a chat object matched CONFIRM_AFTER_MATCHES times is confirmed (and so in the setting)', () => {
         const kael = O.createChatObject(CHAT, 'character', 'Kael');
         for (let i = 0; i < O.CONFIRM_AFTER_MATCHES - 1; i++) O.resolveObjectNames(CHAT, 'character', ['Kael']);

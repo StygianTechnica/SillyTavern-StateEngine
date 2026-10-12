@@ -49,7 +49,7 @@
 import { LOG_PREFIX, BUILTIN_NAMESPACE, getSettings, persistSettings } from './settings-core.js';
 import { loadChatState, saveChatState, hydrateMacroStoreForChat } from './chat-state.js';
 import { notifyVariablesChanged } from './variable-change-signal.js';
-import { putNotification, notificationId, setCallback } from './notification-core.js';
+import { putNotification, removeNotification, getNotification, notificationId, setCallback } from './notification-core.js';
 import { genId } from './variable-schema.js';
 import { setObjectNameResolver, objectTypeOf } from './object-display.js';
 import { safeImageSrc } from './image-variables.js';
@@ -1271,20 +1271,63 @@ export function openObjectManager(options = {}) {
 // "New <objects> detected for review" - one State Engine notification per
 // type, replaced on each detection; clicking it opens the manager on the
 // chat's unconfirmed objects of that type.
-function notifyNewObjects(t, created) {
+//
+// They are about the OPEN chat (unconfirmed world objects live only in the
+// chat that met them), so they follow it: syncObjectReviewNotifications()
+// runs on every chat change - and so after a reload too - dropping another
+// chat's and bringing back this chat's still-unreviewed objects; and one is
+// removed once nothing of its type is left to review (changed()).
+const reviewNotificationId = (t) => notificationId(BUILTIN_NAMESPACE, `${t.id}-detected`);
+
+function postReviewNotification(t, objects, lead) {
     try {
         const callbackId = `objects.review.${t.id}`;
         setCallback(BUILTIN_NAMESPACE, callbackId, () => openObjectManager({ type: t.id, view: 'chat', filter: 'unconfirmed' }));
-        const names = created.map((c) => c.name).slice(0, 5).join(', ');
+        const names = objects.map((c) => c.name).slice(0, 5).join(', ');
         putNotification({
-            id: notificationId(BUILTIN_NAMESPACE, `${t.id}-detected`),
+            id: reviewNotificationId(t),
             source: BUILTIN_NAMESPACE,
             severity: 'info',
-            message: `New ${t.plural.toLowerCase()} detected for review: ${names}${created.length > 5 ? ` and ${created.length - 5} more` : ''}`,
+            message: `${lead}: ${names}${objects.length > 5 ? ` and ${objects.length - 5} more` : ''}`,
             callbackId,
         });
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not post the new-objects notification (gracefully handled)', err);
+    }
+}
+
+function notifyNewObjects(t, created) {
+    postReviewNotification(t, created, `New ${t.plural.toLowerCase()} detected for review`);
+}
+
+// The chat's world objects of type `t` still waiting for review.
+function unconfirmedIn(chatId, t) {
+    if (!chatId) return [];
+    try {
+        return listObjects(chatId, t.id).filter((o) => o.scope === 'chat' && !o.confirmed);
+    } catch {
+        return [];
+    }
+}
+
+// The review notifications for the chat now open (`chatId`, null: none):
+// one per type with objects still to review, none for anything else.
+export function syncObjectReviewNotifications(chatId) {
+    for (const t of Object.values(OBJECT_TYPES).filter((type) => type.scope === 'world')) {
+        try {
+            const waiting = unconfirmedIn(chatId, t);
+            if (waiting.length) postReviewNotification(t, waiting, `${t.plural} to review in this chat`);
+            else if (getNotification(reviewNotificationId(t))) removeNotification(reviewNotificationId(t));
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'could not update the review notifications (gracefully handled)', err);
+        }
+    }
+}
+
+// A notification whose objects have all been reviewed goes.
+function dropReviewedNotifications(chatId) {
+    for (const t of Object.values(OBJECT_TYPES).filter((type) => type.scope === 'world')) {
+        if (getNotification(reviewNotificationId(t)) && unconfirmedIn(chatId, t).length === 0) removeNotification(reviewNotificationId(t));
     }
 }
 
@@ -1297,6 +1340,7 @@ function changed(chatId) {
     try {
         const current = SillyTavern.getContext()?.chatId;
         if (current) hydrateMacroStoreForChat(current);
+        if (current) dropReviewedNotifications(current);
     } catch {
         // No SillyTavern context (tests): nothing to refresh.
     }

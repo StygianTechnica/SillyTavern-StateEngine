@@ -4,6 +4,9 @@
 
 **Added**
 
+- **"New characters detected for review" follow the open chat:** switching chats (or reloading)
+  drops the other chat's review notifications and brings back this chat's for objects still
+  waiting for review; a notification goes once everything it listed has been reviewed.
 - **Shortened variable names in an answer are understood:** a small model answering
   `se__characters` for `se__scene_characters` had that value ignored. A key that is no requested
   variable is now taken as the one it clearly means - same namespace, its words found in order in
