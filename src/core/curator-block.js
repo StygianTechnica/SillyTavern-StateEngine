@@ -9,9 +9,14 @@
 // curator.inject:se__state_block on its built-in `se` record (Curator's
 // docs/injection-blocks.md); the user ticks it in Curator's Prompt Analyzer.
 //
-// The template is text with {{<variable>}} placeholders. By default it is
-// generated from one preset - Scene Context unless the user picks another
-// in the drawer (settings.curatorBlock.presetName): a line per variable,
+// The template is text with {{<variable>}} placeholders. An object variable
+// (a character, a list of characters...) shows its objects' NAMES, as State
+// Engine's own macros do; {{<variable>.<field>}} shows a field of each
+// object instead - its own (description, role...) or a runtime value
+// (mood, thought...): "Syrvanus: Suspicious, the gremlin: Curious" for a
+// list. By default the template is generated from one preset - Scene
+// Context unless the user picks another in the drawer
+// (settings.curatorBlock.presetName): a line per variable,
 // "- <label>: {{<name>}}". The user can edit it freely
 // (settings.curatorBlock.template; null = the generated default). When
 // rendered, a line whose placeholders all come out empty is left out, and a
@@ -20,6 +25,8 @@
 import { BUILTIN_NAMESPACE, getSettings, persistSettings } from './settings-core.js';
 import { getVar } from './chat-state.js';
 import { formatValueForDisplay } from '../ui/formatting-utils.js';
+import { isObjectDefinition, objectValueText } from './object-display.js';
+import { getObject } from './objects.js';
 
 export const CURATOR_BLOCK_NAME = `${BUILTIN_NAMESPACE}__state_block`;
 export const CURATOR_BLOCK_CAPABILITY = `curator.inject:${CURATOR_BLOCK_NAME}`;
@@ -34,7 +41,8 @@ export const CURATOR_BLOCK_DEF = Object.freeze({
     scope: 'chat',
 });
 
-const PLACEHOLDER = /\{\{\s*([A-Za-z][A-Za-z0-9]*__[A-Za-z0-9_]+)\s*\}\}/g;
+// {{se__name}} or {{se__name.field}}.
+const PLACEHOLDER = /\{\{\s*([A-Za-z][A-Za-z0-9]*__[A-Za-z0-9_]+)(?:\.([A-Za-z_][A-Za-z0-9_]*))?\s*\}\}/g;
 
 export function blockSettings() {
     const settings = getSettings();
@@ -65,7 +73,7 @@ export function defaultTemplate(preset) {
     const lines = Object.values(preset.variables || {})
         .filter((def) => def?.name && def.type !== 'calculated' && !/^image/.test(def.type ?? ''))
         .map((def) => `- ${def.label || def.name.split('__').pop()}: {{${def.name}}}`);
-    return lines.length ? [`${preset.name} (State Engine):`, ...lines].join('\n') : '';
+    return lines.length ? [`${preset.name}:`, ...lines].join('\n') : '';
 }
 
 // The template in use: the user's, else the default of the chosen preset.
@@ -81,12 +89,37 @@ function definitionOf(name) {
     return null;
 }
 
-// One variable's value in `chatId` as prompt text ('' when it has none).
-function valueText(chatId, name) {
+// `field` of object `id` as the chat sees it: its own field, else a runtime
+// value ('' when it has none).
+function objectField(chatId, id, field) {
+    let object = null;
+    try {
+        object = getObject(chatId, id);
+    } catch {
+        object = null;
+    }
+    if (!object) return '';
+    const value = object[field] ?? object.runtime?.values?.[field] ?? (field === 'present' ? object.runtime?.present : undefined);
+    if (value === null || value === undefined) return '';
+    return Array.isArray(value) ? value.join(', ') : String(value);
+}
+
+// One variable's value in `chatId` as prompt text ('' when it has none);
+// with `field`, that field of its object(s).
+function valueText(chatId, name, field = null) {
     const entry = getVar(chatId, name);
     if (!entry || entry.value === null || entry.value === undefined || entry.value === '') return '';
     const def = definitionOf(name);
     const value = entry.value;
+    if (def && isObjectDefinition(def)) {
+        const ids = (Array.isArray(value) ? value : [value]).filter((id) => typeof id === 'string' && id);
+        if (!field) return objectValueText(def, value) || '';
+        if (def.type === 'object') return ids.length ? objectField(chatId, ids[0], field) : '';
+        return ids.map((id) => {
+            const text = objectField(chatId, id, field);
+            return text ? `${objectField(chatId, id, 'name') || id}: ${text}` : '';
+        }).filter(Boolean).join(', ');
+    }
     if (Array.isArray(value)) return value.map((v) => (typeof v === 'object' ? JSON.stringify(v) : String(v))).join(', ');
     try {
         const shown = def ? formatValueForDisplay(value, def) : value;
@@ -104,15 +137,16 @@ export function renderBlock(chatId, template = currentTemplate()) {
     let filled = 0;
     const lines = [];
     for (const line of String(template).split('\n')) {
-        const names = [...line.matchAll(PLACEHOLDER)].map((m) => m[1]);
-        if (names.length === 0) {
+        const found = [...line.matchAll(PLACEHOLDER)];
+        if (found.length === 0) {
             lines.push(line);
             continue;
         }
-        const values = new Map(names.map((name) => [name, valueText(chatId, name)]));
+        const key = (name, field) => `${name}.${field ?? ''}`;
+        const values = new Map(found.map(([, name, field]) => [key(name, field), valueText(chatId, name, field)]));
         if ([...values.values()].every((v) => v === '')) continue;
         filled++;
-        lines.push(line.replace(PLACEHOLDER, (_, name) => values.get(name) ?? ''));
+        lines.push(line.replace(PLACEHOLDER, (_, name, field) => values.get(key(name, field)) ?? ''));
     }
     if (filled === 0) return '';
     let text = lines.join('\n').trim();
