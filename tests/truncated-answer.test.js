@@ -3,7 +3,7 @@
 // and a variable marked ANSWER LAST is asked last, so it is the one lost
 // (prompted-engine.js classifyPromptedVariables).
 
-import { extractJsonObject, salvageTruncatedObject, matchAnswerKeys } from '../src/ui/formatting-utils.js';
+import { extractJsonObject, salvageTruncatedObject, matchAnswerKeys, repairJson } from '../src/ui/formatting-utils.js';
 import { classifyPromptedVariables } from '../src/core/prompted-engine.js';
 
 vi.mock('../src/core/background-llm.js', () => ({ callBackgroundLLM: vi.fn() }));
@@ -70,5 +70,33 @@ describe('a shortened variable name in the answer', () => {
     it('returns the same object when nothing changes', () => {
         const answer = { se__scene_id: 'x' };
         expect(matchAnswerKeys(answer, names)).toBe(answer);
+    });
+});
+
+describe('notes and comments in an answer', () => {
+    beforeEach(() => vi.spyOn(console, 'warn').mockImplementation(() => {}));
+
+    it('are dropped, so the answer still reads (the reported compiler answer)', () => {
+        const raw = `{
+  "archivist__compiled_characters": [
+    {"name":"Alvaryx", "traits":["absent-minded?"],
+     "motivations":[] (unknown),
+     "stressors":[] (none (really) shown),
+     "arc":"Unknown (for now)."}
+  ]
+}`;
+        expect(extractJsonObject(raw)).toEqual({
+            archivist__compiled_characters: [{ name: 'Alvaryx', traits: ['absent-minded?'], motivations: [], stressors: [], arc: 'Unknown (for now).' }],
+        });
+    });
+
+    it('drops comments and trailing commas, never touching strings', () => {
+        expect(repairJson('{"a": "x (y), z, }", // note\n "b": [1, 2,], /* c */ "c": "http://x"}'))
+            .toBe('{"a": "x (y), z, }", \n "b": [1, 2],  "c": "http://x"}');
+        expect(extractJsonObject('{"a": 1, "b": [1, 2,],}')).toEqual({ a: 1, b: [1, 2] });
+    });
+
+    it('still keeps what a cut-off answer with notes finished', () => {
+        expect(extractJsonObject('{"a": [] (none), "b": "unfin')).toEqual({ a: [] });
     });
 });

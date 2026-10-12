@@ -119,20 +119,77 @@ export function extractJsonObject(text) {
     const last = s.lastIndexOf('}');
     if (first === -1) return null;
     if (last > first) {
-        try {
-            const parsed = JSON.parse(s.slice(first, last + 1));
-            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
-            return null;
-        } catch {
-            // Maybe cut off - see below.
+        const strict = parseObject(s.slice(first, last + 1));
+        if (strict !== undefined) return strict;
+        // Notes or comments the model added between values.
+        const repaired = parseObject(repairJson(s.slice(first, last + 1)));
+        if (repaired !== undefined) {
+            console.warn('[StateEngine] the model\'s answer had notes or comments outside its values - read it without them');
+            return repaired;
         }
     }
-    const salvaged = salvageTruncatedObject(s.slice(first));
+    // Maybe cut off before its end.
+    const salvaged = salvageTruncatedObject(repairJson(s.slice(first)));
     if (salvaged) {
         console.warn('[StateEngine] the model\'s answer was cut off before its end - kept the values it finished:',
             Object.keys(salvaged).join(', ') || '(none)', '- raise "Max response length" (or the connection profile\'s Max tokens) if this keeps happening');
     }
     return salvaged;
+}
+
+// The object `text` parses to, null for valid JSON that is not an object,
+// or undefined when it does not parse.
+function parseObject(text) {
+    try {
+        const parsed = JSON.parse(text);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+        return undefined;
+    }
+}
+
+// `text` without what small models write into JSON that JSON doesn't allow,
+// everywhere outside strings: parenthetical notes after a value
+// ("motivations": [] (unknown),), // and /* */ comments, and a comma right
+// before a closing bracket. Strings are never touched.
+export function repairJson(text) {
+    let out = '';
+    let inString = false;
+    let escaped = false;
+    let notes = 0; // depth of ( ... ) being dropped
+    for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (inString) {
+            out += ch;
+            if (escaped) escaped = false;
+            else if (ch === '\\') escaped = true;
+            else if (ch === '"') inString = false;
+            continue;
+        }
+        if (notes > 0) {
+            if (ch === '(') notes++;
+            else if (ch === ')') notes--;
+            continue;
+        }
+        if (ch === '(') {
+            notes = 1;
+            continue;
+        }
+        if (ch === '/' && text[i + 1] === '/') {
+            while (i < text.length && text[i] !== '\n') i++;
+            out += '\n';
+            continue;
+        }
+        if (ch === '/' && text[i + 1] === '*') {
+            const end = text.indexOf('*/', i + 2);
+            i = end === -1 ? text.length : end + 1;
+            continue;
+        }
+        if (ch === '"') inString = true;
+        if (ch === '}' || ch === ']') out = out.replace(/,\s*$/, '');
+        out += ch;
+    }
+    return out;
 }
 
 // Small models sometimes shorten a variable's name in their answer -
