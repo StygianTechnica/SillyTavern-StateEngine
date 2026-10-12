@@ -150,6 +150,10 @@ export function blankDefinition() {
             // each turn (a list of this turn's new facts, a per-turn note).
             // See prompted-engine.js isNewEachTurn().
             newEachTurn: false,
+            // ANSWER LAST (opt-in): asked after the other variables, so a
+            // cut-off answer loses this one first. See prompted-engine.js
+            // classifyPromptedVariables().
+            answerLast: false,
         },
         version: 1
     };

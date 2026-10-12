@@ -107,8 +107,9 @@ describe('definitions and the editor', () => {
     });
 
     it('is saved from the editor checkbox', () => {
-        expect(normalizeCollectedValues({ prompted: { instructions: 'x', newEachTurn: true } }).prompted).toEqual({ instructions: 'x', newEachTurn: true });
-        expect(normalizeCollectedValues({ prompted: { instructions: 'x' } }).prompted).toEqual({ instructions: 'x', newEachTurn: false });
+        expect(normalizeCollectedValues({ prompted: { instructions: 'x', newEachTurn: true } }).prompted).toEqual({ instructions: 'x', newEachTurn: true, answerLast: false });
+        expect(normalizeCollectedValues({ prompted: { instructions: 'x', answerLast: true } }).prompted).toEqual({ instructions: 'x', newEachTurn: false, answerLast: true });
+        expect(normalizeCollectedValues({ prompted: { instructions: 'x' } }).prompted).toEqual({ instructions: 'x', newEachTurn: false, answerLast: false });
     });
 });
 

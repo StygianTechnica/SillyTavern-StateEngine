@@ -299,6 +299,7 @@ export function normalizeCollectedValues(values) {
         out.prompted = {
             instructions: values.prompted.instructions || '',
             newEachTurn: values.prompted.newEachTurn === true,
+            answerLast: values.prompted.answerLast === true,
         };
     }
 

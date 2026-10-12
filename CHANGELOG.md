@@ -4,6 +4,16 @@
 
 **Added**
 
+- **Choosing a new chat's setting:** the question is now one dropdown of the settings (Default
+  first and preselected) and a *Use this setting* button, instead of a button per setting plus
+  a second "Use Default". *New setting...* in the dropdown asks for a name and creates the
+  setting for the chat on the spot.
+- **A cut-off answer keeps what it finished:** an answer that hits *Max response length*
+  mid-way is no longer thrown away whole - every value the model finished before the cut is
+  applied, only the one it was still writing is lost (a console warning names what was kept).
+- **"Answer last"** (`prompted.answerLast`, *Answer last* in the manager): the variable is asked
+  after the others, so if an answer is cut off it is the one lost - for a long value such as an
+  extension's list of records.
 - **LLM calls are queued per connection:** every background call - the main update's and
   every independent preset's - waits for the calls already sent to the same connection, and
   calls on different connections run side by side. `runIndependentPreset` no longer turns a

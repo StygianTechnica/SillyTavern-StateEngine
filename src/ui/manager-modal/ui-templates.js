@@ -567,6 +567,10 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
                         <input type="checkbox" class="se-manager-var-field" data-field="prompted.newEachTurn" ${d.prompted?.newEachTurn === true ? 'checked' : ''} />
                         <span>New each turn</span>
                     </label>
+                    <label class="checkbox_label" title="Asked after the other variables, so if the answer is cut off by Max response length, this one is lost first and the others are kept. For a long value - e.g. a list of records.">
+                        <input type="checkbox" class="se-manager-var-field" data-field="prompted.answerLast" ${d.prompted?.answerLast === true ? 'checked' : ''} />
+                        <span>Answer last</span>
+                    </label>
                 </div>
                 ` : `
                 <div class="se-empty">Calculated variables are read-only: prompted and incremented behavior are not available.</div>

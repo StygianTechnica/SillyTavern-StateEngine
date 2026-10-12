@@ -117,12 +117,54 @@ export function extractJsonObject(text) {
     s = s.replace(/^```(?:json)?/i, '').replace(/```\s*$/i, '').trim();
     const first = s.indexOf('{');
     const last = s.lastIndexOf('}');
-    if (first === -1 || last === -1 || last < first) return null;
-    const candidate = s.slice(first, last + 1);
+    if (first === -1) return null;
+    if (last > first) {
+        try {
+            const parsed = JSON.parse(s.slice(first, last + 1));
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+            return null;
+        } catch {
+            // Maybe cut off - see below.
+        }
+    }
+    const salvaged = salvageTruncatedObject(s.slice(first));
+    if (salvaged) {
+        console.warn('[StateEngine] the model\'s answer was cut off before its end - kept the values it finished:',
+            Object.keys(salvaged).join(', ') || '(none)', '- raise "Max response length" (or the connection profile\'s Max tokens) if this keeps happening');
+    }
+    return salvaged;
+}
+
+// An answer cut off mid-way (the model hit its token limit) is not valid
+// JSON, but every key/value pair it finished before the cut is: this keeps
+// those and drops the one it was writing. `s` starts at the object's "{".
+// Returns the object of finished pairs, or null when there is none or the
+// text is broken in some other way than being cut short.
+export function salvageTruncatedObject(s) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    let lastComplete = -1; // index just past the last finished top-level value
+    for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+        if (inString) {
+            if (escaped) escaped = false;
+            else if (ch === '\\') escaped = true;
+            else if (ch === '"') inString = false;
+            continue;
+        }
+        if (ch === '"') inString = true;
+        else if (ch === '{' || ch === '[') depth++;
+        else if (ch === '}' || ch === ']') {
+            depth--;
+            if (depth === 0) return null; // the object closed: not a cut-off answer
+            if (depth === 1) lastComplete = i + 1;
+        } else if (ch === ',' && depth === 1) lastComplete = i;
+    }
+    if (lastComplete === -1) return null;
     try {
-        const parsed = JSON.parse(candidate);
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
-        return null;
+        const parsed = JSON.parse(`${s.slice(0, lastComplete).replace(/,\s*$/, '')}}`);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Object.keys(parsed).length ? parsed : null;
     } catch {
         return null;
     }

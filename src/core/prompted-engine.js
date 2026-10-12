@@ -86,6 +86,13 @@ export function classifyPromptedVariables(chatId, variables) {
         // Deterministic increments and everything else are ignored here.
     }
 
+    // ANSWER LAST (opt-in, prompted.answerLast): these go to the end of the
+    // prompt, so the model writes them last - an answer cut off by the
+    // token limit then loses them rather than the variables before them
+    // (extractJsonObject keeps every value finished before the cut). For a
+    // long value, such as an extension's list of new records.
+    updateVars.sort((a, b) => (a.prompted?.answerLast === true) - (b.prompted?.answerLast === true));
+
     return { updateVars, incrementVars };
 }
 
