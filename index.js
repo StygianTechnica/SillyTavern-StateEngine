@@ -20,6 +20,8 @@ import { LOG_PREFIX, getSettings } from './src/core/settings-core.js';
 import { runStartupOnce } from './src/core/initialization-engine.js';
 
 import { initPanel } from './src/ui/settings-panel-ui.js';
+import { ensureCuratorBlockCapability } from './src/core/curator-block.js';
+import { initCuratorBlockUi } from './src/ui/curator-block-ui.js';
 import { initLorebookBindingsUi } from './src/ui/lorebook-bindings-ui.js';
 import { exposeStateEngineWI } from './src/world-info/wi-api.js';
 import { addStateEngineWandUi, watchChatSelection, updateManagerButtonState } from './src/ui/wand-ui.js';
@@ -39,8 +41,10 @@ import { registerSlashCommand } from './src/events/slash-command-engine.js';
 jQuery(async () => {
     try {
         getSettings(); // ensure defaults exist / migrate
+        ensureCuratorBlockCapability(); // the State block, offered to Curator
         await registerTemplates();
         await initPanel();
+        initCuratorBlockUi();
         initLorebookBindingsUi();
         exposeStateEngineWI();
         addStateEngineWandUi();

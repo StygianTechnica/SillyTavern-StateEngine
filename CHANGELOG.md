@@ -4,6 +4,15 @@
 
 **Added**
 
+- **State block for Curator:** with Curator installed, State Engine's drawer has a *Curator block*
+  section - a block of prompt text filled with the open chat's values, which Curator offers in
+  its State Engine Variables bank as `state_block`. It defaults to a line per value of the
+  Scene Context preset; pick another preset, or edit the text freely (`{{se__name}}`
+  placeholders; a line with no values is left out). Served as the virtual variable
+  `se__state_block`, rendered whenever it is read.
+- **Scene Context starter preset:** place, people, title, tags, summary, weather and its flags,
+  temperature, indoors or out, and the time passing each turn - restored with the other starter
+  presets (*Restore default presets* in the manager).
 - **"New characters detected for review" follow the open chat:** switching chats (or reloading)
   drops the other chat's review notifications and brings back this chat's for objects still
   waiting for review; a notification goes once everything it listed has been reviewed.

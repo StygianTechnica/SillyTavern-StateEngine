@@ -29,6 +29,7 @@ import { getPresetsForChat } from '../core/preset-manager.js';
 import { getVar, setVar } from '../core/chat-state.js';
 import { recalculateDependents } from '../core/calculated-engine.js';
 import { isImageType, activeImageRef, safeImageSrc } from '../core/image-variables.js';
+import { CURATOR_BLOCK_NAME, CURATOR_BLOCK_DEF, renderBlock } from '../core/curator-block.js';
 
 export { VARIABLES_CHANGED_EVENT } from '../core/variable-change-signal.js';
 
@@ -100,6 +101,8 @@ export function getVariableValue(extensionId, instanceId, chatId, name) {
     resolveCallerRecord(extensionId, instanceId);
     try {
         if (!chatId || typeof name !== 'string' || !name) return undefined;
+        // The State block is rendered when read (core/curator-block.js).
+        if (name === CURATOR_BLOCK_NAME) return { value: renderBlock(chatId), def: { ...CURATOR_BLOCK_DEF } };
         const entry = getVar(chatId, name);
         if (!entry) return undefined;
         const found = findDefinition(name);

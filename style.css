@@ -1072,3 +1072,19 @@ tr.se-object-variable > td:first-child {
     color: var(--se-object-color, inherit);
     font-weight: 600;
 }
+
+/* Curator block preview (src/ui/curator-block-ui.js) */
+.se-curator-block-preview {
+    max-height: 12em;
+    overflow: auto;
+    margin: 4px 0 0;
+    padding: 6px 8px;
+    border-radius: 4px;
+    background: var(--black30a, rgba(0, 0, 0, 0.2));
+    white-space: pre-wrap;
+    font-size: 0.9em;
+}
+
+#se_curator_block[hidden] {
+    display: none;
+}

@@ -123,6 +123,22 @@
                 ></textarea>
 
             </div>
+            <div class="se-row" id="se_curator_block" hidden>
+                <div class="se-header-row">
+                    <b>Curator block</b>
+                </div>
+                <small>State values as prompt text for Curator to inject: tick <b>state_block</b> in Curator's Prompt Analyzer (State Engine Variables) and drag it where it belongs. Placeholders like <code>{{se__scene_location}}</code> are filled with this chat's values; a line whose values are all empty is left out.</small>
+                <label for="se_curator_block_preset">Default from preset</label>
+                <select id="se_curator_block_preset" class="text_pole" title="The preset whose variables make up the default block"></select>
+                <label for="se_curator_block_template">Block</label>
+                <textarea id="se_curator_block_template" class="text_pole textarea_compact" rows="8" placeholder="Current scene:&#10;- Location: {{se__scene_location}}"></textarea>
+                <div class="se-actions-row" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+                    <small id="se_curator_block_custom" hidden>Edited - no longer follows the preset's variables.</small>
+                    <button id="se_curator_block_reset" class="menu_button" type="button" title="Go back to the default block for the chosen preset"><i class="fa-solid fa-rotate-left"></i> Reset to default</button>
+                </div>
+                <small>Sent to Curator as <span data-se="blockName"></span>. In this chat:</small>
+                <pre id="se_curator_block_preview" class="se-curator-block-preview"></pre>
+            </div>
             <div class="se-row" id="se_lorebook_bindings">
                 <div class="se-header-row">
                     <b>Lorebook Preset Bindings</b>

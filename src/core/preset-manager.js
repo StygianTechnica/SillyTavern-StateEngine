@@ -6,6 +6,7 @@ import { seedVariablesForChat } from './chat-state.js';
 import { recalculateAllForChat } from './calculated-engine.js';
 import { refreshVariableMacros } from './macro-registration.js';
 import { clearDeclinesForPreset } from './lorebook-bindings.js';
+import { SCENE_CONTEXT_BLUEPRINT } from './scene-context-preset.js';
 
 function getStarterPresetBlueprints() {
     const makeVar = (overrides) => {
@@ -295,6 +296,12 @@ function getStarterPresetBlueprints() {
                 }),
             ],
         },
+
+        // The scene: place, people, weather, time passing (scene-context-preset.js).
+        {
+            ...SCENE_CONTEXT_BLUEPRINT,
+            vars: SCENE_CONTEXT_BLUEPRINT.vars.map((def) => makeVar(structuredClone(def))),
+        },
     ];
 }
 
@@ -334,7 +341,7 @@ function seedExamplePresets(settings, restoreMissing) {
             description: seed.description || '',
             variables,
             triggers: seed.triggers,
-            showInTracker: true,
+            showInTracker: seed.showInTracker !== false,
         };
         createdPresetIds.push(presetId);
     }
