@@ -59,7 +59,7 @@ import { getVar, setVar, applyIncrement } from '../core/chat-state.js';
 import { incrementDelta } from '../core/increment-delta.js';
 import { recalculateDependents } from '../core/calculated-engine.js';
 import { callBackgroundLLM } from '../core/background-llm.js';
-import { extractJsonObject, describeConstraint, buildRecentMessagesSection, selectPromptMessages } from '../ui/formatting-utils.js';
+import { extractJsonObject, matchAnswerKeys, describeConstraint, buildRecentMessagesSection, selectPromptMessages } from '../ui/formatting-utils.js';
 import { shouldSkipPromptedRefresh, isDoneFlag, isNewEachTurn, newEachTurnLine } from '../core/prompted-engine.js';
 import { parseScheduleTarget, scheduleAfterRun } from '../core/schedule-engine.js';
 import { chunkPromptUnits } from '../core/prompt-chunking.js';
@@ -626,6 +626,7 @@ async function runIndependentPresetNow(chatId, presetRef) {
                     lastParseError = 'response was not valid JSON';
                     continue;
                 }
+                parsed = matchAnswerKeys(parsed, [...chunk.updateVars, ...chunk.incrementVars].map((def) => def.name));
             } catch (err) {
                 console.warn(LOG_PREFIX, 'runIndependentPreset: background LLM call failed (gracefully handled)', err);
                 anyParseError = true;

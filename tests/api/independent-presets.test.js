@@ -491,6 +491,16 @@ describe('1.29 enabled / disabled', () => {
     });
 });
 
+describe('shortened variable names in the answer', () => {
+    it('are written to the variable they clearly mean', async () => {
+        create();
+        promptedOn('Indy', 'scene_mood', { name: 'scene_mood' });
+        callBackgroundLLM.mockResolvedValue('{"se__mood":"tense"}');
+        expect(await runIndy()).toBe(true);
+        expect(getVar('chat-1', 'se__scene_mood').value).toBe('tense');
+    });
+});
+
 describe('queued runs (2026-10-12: no more skipped-in-progress)', () => {
     it('a second preset started while the first is running runs too, instead of being turned away', async () => {
         create({ name: 'A' });

@@ -135,6 +135,43 @@ export function extractJsonObject(text) {
     return salvaged;
 }
 
+// Small models sometimes shorten a variable's name in their answer -
+// "se__characters" for "se__scene_characters". An answer key that is no
+// requested variable is taken as the one it clearly means: same namespace,
+// its words all found, in order, in exactly ONE requested name that the
+// answer did not also give under its real name. Anything else - keys
+// without a namespace ("__characters", the runtime key), ambiguous or
+// unmatched keys - is left as it is. Returns a new object (or `parsed`
+// itself when nothing changed).
+export function matchAnswerKeys(parsed, names) {
+    if (!parsed || typeof parsed !== 'object') return parsed;
+    const split = (key) => {
+        const at = key.indexOf('__');
+        if (at <= 0) return null;
+        return { ns: key.slice(0, at).toLowerCase(), words: key.slice(at + 2).toLowerCase().split(/[_\s-]+/).filter(Boolean) };
+    };
+    const inOrder = (needle, hay) => {
+        let i = 0;
+        for (const word of hay) if (word === needle[i]) i++;
+        return i === needle.length;
+    };
+    const requested = new Set(names);
+    const open = names.filter((name) => !Object.prototype.hasOwnProperty.call(parsed, name)).map((name) => ({ name, parts: split(name) })).filter((n) => n.parts);
+    let out = parsed;
+    for (const key of Object.keys(parsed)) {
+        if (requested.has(key)) continue;
+        const parts = split(key);
+        if (!parts || parts.words.length === 0) continue;
+        const candidates = open.filter((n) => n.parts.ns === parts.ns && inOrder(parts.words, n.parts.words));
+        if (candidates.length !== 1 || Object.prototype.hasOwnProperty.call(out, candidates[0].name)) continue;
+        if (out === parsed) out = { ...parsed };
+        out[candidates[0].name] = parsed[key];
+        delete out[key];
+        console.warn(`[StateEngine] the model answered "${key}" - taken as "${candidates[0].name}"`);
+    }
+    return out;
+}
+
 // An answer cut off mid-way (the model hit its token limit) is not valid
 // JSON, but every key/value pair it finished before the cut is: this keeps
 // those and drops the one it was writing. `s` starts at the object's "{".

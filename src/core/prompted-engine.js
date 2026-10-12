@@ -9,7 +9,7 @@ import { getVar, setVar, applyIncrement, loadChatState } from './chat-state.js';
 import { incrementDelta } from './increment-delta.js';
 import { recalculateDependents } from './calculated-engine.js';
 import { callBackgroundLLM } from './background-llm.js';
-import { extractJsonObject, describeConstraint, buildRecentMessagesSection, selectPromptMessages } from '../ui/formatting-utils.js';
+import { extractJsonObject, matchAnswerKeys, describeConstraint, buildRecentMessagesSection, selectPromptMessages } from '../ui/formatting-utils.js';
 import { setStatus } from '../ui/settings-panel-ui.js';
 import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
 import { chunkPromptUnits } from './prompt-chunking.js';
@@ -183,7 +183,9 @@ export function chunkPromptedVariables(chatId, updateVars, incrementVars, maxCha
 // every variable's write is isolated (a malformed def, an unexpected value
 // shape, anything) so one bad entry can never prevent every other variable in
 // this same response from being written.
-function applyPromptedResponse(chatId, updateVars, incrementVars, parsed, { source = '' } = {}) {
+function applyPromptedResponse(chatId, updateVars, incrementVars, answer, { source = '' } = {}) {
+    // A shortened variable name in the answer is taken as the one it means.
+    const parsed = matchAnswerKeys(answer, [...updateVars, ...incrementVars].map((def) => def.name));
     let updatedCount = 0;
     // Objects named in an object LIST this turn, per type - the ones in play,
     // whose runtime state the type's runtime key ("__characters") carries.

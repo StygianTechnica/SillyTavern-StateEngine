@@ -4,6 +4,11 @@
 
 **Added**
 
+- **Shortened variable names in an answer are understood:** a small model answering
+  `se__characters` for `se__scene_characters` had that value ignored. A key that is no requested
+  variable is now taken as the one it clearly means - same namespace, its words found in order in
+  exactly one requested name the answer didn't also give - with a console note. Ambiguous or
+  unmatched keys are still ignored.
 - **Choosing a new chat's setting:** the question is now one dropdown of the settings (Default
   first and preselected) and a *Use this setting* button, instead of a button per setting plus
   a second "Use Default". *New setting...* in the dropdown asks for a name and creates the
