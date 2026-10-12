@@ -13,9 +13,10 @@
   first and preselected) and a *Use this setting* button, instead of a button per setting plus
   a second "Use Default". *New setting...* in the dropdown asks for a name and creates the
   setting for the chat on the spot.
-- **Notes in an answer are tolerated:** an answer with notes or comments outside its values
-  (`"motivations": [] (unknown),`, `// ...`, a trailing comma) is read without them instead of
-  being thrown away as invalid JSON. Strings are never changed.
+- **Sloppy JSON in an answer is repaired:** notes or comments outside its values
+  (`"motivations": [] (unknown),`, `// ...`), a trailing comma, and unquoted words as values
+  (`"id": f4`, `[m2, m3]`, `m7"`) no longer get the whole answer thrown away as invalid JSON -
+  they are dropped or quoted, and the answer read. Strings are never changed.
 - **A cut-off answer keeps what it finished:** an answer that hits *Max response length*
   mid-way is no longer thrown away whole - every value the model finished before the cut is
   applied, only the one it was still writing is lost (a console warning names what was kept).

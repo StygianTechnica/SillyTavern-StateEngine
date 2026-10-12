@@ -150,8 +150,9 @@ function parseObject(text) {
 
 // `text` without what small models write into JSON that JSON doesn't allow,
 // everywhere outside strings: parenthetical notes after a value
-// ("motivations": [] (unknown),), // and /* */ comments, and a comma right
-// before a closing bracket. Strings are never touched.
+// ("motivations": [] (unknown),), // and /* */ comments, a comma right
+// before a closing bracket, and unquoted words as values ("id": f4,
+// [m2, m3], m7") - quoted. Strings are never touched.
 export function repairJson(text) {
     let out = '';
     let inString = false;
@@ -183,6 +184,16 @@ export function repairJson(text) {
         if (ch === '/' && text[i + 1] === '*') {
             const end = text.indexOf('*/', i + 2);
             i = end === -1 ? text.length : end + 1;
+            continue;
+        }
+        // A bare word where a value belongs ("id": f4, [m2, m3]) is quoted;
+        // a quote stuck right after it (m7") is taken as its closing one.
+        if (/[A-Za-z_]/.test(ch)) {
+            let end = i;
+            while (end < text.length && /[A-Za-z0-9_.-]/.test(text[end])) end++;
+            const word = text.slice(i, end);
+            out += ['true', 'false', 'null'].includes(word) ? word : `"${word}"`;
+            i = text[end] === '"' ? end : end - 1;
             continue;
         }
         if (ch === '"') inString = true;

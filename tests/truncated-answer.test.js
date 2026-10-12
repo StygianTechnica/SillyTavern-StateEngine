@@ -96,6 +96,25 @@ describe('notes and comments in an answer', () => {
         expect(extractJsonObject('{"a": 1, "b": [1, 2,],}')).toEqual({ a: 1, b: [1, 2] });
     });
 
+    it('quotes bare words used as values (the reported compiler answer)', () => {
+        const raw = `{
+  "archivist__compiled_facts": [
+    {"id": f4, "text": "Zeno's doing, (not) true or false.", "sources": ["m4"], "ok": true, "none": null, "n": -3}
+  ],
+  "archivist__compiled_characters": [
+    {"name": "Rydia", "sources": ["m1", "m4", m6, m7"]},
+    {"name": "gremlins (lead)", "sources": [m2, m3]}
+  ]
+}`;
+        expect(extractJsonObject(raw)).toEqual({
+            archivist__compiled_facts: [{ id: 'f4', text: "Zeno's doing, (not) true or false.", sources: ['m4'], ok: true, none: null, n: -3 }],
+            archivist__compiled_characters: [
+                { name: 'Rydia', sources: ['m1', 'm4', 'm6', 'm7'] },
+                { name: 'gremlins (lead)', sources: ['m2', 'm3'] },
+            ],
+        });
+    });
+
     it('still keeps what a cut-off answer with notes finished', () => {
         expect(extractJsonObject('{"a": [] (none), "b": "unfin')).toEqual({ a: [] });
     });
