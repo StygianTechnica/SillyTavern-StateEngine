@@ -1639,8 +1639,8 @@ settings copy - the real settings object is never touched). New fields:
   (`src/core/prompt-chunking.js`) instead of ever needing to be manually
   narrowed. See requirements spec 1.20 for the full account.
 - `enabled` (boolean, default `true`) - request Section 7's toggle. `false`
-  makes `runIndependentPreset` refuse immediately (before the concurrency
-  lock, before any LLM call) whether triggered manually, by an extension, or
+  makes `runIndependentPreset` refuse immediately (before it queues,
+  before any LLM call) whether triggered manually, by an extension, or
   (once built) by a schedule or an event.
 - `joinMainUpdate` (boolean, default `false`) - lets an independent preset
   ALSO ride the main per-message prompted update (`runPromptedStateUpdate`)
@@ -1707,11 +1707,26 @@ contextMode, lastRunAt, lastOutcome, lastError, changedVariables }` or `null`
 for a missing/non-independent preset. Read-only, no identity - same
 convention as `getVariable()`/`getDependents()`. `lastOutcome` is one of
 `never-run | updated | no-op | error | skipped-disabled |
-skipped-in-progress | skipped-nothing-to-update | skipped-parse-error`,
+skipped-nothing-to-update | skipped-parse-error` (`skipped-in-progress`
+only appears in statuses saved before 2026-10-12 - runs are queued now, see
+13.6a),
 written by `runIndependentPreset` on every exit path (`preset.
 independentStatus`), including every early refusal - `getIndependentPresetStatus`
 always has a meaningful, current answer, matching the request's "last output
 summary" / "variable changes from last run."
+
+**13.6a Queued runs** (2026-10-12)
+
+`runIndependentPreset` never turns a run away because another is going. Every
+background LLM call State Engine makes - the main prompted update's chunks and
+every independent preset's chunks - goes through `callBackgroundLLM`, which
+queues it on the connection it will use (`src/core/connection-queue.js`; the
+key is `stateEngineProfileId`, else `connectionProfileId`, else the chat's
+active connection). Calls on the same connection go one at a time, first come
+first served; calls on different connections run side by side. Runs of the
+same preset are also queued behind each other, since they write the same
+variables. A caller just awaits its run - no retrying around
+`skipped-in-progress`, which is no longer recorded.
 
 **13.7 Export / import**
 

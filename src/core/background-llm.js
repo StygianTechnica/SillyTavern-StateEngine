@@ -1,12 +1,21 @@
 // State Engine — background (invisible) LLM generation for prompted variables
 
 import { LOG_PREFIX } from './settings-core.js';
+import { connectionKeyFor, enqueueOnConnection } from './connection-queue.js';
 
 // This promise is guaranteed to resolve, never reject — every internal
 // failure is caught, logged, and swallowed here so nothing calling this
 // function (directly or via .then/.catch) can ever see a State Engine error
 // leak into the chat LLM pipeline.
-export async function callBackgroundLLM(context, settings, messages, maxTokens) {
+//
+// Calls are queued per connection (connection-queue.js): a call waits for
+// the ones already sent to the same connection - the main update's, an
+// independent preset's - to finish before it goes.
+export function callBackgroundLLM(context, settings, messages, maxTokens) {
+    return enqueueOnConnection(connectionKeyFor(settings), () => callNow(context, settings, messages, maxTokens));
+}
+
+async function callNow(context, settings, messages, maxTokens) {
     try {
         if (settings.stateEngineProfileId) {
             const overrideResult = await callWithStateEngineOverride(context, settings, messages, maxTokens);

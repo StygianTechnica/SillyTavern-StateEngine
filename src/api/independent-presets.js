@@ -26,13 +26,15 @@
 // file still builds its OWN units from its OWN (deliberately separate) line
 // format before handing them to it.
 //
-// Concurrency: independentRunInProgress below guards against two
-// independent-preset runs overlapping each other. It does NOT guard
-// against overlapping with a standard prompted-engine.js update, because
-// prompted-engine.js has no exported "is a prompted update currently
-// running" state to check, and adding one means modifying that file —
-// which this pass deliberately avoids. Flagged as a real limitation, not
-// silently glossed over.
+// Concurrency (2026-10-12): runs are QUEUED, never turned away. Every LLM
+// call - this file's and prompted-engine.js's alike - waits its turn on its
+// connection (callBackgroundLLM, src/core/connection-queue.js), so two
+// presets on the same connection take turns and presets on different
+// connections run side by side. Runs of the SAME preset are also queued
+// one after another (presetRuns below), since they write the same
+// variables. The old one-run-at-a-time lock, which made a second caller
+// fail with 'skipped-in-progress' and retry, is gone; that outcome is no
+// longer recorded (the UI still has a label for statuses saved before).
 //
 // 2026-09-21 (requirements spec 1.29): "independent preset" is formalized
 // with a first-class CRUD surface (create/update/delete/list/toggle),
@@ -398,7 +400,8 @@ export function getIndependentPresetStatus(namespace, name) {
 // Execution
 // ---------------------------------------------------------------------------
 
-let independentRunInProgress = false;
+// presetRef key -> the promise of that preset's latest queued run.
+const presetRuns = new Map();
 
 // An `any`-typed extension context turned into prompt text without ever
 // interpreting its shape: a string is used as-is, anything else is
@@ -436,7 +439,20 @@ export function runIndependentPreset(extensionId, instanceId, chatId, presetRef)
     return runIndependentPresetInternal(chatId, presetRef);
 }
 
-async function runIndependentPresetInternal(chatId, presetRef) {
+// A preset's runs are queued one after another (they write the same
+// variables); different presets' runs are not - their LLM calls take turns
+// per connection inside callBackgroundLLM instead.
+function runIndependentPresetInternal(chatId, presetRef) {
+    const key = JSON.stringify([presetRef?.namespace, presetRef?.name]);
+    const run = (presetRuns.get(key) ?? Promise.resolve()).then(() => runIndependentPresetNow(chatId, presetRef));
+    presetRuns.set(key, run);
+    void run.then(() => {
+        if (presetRuns.get(key) === run) presetRuns.delete(key);
+    });
+    return run;
+}
+
+async function runIndependentPresetNow(chatId, presetRef) {
     let preset = null;
     try {
         if (!chatId || !presetRef || !presetRef.namespace || !presetRef.name) {
@@ -456,18 +472,11 @@ async function runIndependentPresetInternal(chatId, presetRef) {
 
         const config = preset.independentConfig || {};
 
-        // 1.29: the enabled/disabled toggle is checked BEFORE the concurrency
-        // lock and before anything else - a disabled preset never queues,
-        // never blocks another run, never calls the LLM.
+        // 1.29: the enabled/disabled toggle is checked before anything else -
+        // a disabled preset never blocks another run, never calls the LLM.
         if (config.enabled === false) {
             console.warn(LOG_PREFIX, `runIndependentPreset: "${presetRef.namespace}.${presetRef.name}" is disabled`);
             recordStatus(preset, { lastOutcome: 'skipped-disabled' });
-            return false;
-        }
-
-        if (independentRunInProgress) {
-            console.warn(LOG_PREFIX, 'runIndependentPreset: another independent preset run is already in progress, skipping');
-            recordStatus(preset, { lastOutcome: 'skipped-in-progress' });
             return false;
         }
 
@@ -574,101 +583,95 @@ async function runIndependentPresetInternal(chatId, presetRef) {
             stateEngineMaxTokens: config.maxTokens ?? settings.stateEngineMaxTokens,
         };
 
-        independentRunInProgress = true;
-        try {
-            // Every chunk is run SEQUENTIALLY - one chunk's LLM call is
-            // awaited before the next one starts (never in parallel), each
-            // isolated from the others: a chunk that fails to parse or call
-            // the LLM is logged and simply contributes nothing, but never
-            // stops the remaining chunks from still running. A single-chunk
-            // run (the overwhelming common case) behaves exactly as it
-            // always has - one call, one outcome.
-            const changed = [];
-            let updatedCount = 0;
-            let incrementedCount = 0;
-            let anyParseError = false;
-            let lastParseError = null;
+        // Every chunk is run SEQUENTIALLY - one chunk's LLM call is
+        // awaited before the next one starts (never in parallel), each
+        // isolated from the others: a chunk that fails to parse or call
+        // the LLM is logged and simply contributes nothing, but never
+        // stops the remaining chunks from still running. A single-chunk
+        // run (the overwhelming common case) behaves exactly as it
+        // always has - one call, one outcome.
+        const changed = [];
+        let updatedCount = 0;
+        let incrementedCount = 0;
+        let anyParseError = false;
+        let lastParseError = null;
 
-            for (const chunk of chunks) {
-                // 1.29: no WI, fantasy-calendar/image-variable metadata, other
-                // presets, or SillyTavern's own chat system messages are ever
-                // added here (request Section 6) - the prompt is built ONLY
-                // from the header/rules text, the context section above, and
-                // this chunk's own variable lines.
-                const promptSections = [
-                    config.promptedHeader || settings.promptedHeader || DEFAULT_PROMPTED_HEADER,
-                    config.promptedRules || settings.promptedRules || DEFAULT_UNIFIED_VARIABLE_RULES,
-                    '',
-                    contextSection,
-                ];
-                if (chunk.updateVarLines) promptSections.push('', 'Update variables:', chunk.updateVarLines);
-                if (chunk.incrementVarLines) promptSections.push('', 'Boolean-conditional variables (include all in JSON output):', chunk.incrementVarLines);
+        for (const chunk of chunks) {
+            // 1.29: no WI, fantasy-calendar/image-variable metadata, other
+            // presets, or SillyTavern's own chat system messages are ever
+            // added here (request Section 6) - the prompt is built ONLY
+            // from the header/rules text, the context section above, and
+            // this chunk's own variable lines.
+            const promptSections = [
+                config.promptedHeader || settings.promptedHeader || DEFAULT_PROMPTED_HEADER,
+                config.promptedRules || settings.promptedRules || DEFAULT_UNIFIED_VARIABLE_RULES,
+                '',
+                contextSection,
+            ];
+            if (chunk.updateVarLines) promptSections.push('', 'Update variables:', chunk.updateVarLines);
+            if (chunk.incrementVarLines) promptSections.push('', 'Boolean-conditional variables (include all in JSON output):', chunk.incrementVarLines);
 
-                const messages = [
-                    { role: 'system', content: promptSections.filter((s) => s !== '').join('\n') },
-                    { role: 'user', content: 'Output the JSON object now. JSON only, no other text.' },
-                ];
+            const messages = [
+                { role: 'system', content: promptSections.filter((s) => s !== '').join('\n') },
+                { role: 'user', content: 'Output the JSON object now. JSON only, no other text.' },
+            ];
 
-                let parsed;
-                try {
-                    const raw = await callBackgroundLLM(context, effectiveSettings, messages, maxTokens);
-                    parsed = extractJsonObject(raw);
-                    if (!parsed) {
-                        console.warn(LOG_PREFIX, 'runIndependentPreset: could not parse a JSON object from the model response:', raw);
-                        anyParseError = true;
-                        lastParseError = 'response was not valid JSON';
-                        continue;
-                    }
-                } catch (err) {
-                    console.warn(LOG_PREFIX, 'runIndependentPreset: background LLM call failed (gracefully handled)', err);
+            let parsed;
+            try {
+                const raw = await callBackgroundLLM(context, effectiveSettings, messages, maxTokens);
+                parsed = extractJsonObject(raw);
+                if (!parsed) {
+                    console.warn(LOG_PREFIX, 'runIndependentPreset: could not parse a JSON object from the model response:', raw);
                     anyParseError = true;
-                    lastParseError = err?.message || String(err);
+                    lastParseError = 'response was not valid JSON';
                     continue;
                 }
+            } catch (err) {
+                console.warn(LOG_PREFIX, 'runIndependentPreset: background LLM call failed (gracefully handled)', err);
+                anyParseError = true;
+                lastParseError = err?.message || String(err);
+                continue;
+            }
 
-                for (const def of chunk.updateVars) {
-                    try {
-                        if (!Object.prototype.hasOwnProperty.call(parsed, def.name)) continue;
-                        const rawValue = parsed[def.name];
-                        if (def.type === 'array' && !Array.isArray(rawValue)) continue;
-                        setVar(chatId, def.name, rawValue, def);
+            for (const def of chunk.updateVars) {
+                try {
+                    if (!Object.prototype.hasOwnProperty.call(parsed, def.name)) continue;
+                    const rawValue = parsed[def.name];
+                    if (def.type === 'array' && !Array.isArray(rawValue)) continue;
+                    setVar(chatId, def.name, rawValue, def);
+                    recalculateDependents(chatId, def.name);
+                    updatedCount++;
+                    changed.push(def.name);
+                } catch (err) {
+                    console.warn(LOG_PREFIX, `runIndependentPreset: update failed for variable "${def.name}" (gracefully handled)`, err);
+                }
+            }
+
+            for (const def of chunk.incrementVars) {
+                try {
+                    if (parsed[def.name] === true) {
+                        applyIncrement(chatId, def.name, incrementDelta(chatId, def), def);
                         recalculateDependents(chatId, def.name);
-                        updatedCount++;
+                        incrementedCount++;
                         changed.push(def.name);
-                    } catch (err) {
-                        console.warn(LOG_PREFIX, `runIndependentPreset: update failed for variable "${def.name}" (gracefully handled)`, err);
                     }
-                }
-
-                for (const def of chunk.incrementVars) {
-                    try {
-                        if (parsed[def.name] === true) {
-                            applyIncrement(chatId, def.name, incrementDelta(chatId, def), def);
-                            recalculateDependents(chatId, def.name);
-                            incrementedCount++;
-                            changed.push(def.name);
-                        }
-                    } catch (err) {
-                        console.warn(LOG_PREFIX, `runIndependentPreset: increment failed for variable "${def.name}" (gracefully handled)`, err);
-                    }
+                } catch (err) {
+                    console.warn(LOG_PREFIX, `runIndependentPreset: increment failed for variable "${def.name}" (gracefully handled)`, err);
                 }
             }
-
-            const didWrite = updatedCount > 0 || incrementedCount > 0;
-            if (!didWrite && anyParseError) {
-                // Every chunk that ran failed to produce anything - the exact
-                // single-chunk-failure outcome this status has always reported.
-                recordStatus(preset, { lastOutcome: 'skipped-parse-error', lastError: lastParseError, changedVariables: [] });
-                return false;
-            }
-            recordStatus(preset, { lastOutcome: didWrite ? 'updated' : 'no-op', lastError: null, changedVariables: changed });
-            return didWrite;
-        } finally {
-            independentRunInProgress = false;
         }
+
+        const didWrite = updatedCount > 0 || incrementedCount > 0;
+        if (!didWrite && anyParseError) {
+            // Every chunk that ran failed to produce anything - the exact
+            // single-chunk-failure outcome this status has always reported.
+            recordStatus(preset, { lastOutcome: 'skipped-parse-error', lastError: lastParseError, changedVariables: [] });
+            return false;
+        }
+        recordStatus(preset, { lastOutcome: didWrite ? 'updated' : 'no-op', lastError: null, changedVariables: changed });
+        return didWrite;
     } catch (err) {
         console.warn(LOG_PREFIX, 'runIndependentPreset failed (gracefully handled)', err);
-        independentRunInProgress = false;
         if (preset) recordStatus(preset, { lastOutcome: 'error', lastError: err?.message || String(err), changedVariables: [] });
         return false;
     }
@@ -699,11 +702,9 @@ async function runIndependentPresetInternal(chatId, presetRef) {
 // their runs is awaited - not after - so a slow-resolving LLM call can
 // never leave a due schedule looking "still due" to the NEXT periodic
 // check while its run is still in flight. Runs are then awaited ONE AT A
-// TIME (never Promise.all - independentRunInProgress is one lock shared by
-// the whole module, so a second run started before the first finishes
-// would just observe the lock and record itself as skipped rather than
-// actually running) - the existing lock is a second, independent line of
-// defense against the same overlap, not the only one. Returns how many
+// TIME (never Promise.all - they would only queue behind each other on a
+// shared connection anyway, and one at a time keeps the order predictable).
+// Returns how many
 // presets actually ran (0 if none were due); never throws.
 export async function checkAndRunDueSchedules(chatId) {
     let ran = 0;

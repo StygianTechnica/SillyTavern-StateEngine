@@ -4,6 +4,12 @@
 
 **Added**
 
+- **LLM calls are queued per connection:** every background call - the main update's and
+  every independent preset's - waits for the calls already sent to the same connection, and
+  calls on different connections run side by side. `runIndependentPreset` no longer turns a
+  run away with `skipped-in-progress` while another is going: it queues it and resolves when
+  it has run, so extensions don't need their own wait-and-retry loops. Runs of the same
+  preset are queued behind each other.
 - **"New each turn" for any variable:** a prompted variable can opt in (`prompted.newEachTurn`,
   or *New each turn* under its prompted instructions in the manager). It is then shown without
   its current value and marked NEW EACH TURN, so the model answers fresh every turn instead of

@@ -127,17 +127,22 @@ describe('independent-presets (identity-enforced)', () => {
             expect(await run()).toBe(true);
         });
 
-        it('does not run two independent presets at once', async () => {
+        it('queues a second run of the same preset behind the first, instead of refusing it', async () => {
             prompted('mood');
             let release;
-            callBackgroundLLM.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+            callBackgroundLLM
+                .mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }))
+                .mockResolvedValueOnce('{"se__mood":"calm"}');
 
             const first = run();
-            expect(await run()).toBe(false); // second call refused while the first is in flight
-            expect(callBackgroundLLM).toHaveBeenCalledTimes(1);
+            const second = run();
+            await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+            expect(callBackgroundLLM).toHaveBeenCalledTimes(1); // the second waits its turn
 
             release('{"se__mood":"tense"}');
             expect(await first).toBe(true);
+            expect(await second).toBe(true);
+            expect(callBackgroundLLM).toHaveBeenCalledTimes(2);
         });
     });
 });
@@ -483,6 +488,46 @@ describe('1.29 enabled / disabled', () => {
         await runIndy('Off');
         callBackgroundLLM.mockResolvedValue('{"se__mood":"tense"}');
         expect(await runIndy('On')).toBe(true);
+    });
+});
+
+describe('queued runs (2026-10-12: no more skipped-in-progress)', () => {
+    it('a second preset started while the first is running runs too, instead of being turned away', async () => {
+        create({ name: 'A' });
+        create({ name: 'B' });
+        promptedOn('A', 'mood');
+        promptedOn('B', 'stance', { name: 'stance' });
+        let release;
+        callBackgroundLLM
+            .mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve('{"se__mood":"tense"}'); }))
+            .mockResolvedValueOnce('{"se__stance":"wary"}');
+        const first = runIndy('A');
+        const second = runIndy('B');
+        await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+        release();
+        expect(await first).toBe(true);
+        expect(await second).toBe(true);
+        expect(getVar('chat-1', 'se__mood').value).toBe('tense');
+        expect(getVar('chat-1', 'se__stance').value).toBe('wary');
+    });
+
+    it('runs of the same preset take turns: the second starts only after the first has written', async () => {
+        create();
+        promptedOn('Indy', 'mood');
+        const order = [];
+        let release;
+        callBackgroundLLM
+            .mockImplementationOnce(() => { order.push('call 1'); return new Promise((resolve) => { release = () => resolve('{"se__mood":"tense"}'); }); })
+            .mockImplementationOnce(() => { order.push('call 2'); return Promise.resolve('{"se__mood":"calm"}'); });
+        const first = runIndy();
+        const second = runIndy();
+        await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+        expect(order).toEqual(['call 1']);
+        release();
+        expect(await first).toBe(true);
+        expect(await second).toBe(true);
+        expect(order).toEqual(['call 1', 'call 2']);
+        expect(getVar('chat-1', 'se__mood').value).toBe('calm');
     });
 });
 
