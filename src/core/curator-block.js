@@ -30,6 +30,12 @@ import { getObject } from './objects.js';
 
 export const CURATOR_BLOCK_NAME = `${BUILTIN_NAMESPACE}__state_block`;
 export const CURATOR_BLOCK_CAPABILITY = `curator.inject:${CURATOR_BLOCK_NAME}`;
+// Curator sends it as a user message (its suggested-role capability).
+export const CURATOR_BLOCK_ROLE_CAPABILITY = `curator.inject.role:user:${CURATOR_BLOCK_NAME}`;
+
+// The block's first line: the model reads it as reference, not as text to
+// continue or imitate.
+export const REFERENCE_MARKER = 'REFERENCE ONLY — DO NOT CONTINUE';
 export const DEFAULT_BLOCK_PRESET = 'Scene Context';
 
 // The display definition the value API hands out for the block.
@@ -49,7 +55,10 @@ export function blockSettings() {
     const raw = settings.curatorBlock && typeof settings.curatorBlock === 'object' ? settings.curatorBlock : {};
     return {
         presetName: typeof raw.presetName === 'string' && raw.presetName ? raw.presetName : DEFAULT_BLOCK_PRESET,
-        template: typeof raw.template === 'string' ? raw.template : null,
+        // Blocks saved when the default heading still named State Engine
+        // ("Scene Context (State Engine):") lose that label: the model
+        // doesn't need to know where the text came from.
+        template: typeof raw.template === 'string' ? raw.template.replace(/[ \t]*\(State Engine\)/g, '') : null,
     };
 }
 
@@ -156,15 +165,17 @@ export function renderBlock(chatId, template = currentTemplate()) {
     } catch {
         // No SillyTavern context: macros stay as written.
     }
-    return text;
+    return `${REFERENCE_MARKER}\n${text}`;
 }
 
-// The built-in `se` record offers the block to Curator. Idempotent.
+// The built-in `se` record offers the block to Curator, as a user message.
+// Idempotent.
 export function ensureCuratorBlockCapability() {
     const record = getSettings().extensions?.[BUILTIN_NAMESPACE];
     if (!record) return;
     const capabilities = Array.isArray(record.capabilities) ? record.capabilities : [];
-    if (capabilities.includes(CURATOR_BLOCK_CAPABILITY)) return;
-    record.capabilities = [...capabilities, CURATOR_BLOCK_CAPABILITY];
+    const missing = [CURATOR_BLOCK_CAPABILITY, CURATOR_BLOCK_ROLE_CAPABILITY].filter((c) => !capabilities.includes(c));
+    if (missing.length === 0) return;
+    record.capabilities = [...capabilities, ...missing];
     persistSettings();
 }
