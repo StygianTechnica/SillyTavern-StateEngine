@@ -1,6 +1,7 @@
 // State Engine — preset and preset-scoped variable operations
 
 import { LOG_PREFIX, BUILTIN_NAMESPACE, getSettings, persistSettings, debugLog } from './settings-core.js';
+import { isObjectPreset } from './object-types.js';
 import { genId, blankDefinition } from './variable-schema.js';
 import { seedVariablesForChat } from './chat-state.js';
 import { recalculateAllForChat } from './calculated-engine.js';
@@ -610,6 +611,8 @@ export function removePresetFromTracker(presetId) {
 export function isVariableNameTaken(name, excludeVarId) {
     const settings = getSettings();
     for (const preset of Object.values(settings.presets || {})) {
+        // A setting's object fields are named per object type, not per chat.
+        if (isObjectPreset(preset)) continue;
         for (const [varId, varDef] of Object.entries(preset.variables || {})) {
             if (varId === excludeVarId) continue;
             if (varDef?.name === name) return true;

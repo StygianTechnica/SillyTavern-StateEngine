@@ -2,6 +2,7 @@
 // Uses ES6 modules - imported by manager-modal.js
 
 import * as uiTemplates from './ui-templates.js';
+import { isObjectPreset } from '../../core/object-types.js';
 import { escapeHtml } from './utils.js';
 import { format, fromStructured, variablesUsingCalendar } from '../../core/calendar-engine.js';
 
@@ -19,7 +20,8 @@ export function renderPresetsTab(managerApi, managerCurrentPresetId, presetsSubt
     const currentChatId = managerApi.getCurrentChatId();
 
     const chatPresets = managerApi.getPresetsForChat(currentChatId);
-    const allPresets = settings.presets || {};
+    // A setting's object presets are edited with the setting, not here.
+    const allPresets = Object.fromEntries(Object.entries(settings.presets || {}).filter(([, p]) => !isObjectPreset(p)));
 
     const TRIGGER_KEYS = [
         { key: 'startup', label: 'Execute on startup', icon: 'fa-rocket' },
@@ -69,7 +71,7 @@ export function renderVariablesTab(managerApi, managerCurrentPresetId) {
 
     // Preset selector
     const activePresetIds = managerApi.getPresetsForChat(managerApi.getCurrentChatId());
-    const allPresets = Object.keys(settings.presets || {});
+    const allPresets = Object.keys(settings.presets || {}).filter((id) => !isObjectPreset(settings.presets[id]));
     const selectedPresetId = allPresets.includes(managerCurrentPresetId)
         ? managerCurrentPresetId
         : activePresetIds[0] || allPresets[0] || null;

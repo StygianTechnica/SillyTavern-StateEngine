@@ -23,6 +23,7 @@
 // block with no values at all is '' (Curator then sends nothing).
 
 import { BUILTIN_NAMESPACE, getSettings, persistSettings } from './settings-core.js';
+import { isObjectPreset, objectTypeOfId } from './object-types.js';
 import { getVar } from './chat-state.js';
 import { formatValueForDisplay } from '../ui/formatting-utils.js';
 import { isObjectDefinition, objectValueText } from './object-display.js';
@@ -71,7 +72,7 @@ export function updateBlockSettings(patch) {
 
 export function findPresetByName(name) {
     const wanted = String(name ?? '').toLowerCase();
-    return Object.values(getSettings().presets || {}).find((p) => String(p?.name ?? '').toLowerCase() === wanted) ?? null;
+    return Object.values(getSettings().presets || {}).find((p) => !isObjectPreset(p) && String(p?.name ?? '').toLowerCase() === wanted) ?? null;
 }
 
 // The template generated from `preset`: a line per variable that holds a
@@ -93,6 +94,7 @@ export function currentTemplate() {
 
 function definitionOf(name) {
     for (const preset of Object.values(getSettings().presets || {})) {
+        if (isObjectPreset(preset)) continue;
         for (const def of Object.values(preset?.variables || {})) if (def?.name === name) return def;
     }
     return null;
@@ -110,7 +112,9 @@ function objectField(chatId, id, field) {
     if (!object) return '';
     const value = object[field] ?? object.runtime?.values?.[field] ?? (field === 'present' ? object.runtime?.present : undefined);
     if (value === null || value === undefined) return '';
-    return Array.isArray(value) ? value.join(', ') : String(value);
+    // A field holding other objects (a character's factions) shows their names.
+    const shown = (v) => (objectTypeOfId(v) ? (getObject(chatId, v)?.name ?? v) : v);
+    return Array.isArray(value) ? value.map(shown).join(', ') : String(shown(value));
 }
 
 // One variable's value in `chatId` as prompt text ('' when it has none);

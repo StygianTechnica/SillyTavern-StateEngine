@@ -9,6 +9,7 @@ import { genId } from '../../src/core/variable-schema.js';
 import { seedVariablesForChat } from './chat-state.mock.js';
 import { recalculateAllForChat } from './calculated-engine.mock.js';
 import { refreshVariableMacros } from './macro-registration.mock.js';
+import { isObjectPreset } from '../../src/core/object-types.js';
 
 const validChatId = (id) => !!id && id !== 'undefined' && id !== 'null';
 
@@ -92,6 +93,7 @@ export function getAllVariablesFromPresets(presetIds) {
 
 export function isVariableNameTaken(name, excludeVarId) {
     for (const preset of Object.values(getSettings().presets || {})) {
+        if (isObjectPreset(preset)) continue;
         for (const [varId, def] of Object.entries(preset.variables || {})) {
             if (varId === excludeVarId) continue;
             if (def?.name === name) return true;

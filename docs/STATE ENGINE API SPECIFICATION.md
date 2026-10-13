@@ -2460,10 +2460,29 @@ and returns null (false for deletes). Changes emit VARIABLES_CHANGED_EVENT.
 
     settings.variableStore.settings[id] = { id, name, autoConfirm, createdAt,
         objects: { [type]: { [objectId]: record } },
-        runtimeFields: { [type]: { [name]: field } } }
+        fieldRoles: { [roleId]: fieldName | null } }
+    settings.presets[id] = { ..., namespace: 'se', objectType, settingId, variables }   // object presets
     chatState.setting = settingId | null
     chatState.objects[type] = { entries: { [id]: { present?, matches, runtime: { values } } },
                                 local: { [id]: record } }
+
+A setting's fields for each type are its OBJECT PRESET (src/core/object-presets.js,
+docs/DESIGN - OBJECT PRESETS.md): a real preset tagged `{ objectType, settingId }`,
+never bound to a chat and left out of every chat, tracker, manager, Curator and
+lorebook preset list (`isObjectPreset`). Its variables have local names; `scope:
+'global'` is a BASELINE field (stored on the record, by name), `scope: 'chat'` a
+RUNTIME field (stored in the chat's entry, by name). Field types: string (optionally
+`multiline`), number, boolean, enum, array (of strings, enums or objects), object,
+image, imageList, imageMap. Any field may be prompted (`prompted.mode`: 'fill' -
+asked only while empty, the default for baseline fields - or 'update'); a runtime
+field with `clearOnLeave` is cleared when an object with presence leaves. A new
+setting starts from the registry's `fields` and `runtime`, which are only defaults.
+
+FIELD ROLES (`se__<type>.<field>`, one per default field: `se__character.mood`,
+`se__location.region`...) are what other code reads through: each setting assigns
+a role to one of its fields (no entry: the field of the role's default name). A
+renamed field takes its roles and stored values with it; a deleted one leaves its
+roles unassigned.
 
 World objects (character, location, faction, item, creature, lore) live
 canonically in a setting, unconfirmed ones in their chat's `local`. Story
@@ -2471,7 +2490,10 @@ objects (quest, scene, event) live only in their chat's `local`, always
 confirmed. migrateObjectData() (startup, idempotent) converts the old
 `variableStore.characterSettings`, `chatState.characters`, `type:
 'character'` variables and schema'd `itemType: 'object'` arrays (now
-`itemType: 'record'`).
+`itemType: 'record'`). migrateObjectFields() (startup, after it, idempotent)
+makes each setting's object presets - from its old `runtimeFields` where it had
+them - and turns names stored in object fields (a character's `faction`, text
+before 2026-10-13) into the objects they mean.
 
 **24.2 Functions** (every one takes `(extensionId, instanceId, ...)` first)
 
@@ -2479,8 +2501,11 @@ See the API Reference, section 6.7, for the full list: listObjectTypes,
 settings (listSettings ... ensureChatSetting), objects (listObjects,
 getObject, getObjectByAlias, createChatObject, createObject, updateObject,
 addObjectAlias, confirmObject, resolveObject, mergeObjects, deleteObject,
-markObjectPresent/Absent), runtime (getObjectRuntimeFields,
-setObjectRuntimeFields, setObjectRuntimeValue), variants (add/update/
+markObjectPresent/Absent), fields (getObjectFields, setObjectFields,
+getObjectField, setObjectField - by field name or field role id), field roles
+(getObjectFieldRoles, assignObjectFieldRole), runtime fields - the older view of
+the chat-scope fields (getObjectRuntimeFields, setObjectRuntimeFields,
+setObjectRuntimeValue), variants (add/update/
 delete/setObjectActiveVariant), prompt text (describeObject,
 getVariablePromptTexts) and the manager hook (registerObjectManager,
 openObjectManager, hasObjectManager).
@@ -2490,12 +2515,12 @@ openObjectManager, hasObjectManager).
 An object variable is described to the model in its type's own words and
 answered with a name (a list: a JSON array of names). resolveObjectNames()
 matches or creates per type; presence follows for types with presence.
-For each type with a prompted list in a chunk, one flat runtime key
-(`"__characters"`, `"__locations"`...) asks for the prompted runtime fields
-of the objects that list names, with the current values of those in play
-(present ones, or for a type without presence the ones its lists hold);
-"fresh" fields (the character's thought) are never shown back. No extra
-LLM calls.
+For each type with a prompted object variable in a chunk - one object or a
+list - one flat key (`"__characters"`, `"__locations"`...) asks for the
+prompted fields (runtime, and baseline: a 'fill' one only while empty) of the
+objects in play - the ones those variables hold, and for a type with presence
+the present ones - with their current values; `newEachTurn` fields (the
+character's thought) are never shown back. No extra LLM calls.
 
 **24.4 Verification**
 
@@ -2503,4 +2528,7 @@ LLM calls.
 against type "character", plus every world type, story types, references,
 the registry, extraction for a location list, prompt texts, the object
 role type, migration, and a check that nothing outside object-types.js
-special-cases the character type.
+special-cases the character type. `tests/object-presets.test.js` - object
+presets (defaults, hidden from preset lists, validation), field values and
+roles, renames, prompted baseline fields, a single object variable's fields
+in the prompt, clearOnLeave, and the migration.

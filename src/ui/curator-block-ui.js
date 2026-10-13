@@ -7,6 +7,7 @@
 // it rendered for the open chat.
 
 import { VARIABLES_CHANGED_EVENT } from '../core/variable-change-signal.js';
+import { isObjectPreset } from '../core/object-types.js';
 import { getSettings } from '../core/settings-core.js';
 import { blockSettings, updateBlockSettings, currentTemplate, defaultTemplate, findPresetByName, renderBlock, CURATOR_BLOCK_DEF } from '../core/curator-block.js';
 
@@ -21,7 +22,7 @@ function fillPresets() {
     if (!select || select === document.activeElement) return;
     const { presetName } = blockSettings();
     const presets = Object.values(getSettings().presets || {})
-        .filter((p) => p?.name && Object.keys(p.variables || {}).length)
+        .filter((p) => p?.name && Object.keys(p.variables || {}).length && !isObjectPreset(p))
         .sort((a, b) => String(a.namespace).localeCompare(String(b.namespace)) || a.name.localeCompare(b.name));
     select.replaceChildren(...presets.map((p) => new Option(p.namespace && p.namespace !== 'se' ? `${p.name} (${p.namespace})` : p.name, p.name)));
     if (!presets.some((p) => p.name === presetName)) select.add(new Option(`${presetName} (missing)`, presetName));

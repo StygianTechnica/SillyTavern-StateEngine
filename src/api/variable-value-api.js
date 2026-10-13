@@ -22,6 +22,7 @@
 // prefer importing the name to hard-coding the string.
 
 import { LOG_PREFIX, getSettings } from '../core/settings-core.js';
+import { isObjectPreset } from '../core/object-types.js';
 import { validateCallerIdentity, resolveCallerRecord } from './identity.js';
 import { validateNamespace } from './namespace-manager.js';
 import { findPresetEntry } from './preset-api.js';
@@ -59,6 +60,7 @@ function clone(value) {
 // preset. Returns { preset, presetId, def } or null.
 function findDefinition(qualifiedName) {
     for (const [presetId, preset] of Object.entries(getSettings().presets || {})) {
+        if (isObjectPreset(preset)) continue;
         for (const def of Object.values(preset?.variables || {})) {
             if (def?.name === qualifiedName) return { presetId, preset, def };
         }
@@ -75,7 +77,7 @@ export function listAllVariables(extensionId, instanceId, chatId) {
     try {
         const activeIds = chatId ? new Set(getPresetsForChat(chatId)) : null;
         return Object.entries(getSettings().presets || {})
-            .filter(([, preset]) => preset && typeof preset === 'object')
+            .filter(([, preset]) => preset && typeof preset === 'object' && !isObjectPreset(preset))
             .map(([id, preset]) => ({
                 id,
                 namespace: preset.namespace ?? '',

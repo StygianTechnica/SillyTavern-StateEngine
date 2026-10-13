@@ -18,6 +18,7 @@
 // is left out rather than written as an empty list.
 
 import { LOG_PREFIX, getSettings, persistSettings } from './settings-core.js';
+import { isObjectPreset } from './object-types.js';
 import { getPresetsForChat, addPresetToChat } from './preset-manager.js';
 import { getPresetsForLorebook, getLorebookBindings } from './lorebook-bindings.js';
 import { exportPreset, importPresetDetailed } from './preset-export.js';
@@ -67,7 +68,7 @@ export async function exportLorebookBundle(world, lorebookId = world) {
 function findExistingPreset(data) {
     const wanted = Object.entries(data.variables || {});
     for (const [presetId, preset] of Object.entries(getSettings().presets || {})) {
-        if (preset.name !== data.name) continue;
+        if (preset.name !== data.name || isObjectPreset(preset)) continue;
         const stored = Object.entries(preset.variables || {});
         if (stored.length !== wanted.length) continue;
         const byName = new Map(stored.map(([id, def]) => [def.name, id]));
@@ -80,8 +81,8 @@ function findExistingPreset(data) {
 // Whether any stored preset defines a variable with this id or name.
 function variableExists(variable) {
     if (typeof variable !== 'string') return false;
-    return Object.values(getSettings().presets || {}).some((preset) =>
-        Object.entries(preset.variables || {}).some(([id, def]) => id === variable || def?.name === variable));
+    return Object.values(getSettings().presets || {}).some((preset) => !isObjectPreset(preset)
+        && Object.entries(preset.variables || {}).some(([id, def]) => id === variable || def?.name === variable));
 }
 
 // The uids of the entries in a lorebook's JSON.

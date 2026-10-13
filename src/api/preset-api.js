@@ -19,6 +19,7 @@
 // target any namespace. Everything that edits a preset stays owner-only.
 
 import { LOG_PREFIX, getSettings, persistSettings } from '../core/settings-core.js';
+import { isObjectPreset } from '../core/object-types.js';
 import { validateNamespace } from './namespace-manager.js';
 import { validateCallerIdentity, resolveCallerRecord } from './identity.js';
 import {
@@ -38,7 +39,7 @@ import { refreshVariableMacros } from '../core/macro-registration.js';
 export function findPresetEntry(namespace, name) {
     const settings = getSettings();
     for (const [presetId, preset] of Object.entries(settings.presets || {})) {
-        if (preset?.namespace === namespace && preset?.name === name) {
+        if (preset?.namespace === namespace && preset?.name === name && !isObjectPreset(preset)) {
             return [presetId, preset];
         }
     }
@@ -194,7 +195,7 @@ export function listPresets(extensionId, instanceId, namespace) {
     try {
         const settings = getSettings();
         return Object.entries(settings.presets || {})
-            .filter(([, preset]) => preset?.namespace === namespace)
+            .filter(([, preset]) => preset?.namespace === namespace && !isObjectPreset(preset))
             .map(([id, preset]) => ({ id, ...preset }));
     } catch (err) {
         console.warn(LOG_PREFIX, 'listPresets failed (gracefully handled)', err);

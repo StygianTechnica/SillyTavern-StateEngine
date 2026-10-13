@@ -14,7 +14,7 @@ import { isImageType, activeImageRef } from '../core/image-variables.js';
 import { thumbHtml } from './image-preview.js';
 import { setStatus } from './settings-panel-ui.js';
 import { isObjectDefinition, objectTypeOf } from '../core/object-display.js';
-import { getObjectType } from '../core/object-types.js';
+import { getObjectType, isObjectPreset } from '../core/object-types.js';
 import { listObjects, createChatObject, ensureChatSetting } from '../core/objects.js';
 import { askChatSetting } from './setting-prompt.js';
 
@@ -622,6 +622,7 @@ export function renderTrackerPresetList() {
     }
 
     for (const [presetId, preset] of Object.entries(settings.presets)) {
+       if (isObjectPreset(preset)) continue;
        const isChecked = trackerPresets.includes(presetId);
        const $item = $('<label></label>').addClass('se-tracker-preset-item checkbox_label');
        const $checkbox = $('<input></input>')

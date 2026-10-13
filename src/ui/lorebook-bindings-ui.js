@@ -3,6 +3,7 @@
 // lorebook bundle or import one.
 
 import { getSettings } from '../core/settings-core.js';
+import { isObjectPreset } from '../core/object-types.js';
 import {
     listLorebookNames, getPresetsForLorebook, bindPresetToLorebook, unbindPresetFromLorebook, clearLorebookPresetDeclines,
 } from '../core/lorebook-bindings.js';
@@ -42,7 +43,7 @@ export function renderLorebookPresetBindings() {
     }
 
     const bound = new Set(getPresetsForLorebook(book, book));
-    const presets = Object.entries(getSettings().presets || {});
+    const presets = Object.entries(getSettings().presets || {}).filter(([, preset]) => !isObjectPreset(preset));
     $list.html(presets.length
         ? presets.map(([id, preset]) => `
             <label class="checkbox_label se-lorebook-preset-row">

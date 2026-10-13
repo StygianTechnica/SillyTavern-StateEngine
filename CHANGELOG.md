@@ -4,6 +4,34 @@
 
 **Added**
 
+- **Object presets and field roles** (phase 1 of `docs/DESIGN - OBJECT PRESETS.md`): each
+  setting now has one object preset per type - a real preset (hidden from the chat preset
+  picker, the tracker, the manager's preset lists, Curator and lorebook bindings) whose
+  variables are that type's fields: baseline fields (`scope: global`, the same in every chat
+  on the setting) and runtime fields (`scope: chat`). Fields are ordinary variable types
+  (string, number, boolean, enum, lists, objects, images), and any field can be prompted - a
+  baseline one in *fill* mode by default (asked only while empty). Other code reads fields
+  through **field roles** (`se__character.mood`, `se__location.region`...), which each
+  setting assigns to one of its fields - rename or replace a field and its role, values and
+  readers follow. New API: `getObjectFields` / `setObjectFields`, `getObjectField` /
+  `setObjectField` (by field name or role), `getObjectFieldRoles` / `assignObjectFieldRole`;
+  `listObjectTypes()` lists each type's `fieldRoles`. The runtime-field API keeps working as
+  a view of the chat-scope fields.
+- **A single object variable's object gets its fields asked:** the location Scene Context
+  holds now has its prompted fields (its conditions) in the per-message update - before,
+  only objects held in a list did.
+- **A character's faction is faction objects**, not text: names given to it (by the
+  prompted update, the API or an edit) are matched to factions or recorded as new ones.
+  Existing faction text is converted once on startup, along with each setting's runtime
+  fields becoming its object presets.
+
+- **Scene Context's location is a location object:** `se__scene_location` now holds a location
+  (State Engine object) instead of text, so each place is one record - matched by name and
+  alias, with its own fields and runtime conditions - shared with Archivist, Pretty Panels and
+  Curator. Existing installs are converted once on startup: the Scene Context preset's variable
+  (only while it is still text; instructions you wrote are kept) and every chat's stored value,
+  which becomes the location it names - an existing one, or a new unconfirmed one to review.
+  A *text* role now accepts an object variable (it shows as its name).
 - **State block for Curator:** with Curator installed, State Engine's drawer has a *Curator block*
   section - a block of prompt text filled with the open chat's values, which Curator offers in
   its State Engine Variables bank as `state_block`. It defaults to a line per value of the

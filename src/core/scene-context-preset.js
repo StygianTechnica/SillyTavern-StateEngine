@@ -1,4 +1,5 @@
-// State Engine - the Scene Context starter preset: where the scene is, who is in it,
+// State Engine - the Scene Context starter preset: where the scene is (a location
+// object - scene-location-migration.js converts older installs), who is in it,
 // its title, tags, summary, weather, temperature, indoor/outdoor, the time passed
 // each turn and the derived weather flags. Restored with the other starter presets
 // (preset-manager.js getStarterPresetBlueprints). Variable names are local here -
@@ -764,9 +765,10 @@ export const SCENE_CONTEXT_BLUEPRINT = Object.freeze({
         {
             "name": "scene_location",
             "label": "Location",
-            "description": "",
+            "description": "The place the scene is in - a location object.",
             "scope": "chat",
-            "type": "string",
+            "type": "object",
+            "objectType": "location",
             "enumValues": [],
             "flagMode": false,
             "dependencies": [],
@@ -803,7 +805,7 @@ export const SCENE_CONTEXT_BLUEPRINT = Object.freeze({
                 "operation": null
             },
             "prompted": {
-                "instructions": "Infer the current location from the recent roleplay messages.\nUpdate only when a new location is explicitly named or strongly implied.\nIf the location has not changed, leave this variable unchanged."
+                "instructions": "The specific place the scene is in right now - the most specific named or uniquely described place (a room, building or street rather than the whole city).\nChange it only when the characters move or a new place is explicitly named or strongly implied; otherwise keep the current one."
             },
             "version": 1
         },

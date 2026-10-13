@@ -10,7 +10,8 @@
 //
 // Types
 //   listObjectTypes()   the registry: [{ id, label, plural, noun, scope, idPrefix,
-//                        color, icon, hasPresence, fields, runtime }]
+//                        color, icon, hasPresence, fields, runtime, fieldRoles }]
+//                        (fields/runtime: the DEFAULT fields a setting starts with)
 // Settings
 //   listSettings / getSetting / createSetting({ name, autoConfirm? }) /
 //   updateSetting / deleteSetting
@@ -23,7 +24,18 @@
 //   updateObject(chatId, id, patch, { settingId? })  edits; confirms (-> setting)
 //   addObjectAlias / confirmObject / resolveObject / mergeObjects / deleteObject
 //   markObjectPresent / markObjectAbsent           types with presence
-// Runtime state - per chat, ephemeral; which fields exist is per setting and type
+// Fields - each setting's OBJECT PRESET per type (docs/DESIGN - OBJECT PRESETS.md):
+// variable definitions with local names; scope 'global' = baseline (on the
+// record, every chat on the setting), 'chat' = runtime (per chat)
+//   getObjectFields(settingId, type) / setObjectFields(settingId, type, defs)
+//                        a def keeping an existing field's id under a new name renames it
+//   getObjectField(chatId, id, fieldOrRole, { settingId? })      a field's value
+//   setObjectField(chatId, id, fieldOrRole, value, { settingId? }) baseline or
+//                        non-prompted runtime; object fields take names or ids
+// Field roles - what a field MEANS ("se__character.mood"); each setting assigns them
+//   getObjectFieldRoles(settingId, type)   [{ id, publicName, type, objectType, label, field, assigned }]
+//   assignObjectFieldRole(settingId, roleId, fieldName | null)
+// Runtime fields - the older view of a setting's chat-scope fields (string/number/enum)
 //   getObjectRuntimeFields(settingId, type) / setObjectRuntimeFields(settingId, type, fields)
 //   setObjectRuntimeValue(chatId, id, field, value)   a NON-prompted field, by hand
 // Variants (one active variant per object, for its setting)
@@ -37,7 +49,7 @@
 //
 // An object as returned:
 //   { id, type, name, aliases, image, description, introduction_snippet,
-//     related_entity_ids, related_memory_ids, ...the type's fields,
+//     related_entity_ids, related_memory_ids, ...its baseline fields,
 //     confirmed, scope: 'chat' | 'setting', settingId, present? (types with presence),
 //     matches, runtime: { present?, values, images } | null,
 //     activeVariant, variants: [{ id, name, overrides }], base, createdAt, updatedAt }
@@ -169,6 +181,33 @@ export function markObjectPresent(extensionId, instanceId, chatId, id) {
 
 export function markObjectAbsent(extensionId, instanceId, chatId, id) {
     return guard('markObjectAbsent', extensionId, instanceId, () => objects.markObjectAbsent(chatId, id));
+}
+
+// ------------------------------------------------------------ fields
+
+export function getObjectFields(extensionId, instanceId, settingId, type) {
+    return guard('getObjectFields', extensionId, instanceId, () => objects.getObjectFields(settingId, type), []);
+}
+
+export function setObjectFields(extensionId, instanceId, settingId, type, defs) {
+    return guard('setObjectFields', extensionId, instanceId, () => objects.setObjectFields(settingId, type, defs));
+}
+
+// undefined when the object or the field is unknown.
+export function getObjectField(extensionId, instanceId, chatId, id, fieldOrRole, options = {}) {
+    return guard('getObjectField', extensionId, instanceId, () => objects.getObjectFieldValue(chatId || null, id, fieldOrRole, options), undefined);
+}
+
+export function setObjectField(extensionId, instanceId, chatId, id, fieldOrRole, value, options = {}) {
+    return guard('setObjectField', extensionId, instanceId, () => objects.setObjectFieldValue(chatId || null, id, fieldOrRole, value, options));
+}
+
+export function getObjectFieldRoles(extensionId, instanceId, settingId, type) {
+    return guard('getObjectFieldRoles', extensionId, instanceId, () => objects.getObjectFieldRoles(settingId, type), []);
+}
+
+export function assignObjectFieldRole(extensionId, instanceId, settingId, roleId, fieldName) {
+    return guard('assignObjectFieldRole', extensionId, instanceId, () => objects.assignObjectFieldRole(settingId, roleId, fieldName));
 }
 
 // ------------------------------------------------------------ runtime state

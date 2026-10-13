@@ -7,6 +7,7 @@
 // stored in def.dependencies.
 
 import { LOG_PREFIX, getSettings } from '../core/settings-core.js';
+import { isObjectPreset } from '../core/object-types.js';
 import { findPresetEntry } from './preset-api.js';
 
 // "__" delimiter, not ".", matching variable-api.js's qualifiedName() -
@@ -54,7 +55,7 @@ export function getDependents(ref) {
         const settings = getSettings();
         const dependents = [];
         for (const preset of Object.values(settings.presets || {})) {
-            if (preset?.namespace !== ref.namespace) continue;
+            if (preset?.namespace !== ref.namespace || isObjectPreset(preset)) continue;
             for (const def of Object.values(preset.variables || {})) {
                 if (Array.isArray(def?.dependencies) && def.dependencies.includes(target)) {
                     dependents.push(def);

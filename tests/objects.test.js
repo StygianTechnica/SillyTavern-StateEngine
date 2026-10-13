@@ -131,7 +131,10 @@ describe('world objects: create, match, edit (characters)', () => {
 
     it('editing and saving confirms - which puts it in the setting; a canonical edit changes it for every chat', () => {
         const kael = O.createChatObject(CHAT, 'character', 'Kael');
-        expect(O.updateObject(CHAT, kael.id, { faction: 'Ashguard' })).toMatchObject({ id: kael.id, confirmed: true, faction: 'Ashguard', scope: 'setting', settingId: story.id });
+        const edited = O.updateObject(CHAT, kael.id, { faction: 'Ashguard' });
+        expect(edited).toMatchObject({ id: kael.id, confirmed: true, scope: 'setting', settingId: story.id });
+        // A faction is a faction object: the name is matched, or recorded as a new one.
+        expect(edited.faction).toEqual([O.getObjectByAlias(CHAT, 'faction', 'Ashguard').id]);
         expect(loadChatState(CHAT).objects.character.local).toEqual({});
         const canon = O.createObject(story.id, 'character', { name: 'Rhys' });
         O.setChatSetting('chat-2', story.id);
@@ -242,16 +245,18 @@ describe('references', () => {
 
 describe('variants (one active variant per object, for its setting)', () => {
     it('the active variant\'s overrides are what shows and what matches', () => {
-        const canon = O.createObject(story.id, 'character', { name: 'Rhys', faction: 'Smugglers' });
-        const withVariant = O.addObjectVariant(CHAT, canon.id, { name: 'Turncoat', overrides: { faction: 'Crown', aliases: ['the traitor'] } });
+        const canon = O.createObject(story.id, 'character', { name: 'Rhys', role: 'Smuggler', faction: 'Smugglers' });
+        // References (the faction) are not overridden by a variant.
+        const withVariant = O.addObjectVariant(CHAT, canon.id, { name: 'Turncoat', overrides: { role: 'Informant', faction: 'Crown', aliases: ['the traitor'] } });
         const vid = withVariant.variants[0].id;
-        expect(O.getObject(CHAT, canon.id).faction).toBe('Smugglers');
+        expect(withVariant.variants[0].overrides).toEqual({ role: 'Informant', aliases: ['the traitor'] });
+        expect(O.getObject(CHAT, canon.id).role).toBe('Smuggler');
         O.setObjectActiveVariant(CHAT, canon.id, vid);
         O.setChatSetting('chat-2', story.id);
-        expect(O.getObject('chat-2', canon.id)).toMatchObject({ faction: 'Crown', activeVariant: vid, base: expect.objectContaining({ faction: 'Smugglers' }) });
+        expect(O.getObject('chat-2', canon.id)).toMatchObject({ role: 'Informant', activeVariant: vid, base: expect.objectContaining({ role: 'Smuggler' }) });
         expect(O.getObjectByAlias('chat-2', 'character', 'the traitor').id).toBe(canon.id);
         O.deleteObjectVariant(CHAT, canon.id, vid);
-        expect(O.getObject(CHAT, canon.id)).toMatchObject({ activeVariant: null, faction: 'Smugglers' });
+        expect(O.getObject(CHAT, canon.id)).toMatchObject({ activeVariant: null, role: 'Smuggler' });
     });
 
     it('variant names are unique per object; other world types have variants too', () => {
@@ -498,9 +503,12 @@ describe('migration from the character-only engine', () => {
         } };
 
         expect(O.migrateObjectData()).toMatchObject({ settings: 1, chats: 1, variables: 3, moved: 1 });
+        expect(O.migrateObjectFields()).toMatchObject({ references: 1 });
         expect(store.characterSettings).toBeUndefined();
         expect(O.getSetting('set_legacy')).toMatchObject({ name: 'Legacy', autoConfirm: true });
-        expect(O.getObject('chat-legacy', 'chr_canon')).toMatchObject({ description: 'Old bio.', faction: 'Guild', present: true, matches: 2,
+        const guild = O.getObjectByAlias('chat-legacy', 'faction', 'Guild');
+        expect(guild).toMatchObject({ scope: 'setting', settingId: 'set_legacy' });
+        expect(O.getObject('chat-legacy', 'chr_canon')).toMatchObject({ description: 'Old bio.', faction: [guild.id], present: true, matches: 2,
             runtime: { present: true, values: { thought: 'Hm.', mood: 'Calm', intent: null, fear: 'Low' }, images: {} } });
         expect(O.getObject('chat-legacy', 'chr_old')).toMatchObject({ scope: 'setting', settingId: 'set_legacy', confirmed: true });
         expect(O.getObject('chat-legacy', 'chr_new')).toMatchObject({ scope: 'chat', confirmed: false });

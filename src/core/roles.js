@@ -30,6 +30,7 @@
 // module directly (through manager-api.js) like every other tab.
 
 import { getSettings, persistSettings } from './settings-core.js';
+import { isObjectPreset } from './object-types.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
 import { loadChatState, saveChatState } from './chat-state.js';
 import { notifyVariablesChanged } from './variable-change-signal.js';
@@ -39,7 +40,9 @@ import { notifyVariablesChanged } from './variable-change-signal.js';
 // the scalar types; 'any' accepts every variable.
 export const ROLE_TYPES = Object.freeze(['text', 'number', 'boolean', 'date', 'image', 'list', 'object', 'any']);
 const ACCEPTED_VARIABLE_TYPES = {
-    text: ['string', 'enum', 'calculated'],
+    // An object shows as its name, so a text role takes one too (Scene
+    // Context's location became a location object).
+    text: ['string', 'enum', 'calculated', 'object'],
     number: ['number', 'calculated'],
     boolean: ['boolean', 'calculated'],
     date: ['datetime'],
@@ -279,6 +282,7 @@ function activeVariables(chatId) {
 // Any preset's definition of `variableName` (active or not), or null.
 function anyVariable(variableName) {
     for (const preset of Object.values(getSettings().presets || {})) {
+        if (isObjectPreset(preset)) continue;
         for (const def of Object.values(preset?.variables || {})) {
             if (def?.name === variableName) return def;
         }

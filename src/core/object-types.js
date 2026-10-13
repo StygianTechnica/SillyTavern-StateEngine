@@ -21,8 +21,14 @@
 //       | 'enum' (one of values) | 'timestamp' (free text, e.g. a story date)
 //       | 'ref' (one object id of refType) | 'refs' (object ids of refType)
 // `runtime` lists the built-in PER-CHAT fields (ephemeral state, rewritten by
-// the prompted update); a setting can add its own per type. `fresh` runtime
-// fields are asked new each turn and never shown back to the model.
+// the prompted update). `fresh` runtime fields are asked new each turn and
+// never shown back to the model.
+//
+// `fields` and `runtime` are only DEFAULTS: each setting has its own object
+// preset per type (object-presets.js), starting from them, that the user can
+// change freely. What other code depends on is a FIELD ROLE - every default
+// field has one, "<type>.<field>" (registryFieldRoles() below) - which the
+// setting assigns to one of its fields.
 
 export const OBJECT_SCOPES = Object.freeze(['world', 'story']);
 
@@ -37,7 +43,7 @@ export const OBJECT_TYPES = freeze({
         hasPresence: true,
         fields: freeze([
             { name: 'personality', label: 'Personality', kind: 'longtext' },
-            { name: 'faction', label: 'Faction', kind: 'text' },
+            { name: 'faction', label: 'Faction', kind: 'refs', refType: 'faction' },
             { name: 'role', label: 'Role', kind: 'text' },
             { name: 'goals', label: 'Goals', kind: 'longtext' },
             { name: 'relationships', label: 'Relationships', kind: 'longtext' },
@@ -223,8 +229,31 @@ export function objectTypeOfId(id) {
     return at > 0 ? (BY_PREFIX.get(id.slice(0, at)) ?? null) : null;
 }
 
+// An OBJECT PRESET (object-presets.js): a setting's fields for one object
+// type - never bound to a chat, so left out of every list of presets a chat
+// or the tracker uses.
+export function isObjectPreset(preset) {
+    return !!preset && isObjectType(preset.objectType) && typeof preset.settingId === 'string';
+}
+
 export function isWorldType(type) {
     return getObjectType(type)?.scope === 'world';
+}
+
+// A field role's type (roles.js ROLE_TYPES) for a registry field.
+function roleTypeOf(field) {
+    if (field.type === 'number') return 'number';
+    if (field.kind === 'ref') return 'object';
+    if (field.kind === 'list' || field.kind === 'refs') return 'list';
+    return 'text';
+}
+
+// A type's field roles: one per default field (baseline and runtime),
+// "<type>.<field>": [{ publicName, type, label, field }].
+export function registryFieldRoles(type) {
+    const t = getObjectType(type);
+    if (!t) return [];
+    return [...t.fields, ...t.runtime].map((f) => ({ publicName: `${t.id}.${f.name}`, type: roleTypeOf(f), label: f.label ?? '', field: f.name }));
 }
 
 // The registry as plain data for other extensions (listObjectTypes()).
@@ -236,6 +265,7 @@ export function describeObjectTypes() {
             color: t.color, icon: t.icon, hasPresence: t.hasPresence,
             fields: t.fields.map((f) => ({ ...f, values: f.values ? [...f.values] : undefined })),
             runtime: t.runtime.map((f) => ({ ...f, values: f.values ? [...f.values] : undefined })),
+            fieldRoles: registryFieldRoles(id),
         };
     });
 }

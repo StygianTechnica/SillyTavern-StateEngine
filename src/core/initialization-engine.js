@@ -8,7 +8,8 @@ import { getDefaultValue } from './variable-schema.js';
 import { shouldSkipPromptedRefresh, runPromptedStateUpdate } from './prompted-engine.js';
 import { recalculateDependents, recalculateAllForChat } from './calculated-engine.js';
 import { copyChatRoles, migrateRoleData } from './roles.js';
-import { getChatSetting, setChatSetting, ensureChatSetting, migrateObjectData } from './objects.js';
+import { getChatSetting, setChatSetting, ensureChatSetting, migrateObjectData, migrateObjectFields } from './objects.js';
+import { migrateSceneLocation } from './scene-location-migration.js';
 import { askChatSetting } from '../ui/setting-prompt.js';
 
 
@@ -297,6 +298,19 @@ export function runStartupOnce() {
         migrateObjectData();
     } catch (err) {
         console.warn(LOG_PREFIX, 'object data migration failed (gracefully handled)', err);
+    }
+    // Each setting's object presets (from its old runtime fields), and object
+    // fields from before they held objects (a character's faction text).
+    try {
+        migrateObjectFields();
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'object field migration failed (gracefully handled)', err);
+    }
+    // Scene Context's location: text -> a location object.
+    try {
+        migrateSceneLocation();
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'scene location migration failed (gracefully handled)', err);
     }
     runPromptedStateUpdate('startup');
 }
