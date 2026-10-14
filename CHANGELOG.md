@@ -109,6 +109,11 @@
   day. Scene Context's Delta Time prompt now asks for a duration *or* a time of day, and counts
   conversation as time passing, instead of turning "the next morning" into a guessed number of
   hours. Existing installs get the new prompt once, unless they changed it.
+- **Locations named like ids ("rocky_terrain"):** the model sometimes answered Scene Context's
+  location in the underscore style its `scene_id` asks for, and State Engine created a location
+  by that name. A new object's id-style name is now written as words ("Rocky Terrain"), an
+  underscore matches a space when names are matched (so "rocky_terrain" finds "Rocky Terrain"),
+  and the location prompt asks for ordinary words, never an id.
 - **A character's intent got stuck:** it was shown back to the model as its current value every
   turn, and repeated. It is now asked NEW EACH TURN, like the thought (an empty answer keeps
   the last one), with a prompt asking for their very next move. Existing settings' intent

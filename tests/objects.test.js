@@ -283,6 +283,17 @@ describe('extraction (resolveObjectNames)', () => {
         expect(listNotifications().find((n) => n.message.startsWith('New locations detected for review'))).toMatchObject({ callbackId: 'objects.review.location' });
     });
 
+    it('a name written as an id becomes words, and the id still matches it', () => {
+        expect(O.displayName('rocky_terrain')).toBe('Rocky Terrain');
+        expect(O.displayName('wastes_beyond_the_walls')).toBe('Wastes Beyond the Walls');
+        expect(O.displayName('Old Inn')).toBe('Old Inn');
+        expect(O.displayName('R2_D2')).toBe('R2_D2');
+        const { created } = O.resolveObjectNames(CHAT, 'location', ['rocky_terrain']);
+        expect(created[0].name).toBe('Rocky Terrain');
+        expect(O.resolveObjectNames(CHAT, 'location', ['rocky_terrain']).created).toEqual([]);
+        expect(O.getObjectByAlias(CHAT, 'location', 'Rocky Terrain').id).toBe(created[0].id);
+    });
+
     it('review notifications follow the open chat, and go once everything is reviewed', () => {
         const review = () => listNotifications().filter((n) => n.callbackId === 'objects.review.character').map((n) => n.message);
         O.resolveObjectNames(CHAT, 'character', ['Syrvanus', 'the gremlin']);

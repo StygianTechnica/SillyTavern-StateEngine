@@ -94,11 +94,26 @@ function typeOfId(id) {
 }
 
 // A name for matching: lowercased, single-spaced, without surrounding quotes
-// or a trailing possessive.
+// or a trailing possessive. Underscores count as spaces: "rocky_terrain" is
+// "Rocky Terrain".
 export function nameKey(name) {
     return typeof name === 'string'
-        ? name.normalize('NFKC').trim().replace(/^["'“”‘’]+|["'“”‘’]+$/g, '').replace(/['’]s$/i, '').replace(/\s+/g, ' ').toLowerCase()
+        ? name.normalize('NFKC').replace(/_/g, ' ').trim().replace(/^["'“”‘’]+|["'“”‘’]+$/g, '').replace(/['’]s$/i, '').replace(/\s+/g, ' ').toLowerCase()
         : '';
+}
+
+const MINOR_WORDS = new Set(['a', 'an', 'the', 'of', 'and', 'or', 'in', 'on', 'at', 'to', 'by', 'for', 'from', 'with']);
+
+// A name a model wrote as an id - "rocky_terrain", "wastes_beyond_listons_walls"
+// (Scene Context's scene_id asks for exactly that style, and the model
+// carries it over to the location) - as words: "Rocky Terrain". Any other
+// name as it is.
+export function displayName(name) {
+    const text = typeof name === 'string' ? name.trim() : '';
+    if (!/^[a-z0-9]+(?:_[a-z0-9]+)+$/.test(text)) return text;
+    return text.split('_')
+        .map((word, i) => (i > 0 && MINOR_WORDS.has(word) ? word : word.charAt(0).toUpperCase() + word.slice(1)))
+        .join(' ');
 }
 
 function cleanAliases(list, name = '') {
@@ -1229,7 +1244,7 @@ export function resolveObjectNames(chatId, type, names, { source = '' } = {}) {
             id = match.id;
             recordMatch(chatId, t, id);
         } else {
-            const object = createChatObject(chatId, type, name, snippetFor(source, name));
+            const object = createChatObject(chatId, type, displayName(name), snippetFor(source, displayName(name)) ?? snippetFor(source, name));
             id = object.id;
             created.push(object);
         }
@@ -1427,7 +1442,7 @@ function migratedRefs(chatId, settingId, def, value) {
     const ids = [];
     for (const name of names) {
         let id = isId(name) ? name : null;
-        if (!id && chatId) id = getObjectByAlias(chatId, type, name)?.id ?? createChatObject(chatId, type, name).id;
+        if (!id && chatId) id = getObjectByAlias(chatId, type, name)?.id ?? createChatObject(chatId, type, displayName(name)).id;
         if (!id) {
             const key = nameKey(name);
             id = Object.values(settingStore()[settingId].objects[type]).find((r) => [r.name, ...(r.aliases ?? [])].some((n) => nameKey(n) === key))?.id

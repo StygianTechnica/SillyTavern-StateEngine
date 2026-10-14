@@ -92,7 +92,7 @@ export const OBJECT_TYPES = freeze({
             },
         ]),
         prompt: freeze({
-            single: 'a location\'s name, exactly as the story calls it (e.g. "the Rusty Anchor" or "Brass Market"). Reply with the name only; "" if no place fits',
+            single: 'a location\'s name, exactly as the story calls it, in ordinary words (e.g. "the Rusty Anchor" or "Brass Market") - never an id like "rusty_anchor". Reply with the name only; "" if no place fits',
             list: 'list of the locations in play right now, each by name exactly as the story calls it. '
                 + 'Start from the current list: keep the ones still relevant, add new ones, remove only those no longer relevant. '
                 + 'Only specific places (named or uniquely described), not generic ones ("a street", "somewhere"). '
