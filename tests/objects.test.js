@@ -131,10 +131,10 @@ describe('world objects: create, match, edit (characters)', () => {
 
     it('editing and saving confirms - which puts it in the setting; a canonical edit changes it for every chat', () => {
         const kael = O.createChatObject(CHAT, 'character', 'Kael');
-        const edited = O.updateObject(CHAT, kael.id, { faction: 'Ashguard' });
-        expect(edited).toMatchObject({ id: kael.id, confirmed: true, scope: 'setting', settingId: story.id });
+        const edited = O.updateObject(CHAT, kael.id, { role: 'Scout', startValues: { factions: ['Ashguard'] } });
+        expect(edited).toMatchObject({ id: kael.id, confirmed: true, role: 'Scout', scope: 'setting', settingId: story.id });
         // A faction is a faction object: the name is matched, or recorded as a new one.
-        expect(edited.faction).toEqual([O.getObjectByAlias(CHAT, 'faction', 'Ashguard').id]);
+        expect(edited.startValues.factions).toEqual([O.getObjectByAlias(CHAT, 'faction', 'Ashguard').id]);
         expect(loadChatState(CHAT).objects.character.local).toEqual({});
         const canon = O.createObject(story.id, 'character', { name: 'Rhys' });
         O.setChatSetting('chat-2', story.id);
@@ -419,10 +419,10 @@ describe('object variables', () => {
 
     it('getVariablePromptTexts describes objects instead of showing ids', () => {
         presetAndVars();
-        const rhys = O.createObject(story.id, 'character', { name: 'Rhys', description: 'A smuggler.', faction: 'Ashguard' });
+        const rhys = O.createObject(story.id, 'character', { name: 'Rhys', description: 'A smuggler.', role: 'Captain', startValues: { factions: ['Ashguard'] } });
         setVar(CHAT, 'pp__speaker', rhys.id, { name: 'pp__speaker', ...CHARACTER });
         const texts = api('getVariablePromptTexts', CHAT, ['pp__speaker', 'pp__missing']);
-        expect(texts).toEqual({ pp__speaker: 'Rhys [Character]\nA smuggler.\nFaction: Ashguard' });
+        expect(texts).toEqual({ pp__speaker: 'Rhys [Character]\nA smuggler.\nRole: Captain\nFactions (now): Ashguard' });
     });
 
     it('an object role accepts object variables', () => {
@@ -508,11 +508,11 @@ describe('migration from the character-only engine', () => {
         expect(O.getSetting('set_legacy')).toMatchObject({ name: 'Legacy', autoConfirm: true });
         const guild = O.getObjectByAlias('chat-legacy', 'faction', 'Guild');
         expect(guild).toMatchObject({ scope: 'setting', settingId: 'set_legacy' });
-        expect(O.getObject('chat-legacy', 'chr_canon')).toMatchObject({ description: 'Old bio.', faction: [guild.id], present: true, matches: 2,
+        expect(O.getObject('chat-legacy', 'chr_canon')).toMatchObject({ description: 'Old bio.', startValues: { factions: [guild.id] }, present: true, matches: 2,
             runtime: { present: true, values: { thought: 'Hm.', mood: 'Calm', intent: null, fear: 'Low' }, images: {} } });
         expect(O.getObject('chat-legacy', 'chr_old')).toMatchObject({ scope: 'setting', settingId: 'set_legacy', confirmed: true });
         expect(O.getObject('chat-legacy', 'chr_new')).toMatchObject({ scope: 'chat', confirmed: false });
-        expect(O.getRuntimeFields('set_legacy', 'character').map((f) => f.name)).toEqual(['thought', 'mood', 'intent', 'fear']);
+        expect(O.getRuntimeFields('set_legacy', 'character').map((f) => f.name)).toEqual(['thought', 'mood', 'intent', 'factions', 'fear']);
         expect(O.getRuntimeFields('set_legacy', 'character')[0].fresh).toBe(true); // from the registry
         expect(settings.get().presets.p_legacy.variables).toMatchObject({
             who: { type: 'object', objectType: 'character' },
@@ -535,7 +535,7 @@ describe('runtime state', () => {
 
     it('every setting starts with each type\'s built-ins - characters: thought, mood (enum) and intent', () => {
         expect(O.getRuntimeFields(story.id, 'character').map((f) => [f.name, f.type, f.prompted, f.builtIn])).toEqual([
-            ['thought', 'string', true, true], ['mood', 'enum', true, true], ['intent', 'string', true, true],
+            ['thought', 'string', true, true], ['mood', 'enum', true, true], ['intent', 'string', true, true], ['factions', 'array', true, true],
         ]);
         expect(O.getRuntimeFields(story.id, 'character')[1].values).toEqual(['Neutral', 'Angry', 'Afraid', 'Curious', 'Confident', 'Sad', 'Suspicious', 'Determined']);
         expect(O.getRuntimeFields(story.id, 'quest').map((f) => f.name)).toEqual(['status']);
@@ -548,21 +548,25 @@ describe('runtime state', () => {
             { name: 'amorousness', type: 'number', prompted: true, min: 0, max: 100 },
             { name: 'fear_level', type: 'enum', prompted: false, values: ['Low', 'Medium', 'High'] },
         ]);
-        expect(fields.map((f) => f.name)).toEqual(['thought', 'mood', 'intent', 'amorousness', 'fear_level']);
-        expect(O.setRuntimeFields(story.id, 'character', []).map((f) => f.name)).toEqual(['thought', 'mood', 'intent']);
+        expect(fields.map((f) => f.name)).toEqual(['thought', 'mood', 'intent', 'factions', 'amorousness', 'fear_level']);
+        expect(O.setRuntimeFields(story.id, 'character', []).map((f) => f.name)).toEqual(['thought', 'mood', 'intent', 'factions']);
+        // A list field comes back through this view unchanged.
+        const views = O.getRuntimeFields(story.id, 'character');
+        O.setRuntimeFields(story.id, 'character', views);
+        expect(O.getObjectFields(story.id, 'character').find((d) => d.name === 'factions')).toMatchObject({ type: 'array', itemObjectType: 'faction' });
         expect(() => O.setRuntimeFields(story.id, 'character', [{ name: 'x', type: 'enum', values: [] }])).toThrow(/no values/);
         expect(() => O.setRuntimeFields(story.id, 'character', [{ name: 'x', type: 'enum', values: ['A', 'a'] }])).toThrow(/twice/);
         expect(() => O.setRuntimeFields(story.id, 'character', [{ name: 'Bad Name' }])).toThrow(/not valid/);
         expect(() => O.setRuntimeFields(story.id, 'character', [{ name: 'present' }])).toThrow(/presence/);
         expect(api('setObjectRuntimeFields', story.id, 'character', [{ name: 'x', type: 'colour' }])).toBeNull();
-        expect(O.setRuntimeFields(story.id, 'location', [{ name: 'crowd', type: 'enum', values: ['Empty', 'Busy'] }]).map((f) => f.name)).toEqual(['conditions', 'crowd']);
+        expect(O.setRuntimeFields(story.id, 'location', [{ name: 'crowd', type: 'enum', values: ['Empty', 'Busy'] }]).map((f) => f.name)).toEqual(['conditions', 'factions', 'crowd']);
     });
 
     it('runtime lives in the chat, never in the setting; outside a chat it is null', () => {
         const rhys = O.createObject(story.id, 'character', { name: 'Rhys' });
         O.markObjectPresent(CHAT, rhys.id);
         O.applyRuntimeUpdates(CHAT, 'character', { [rhys.id]: { thought: 'Trust no one.', mood: 'suspicious', intent: 'Watch the door' } });
-        expect(O.getObject(CHAT, rhys.id).runtime).toEqual({ present: true, values: { thought: 'Trust no one.', mood: 'Suspicious', intent: 'Watch the door' }, images: {} });
+        expect(O.getObject(CHAT, rhys.id).runtime).toEqual({ present: true, values: { thought: 'Trust no one.', mood: 'Suspicious', intent: 'Watch the door', factions: null }, images: {} });
         expect(O.getObject(null, rhys.id, story.id).runtime).toBeNull();
         expect(JSON.stringify(settings.get().variableStore.settings[story.id].objects)).not.toContain('Trust no one');
         O.setChatSetting('chat-2', story.id);
@@ -678,7 +682,7 @@ describe('runtime state', () => {
     // A real chat (2026-10-09): a small model answers in the shape of
     // "currently" - a thought left out of it once (empty) was never answered
     // again, and a thought shown in it was copied back word for word.
-    it('"currently" never shows the thought, and shows every other prompted field, empty ones as null', async () => {
+    it('"currently" never shows the thought or the intent, and shows every other prompted field, empty ones as null', async () => {
         listVar();
         const rhys = O.createObject(story.id, 'character', { name: 'Rhys' });
         O.markObjectPresent(CHAT, rhys.id);
@@ -690,7 +694,9 @@ describe('runtime state', () => {
         const prompt = callBackgroundLLM.mock.calls[0][2][0].content;
         expect(prompt).toContain('"thought": short text, NEW EACH TURN');
         expect(prompt).toContain('write a new thought for every character, never empty');
-        expect(prompt).toContain('currently {"Rhys":{"mood":"Sad","intent":null}}');
+        // The intent is asked new each turn too: shown back, it got stuck.
+        expect(prompt).toContain('"intent": short text, NEW EACH TURN');
+        expect(prompt).toContain('currently {"Rhys":{"mood":"Sad","factions":null}}');
         expect(prompt).not.toContain('Old thought.');
     });
 });

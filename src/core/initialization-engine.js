@@ -10,6 +10,7 @@ import { recalculateDependents, recalculateAllForChat } from './calculated-engin
 import { copyChatRoles, migrateRoleData } from './roles.js';
 import { getChatSetting, setChatSetting, ensureChatSetting, migrateObjectData, migrateObjectFields } from './objects.js';
 import { migrateSceneLocation } from './scene-location-migration.js';
+import { migratePromptRefresh } from './prompt-refresh-migration.js';
 import { askChatSetting } from '../ui/setting-prompt.js';
 
 
@@ -311,6 +312,12 @@ export function runStartupOnce() {
         migrateSceneLocation();
     } catch (err) {
         console.warn(LOG_PREFIX, 'scene location migration failed (gracefully handled)', err);
+    }
+    // Delta Time and a character's intent: their old built-in prompts.
+    try {
+        migratePromptRefresh();
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'prompt refresh migration failed (gracefully handled)', err);
     }
     runPromptedStateUpdate('startup');
 }

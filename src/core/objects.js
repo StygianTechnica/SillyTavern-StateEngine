@@ -41,11 +41,14 @@
 // is RESOLVED to it (its name becomes an alias). Story objects are always
 // confirmed and never leave their chat.
 //
-// RUNTIME STATE: per chat - never in a setting. Each object in a chat has
-// runtime = { present? (types with presence), values: { [field]: value },
-// images }: the object preset's chat-scope fields. Prompted ones (and
-// prompted baseline fields) are written by the prompted update; a field with
-// clearOnLeave is cleared when an object with presence leaves the scene.
+// RUNTIME STATE: per chat. Each object in a chat has runtime = { present?
+// (types with presence), values: { [field]: value }, images }: the object
+// preset's chat-scope fields. Prompted ones (and prompted baseline fields)
+// are written by the prompted update; a field with clearOnLeave is cleared
+// when an object with presence leaves the scene. A runtime field may have a
+// STARTING VALUE on the object's record (record.startValues[field] - set in
+// the setting, e.g. by a scenario author): every chat begins from it, until
+// that chat has its own value (an empty answer is a value too).
 
 import { LOG_PREFIX, BUILTIN_NAMESPACE, getSettings, persistSettings } from './settings-core.js';
 import { loadChatState, saveChatState, hydrateMacroStoreForChat } from './chat-state.js';
@@ -129,7 +132,7 @@ function cleanIds(list, max = MAX_REFS) {
 // The fields of a COMMON object record - everything else on a record is a
 // baseline field.
 const COMMON = new Set(['id', 'type', 'name', 'aliases', 'image', 'description', 'introduction_snippet', 'related_entity_ids',
-    'related_memory_ids', 'confirmed', 'variants', 'activeVariant', 'createdAt', 'updatedAt']);
+    'related_memory_ids', 'confirmed', 'variants', 'activeVariant', 'createdAt', 'updatedAt', 'startValues']);
 
 // A setting's baseline (global-scope) field definitions for a type.
 function baselineDefs(settingId, type) {
@@ -192,6 +195,8 @@ export function normalizeObject(type, raw, id = raw?.id, defs = null) {
         confirmed: t.scope === 'story' ? true : raw?.confirmed === true,
         variants,
         activeVariant: typeof raw?.activeVariant === 'string' && variants[raw.activeVariant] ? raw.activeVariant : null,
+        // Runtime fields' starting values (cleaned when written - applyPatch).
+        startValues: isObject(raw?.startValues) ? structuredClone(raw.startValues) : {},
         createdAt: Number.isFinite(raw?.createdAt) ? raw.createdAt : Date.now(),
         updatedAt: Number.isFinite(raw?.updatedAt) ? raw.updatedAt : Date.now(),
     };
@@ -207,13 +212,15 @@ export function normalizeObject(type, raw, id = raw?.id, defs = null) {
 
 // The runtime-field view of a chat-scope field definition - the shape the
 // runtime-field API has always returned (getRuntimeFields): { name, type
-// ('string' | 'number' | 'enum'), prompted, description, values?, images?,
-// min?, max?, fresh?, builtIn }. builtIn: a field role of the type is
-// assigned to it.
+// ('string' | 'number' | 'enum', or the field's own type for one this view
+// cannot describe - a list of factions is 'array'), prompted, description,
+// values?, images?, min?, max?, fresh?, builtIn }. builtIn: a field role of
+// the type is assigned to it.
+const VIEW_TYPES = ['string', 'number', 'enum'];
 function runtimeFieldView(def, roleFields) {
     const out = {
         name: def.name,
-        type: def.type === 'number' || def.type === 'enum' ? def.type : 'string',
+        type: VIEW_TYPES.includes(def.type) ? def.type : (def.type === 'boolean' ? 'string' : def.type),
         prompted: def.behaviors?.prompted === true,
         description: def.prompted?.instructions || def.description || '',
         builtIn: roleFields.has(def.name),
@@ -251,14 +258,19 @@ export function setRuntimeFields(settingId, type, fields) {
     const current = getFieldDefs(settingId, type);
     const runtime = fields.map((raw, i) => {
         if (!isObject(raw)) throw new Error(`runtime field #${i + 1} must be an object`);
-        if (raw.type !== undefined && !['string', 'number', 'enum'].includes(raw.type)) {
+        const old = current.find((d) => d.scope !== 'global' && d.name === raw.name);
+        // A field this view cannot describe (a list of factions) comes back
+        // with its own type: it keeps its definition, only its prompting changes.
+        if (old && raw.type === old.type && !VIEW_TYPES.includes(old.type)) {
+            return { ...old, behaviors: { ...old.behaviors, prompted: raw.prompted !== false }, prompted: { ...old.prompted, instructions: typeof raw.description === 'string' ? raw.description : old.prompted.instructions } };
+        }
+        if (raw.type !== undefined && !VIEW_TYPES.includes(raw.type)) {
             throw new Error(`runtime field "${raw.name}" has unknown type ${JSON.stringify(raw.type)} (string, number or enum)`);
         }
         if (raw.images !== undefined && raw.images !== null && !isObject(raw.images)) throw new Error(`runtime field "${raw.name}": images must be an object of value -> image`);
         for (const [value, ref] of Object.entries(raw.images ?? {})) {
             if (typeof ref !== 'string') throw new Error(`runtime field "${raw.name}": the image for "${value}" must be a string`);
         }
-        const old = current.find((d) => d.scope !== 'global' && d.name === raw.name);
         const view = fromRuntimeField({ ...raw, type: raw.type ?? 'string' }, t);
         if (!old) return view;
         return {
@@ -320,18 +332,15 @@ function renameFieldValues(settingId, type, scope, from, to) {
         delete holder[from];
         return true;
     };
-    if (scope === 'global') {
-        for (const record of Object.values(settingStore()[settingId]?.objects?.[type] ?? {})) move(record);
-    }
+    // A runtime field's starting values live on the records too.
+    const holderOf = (record) => (scope === 'global' ? record : record?.startValues);
+    for (const record of Object.values(settingStore()[settingId]?.objects?.[type] ?? {})) move(holderOf(record));
     for (const [chatId, state] of Object.entries(getSettings().variableStore?.chats || {})) {
         if ((state?.setting ?? DEFAULT_SETTING_ID) !== settingId || !isObject(state?.objects?.[type])) continue;
         let dirty = false;
         const layer = state.objects[type];
-        if (scope === 'global') {
-            for (const record of Object.values(layer.local ?? {})) dirty = move(record) || dirty;
-        } else {
-            for (const entry of Object.values(layer.entries ?? {})) dirty = move(entry?.runtime?.values) || dirty;
-        }
+        for (const record of Object.values(layer.local ?? {})) dirty = move(holderOf(record)) || dirty;
+        if (scope !== 'global') for (const entry of Object.values(layer.entries ?? {})) dirty = move(entry?.runtime?.values) || dirty;
         if (dirty) saveChatState(chatId, state);
     }
     persistSettings();
@@ -356,13 +365,17 @@ export function runtimeImageSrc(field, value) {
 // { present? , values: { [field]: value }, images: { [field]: src } } -
 // fields the setting no longer defines are left out; images holds each enum
 // field whose current value has an image, already checked with safeImageSrc.
-function runtimeView(chatId, t, id) {
+// A field the chat has no value for yet shows the object's starting value
+// (`record`: its stored record).
+function runtimeView(chatId, t, id, record = locate(chatId, id)?.record) {
     const entry = typeLayer(readChat(chatId), t.id).entries[id];
     const stored = isObject(entry?.runtime?.values) ? entry.runtime.values : {};
+    const start = isObject(record?.startValues) ? record.startValues : {};
     const out = { values: {}, images: {} };
     if (t.hasPresence) out.present = entry?.present === true;
     for (const def of runtimeDefs(effectiveSetting(chatId).id, t.id)) {
-        const clean = stored[def.name] === undefined ? null : coerceRuntimeValue(def, stored[def.name]);
+        const raw = def.name in stored ? stored[def.name] : start[def.name];
+        const clean = raw === undefined ? null : coerceRuntimeValue(def, raw);
         out.values[def.name] = clean;
         const src = runtimeImageSrc(def, clean);
         if (src) out.images[def.name] = src;
@@ -481,34 +494,38 @@ export function getObjectFieldValue(chatId, id, nameOrRole, { settingId = null }
     const def = name ? getFieldDefs(owner, t.id).find((d) => d.name === name) : null;
     if (!def) return undefined;
     if (def.scope === 'global') return structuredClone(applyVariant(normalizeObject(t.id, found.record, id, baselineDefs(owner, t.id)))[name]);
-    return chatId ? structuredClone(runtimeView(chatId, t, id).values[name]) : undefined;
+    // Outside a chat, a runtime field is its starting value.
+    if (!chatId) return structuredClone(found.record.startValues?.[name] ?? emptyFieldValue(def));
+    return structuredClone(runtimeView(chatId, t, id, found.record).values[name]);
 }
 
 // Sets one field of an object (a field name or a field role id): a baseline
 // field on its record (for a canonical object, every chat on its setting
-// sees it; it does not confirm the object), a runtime field in the chat. A
-// prompted runtime field is the prompted update's - refused. Object fields
-// take names or ids. Throws with the reason; returns the object.
+// sees it; it does not confirm the object), a runtime field in the chat -
+// or, with no chat, a runtime field's STARTING VALUE (on the record: what
+// every chat begins from - a scenario author's). In a chat, a prompted
+// runtime field is the prompted update's - refused. Object fields take
+// names or ids. Throws with the reason; returns the object.
 export function setObjectFieldValue(chatId, id, nameOrRole, value, { settingId = null } = {}) {
     const t = typeOfId(id);
     const owner = ownerSetting(chatId, mustLocate(chatId, id, settingId));
     const name = resolveFieldName(owner, t.id, nameOrRole);
     const def = name ? getFieldDefs(owner, t.id).find((d) => d.name === name) : null;
     if (!def) throw new Error(`${JSON.stringify(nameOrRole)} is not a ${t.noun} field (or an assigned field role) in this setting`);
-    if (def.scope !== 'global' && def.behaviors?.prompted) throw new Error(`field "${name}" is prompted - the prompted update writes it`);
+    if (chatId && def.scope !== 'global' && def.behaviors?.prompted) throw new Error(`field "${name}" is prompted - the prompted update writes it`);
     const given = !(value === null || value === undefined || value === '' || (Array.isArray(value) && value.length === 0));
     const clean = inputValue(chatId, owner, def, value);
     if (given && isEmptyFieldValue(clean)) throw new Error(`${JSON.stringify(value)} is not a valid ${def.type} for "${name}"`);
-    if (def.scope === 'global') {
+    if (def.scope === 'global' || !chatId) {
         // Located again: matching a name may have written the chat.
         const found = mustLocate(chatId, id, settingId);
         const record = normalizeObject(t.id, found.record, id, baselineDefs(owner, t.id));
-        record[name] = clean;
+        if (def.scope === 'global') record[name] = clean;
+        else record.startValues[name] = clean;
         saveRecord(chatId, found, record);
         changed(found.scope === 'chat' ? chatId : null);
         return getObject(chatId, id, settingId);
     }
-    if (!chatId) throw new Error(`field "${name}" is per chat - it needs a chat`);
     writeChat(chatId, (state) => {
         const layer = typeLayer(state, t.id);
         const entry = { matches: 0, ...(layer.entries[id] ?? {}) };
@@ -747,8 +764,10 @@ function view(chatId, found) {
         scope: found.scope,
         settingId: found.settingId,
         matches: Number.isFinite(entry?.matches) ? entry.matches : 0,
-        // Per-chat, ephemeral state; null outside a chat.
-        runtime: chatId ? runtimeView(chatId, t, record.id) : null,
+        // Per-chat state; null outside a chat.
+        runtime: chatId ? runtimeView(chatId, t, record.id, found.record) : null,
+        // What every chat's runtime fields begin from.
+        startValues: structuredClone(record.startValues),
         activeVariant: record.activeVariant,
         variants: Object.values(record.variants).map((v) => ({ id: v.id, name: v.name, overrides: structuredClone(v.overrides) })),
         base: baseFields(defs, record),
@@ -839,6 +858,15 @@ function applyPatch(t, record, patch, defs, chatId, settingId) {
     if (patch.related_entity_ids !== undefined) record.related_entity_ids = cleanIds(patch.related_entity_ids);
     if (patch.related_memory_ids !== undefined) record.related_memory_ids = cleanIds(patch.related_memory_ids);
     for (const def of defs) if (patch[def.name] !== undefined) record[def.name] = inputValue(chatId, settingId, def, patch[def.name]);
+    // Runtime fields' starting values: { [field]: value } (empty: none).
+    if (isObject(patch.startValues)) {
+        for (const def of runtimeDefs(settingId, t.id)) {
+            if (!(def.name in patch.startValues)) continue;
+            const value = inputValue(chatId, settingId, def, patch.startValues[def.name]);
+            if (isEmptyFieldValue(value)) delete record.startValues[def.name];
+            else record.startValues[def.name] = value;
+        }
+    }
 }
 
 // Creates an object in a chat: an unconfirmed world object (extraction, or
@@ -992,6 +1020,9 @@ export function mergeObjects(chatId, sourceId, targetId, { settingId = null } = 
     for (const def of defs) {
         if (isEmptyFieldValue(into[def.name])) into[def.name] = structuredClone(from[def.name]);
     }
+    for (const [field, value] of Object.entries(from.startValues)) {
+        if (isEmptyFieldValue(into.startValues[field])) into.startValues[field] = structuredClone(value);
+    }
     into.related_entity_ids = cleanIds([...into.related_entity_ids, ...from.related_entity_ids]);
     into.related_memory_ids = cleanIds([...into.related_memory_ids, ...from.related_memory_ids]);
     const names = new Set(Object.values(into.variants).map((v) => v.name.toLowerCase()));
@@ -1045,16 +1076,21 @@ export function deleteObject(chatId, id, { settingId = null } = {}) {
 function rewriteRecordRefs(record, from, to) {
     if (!isObject(record)) return false;
     let dirty = false;
-    for (const [key, value] of Object.entries(record)) {
-        if (COMMON.has(key) && key !== 'related_entity_ids') continue;
+    const rewrite = (holder, key) => {
+        const value = holder[key];
         if (value === from) {
-            record[key] = to ?? '';
+            holder[key] = to ?? '';
             dirty = true;
         } else if (Array.isArray(value) && value.includes(from)) {
-            record[key] = [...new Set(value.map((v) => (v === from ? to : v)).filter(Boolean))];
+            holder[key] = [...new Set(value.map((v) => (v === from ? to : v)).filter(Boolean))];
             dirty = true;
         }
+    };
+    for (const key of Object.keys(record)) {
+        if (COMMON.has(key) && key !== 'related_entity_ids') continue;
+        rewrite(record, key);
     }
+    if (isObject(record.startValues)) for (const key of Object.keys(record.startValues)) rewrite(record.startValues, key);
     return dirty;
 }
 
@@ -1408,11 +1444,44 @@ function holdsNames(def, value) {
     return (Array.isArray(value) ? value : [value]).some((v) => typeof v === 'string' && v.trim() && objectTypeOfId(v.trim())?.id !== type);
 }
 
+// Factions as runtime fields (2026-10-13): characters and locations carry a
+// `factions` runtime field (the factions they belong to or are tied to,
+// tracked as the story goes, with a starting value per object). In a
+// setting's object presets: a character's baseline `faction` becomes the
+// runtime `factions`, and a character or location preset without one gets
+// it - once (settings.migrations.factionsField), so a field the user later
+// removes stays removed. The records' `faction` values move in convert()
+// below.
+// The types whose defaults carry `factions` (character, location).
+const FACTION_TYPES = OBJECT_TYPE_IDS.filter((type) => OBJECT_TYPES[type].runtime.some((f) => f.name === 'factions'));
+
+function migrateFactionFields(settings) {
+    const flags = getSettings().migrations ?? (getSettings().migrations = {});
+    for (const setting of Object.values(settings)) {
+        for (const type of FACTION_TYPES) {
+            const defs = getFieldDefs(setting.id, type);
+            if (defs.some((d) => d.name === 'factions')) continue;
+            const old = defs.find((d) => d.name === 'faction' && fieldObjectType(d) === 'faction');
+            if (!old && flags.factionsField) continue;
+            const factions = fromRuntimeField(OBJECT_TYPES[type].runtime.find((f) => f.name === 'factions'), OBJECT_TYPES[type]);
+            const next = old
+                ? defs.map((d) => (d === old ? { ...factions, id: old.id } : d))
+                : [...defs, factions];
+            // A rename (same id): its field role and baseline values follow;
+            // the values are moved to starting values in convert().
+            setFieldDefs(setting.id, type, [...next.filter((d) => d.scope === 'global'), ...next.filter((d) => d.scope !== 'global')]);
+        }
+    }
+    flags.factionsField = true;
+}
+
 // Object presets (2026-10-13): every setting gets its object preset per
 // type - from its old runtime fields where it had them (object-presets.js
 // reads setting.runtimeFields once, then it goes) - and object fields still
-// holding names get the objects they mean. Idempotent; run on startup after
-// migrateObjectData(). Returns { settings, references } (counts).
+// holding names get the objects they mean; a character's `faction` becomes
+// the starting value of its `factions` (migrateFactionFields). Idempotent;
+// run on startup after migrateObjectData(). Returns { settings, references }
+// (counts).
 export function migrateObjectFields() {
     const counts = { settings: 0, references: 0 };
     const settings = settingStore();
@@ -1423,8 +1492,31 @@ export function migrateObjectFields() {
             counts.settings++;
         }
     }
+    migrateFactionFields(settings);
     const convert = (chatId, settingId, type, record) => {
         let dirty = false;
+        // A character's faction (text before 2026-10-13, then faction ids) ->
+        // the starting value of its factions.
+        const factions = runtimeDefs(settingId, type).find((d) => d.name === 'factions' && fieldObjectType(d) === 'faction');
+        if (factions && 'faction' in record) {
+            if (!isObject(record.startValues)) record.startValues = {};
+            const moved = migratedRefs(chatId, settingId, factions, record.faction);
+            if (isEmptyFieldValue(record.startValues.factions) && !isEmptyFieldValue(moved)) {
+                record.startValues.factions = moved;
+                counts.references++;
+            }
+            delete record.faction;
+            for (const variant of Object.values(isObject(record.variants) ? record.variants : {})) if (isObject(variant?.overrides)) delete variant.overrides.faction;
+            dirty = true;
+        }
+        // Runtime object fields' starting values holding names.
+        for (const def of runtimeDefs(settingId, type).filter(fieldObjectType)) {
+            if (isObject(record.startValues) && holdsNames(def, record.startValues[def.name])) {
+                record.startValues[def.name] = migratedRefs(chatId, settingId, def, record.startValues[def.name]);
+                counts.references++;
+                dirty = true;
+            }
+        }
         for (const def of baselineDefs(settingId, type).filter(fieldObjectType)) {
             if (holdsNames(def, record[def.name])) {
                 record[def.name] = migratedRefs(chatId, settingId, def, record[def.name]);

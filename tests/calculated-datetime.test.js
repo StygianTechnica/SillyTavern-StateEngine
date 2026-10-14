@@ -234,6 +234,42 @@ describe('calculated-datetime extension', () => {
             expect(stored('jump')).toBe(''); // consumed
         });
 
+        // A delta is time passing (2026-10-14): a time of day is the next
+        // one to come, never earlier the same day.
+        it.each([
+            ['until morning', ts(2026, 9, 19, 8)],
+            ['overnight', ts(2026, 9, 19, 8)],
+            ['by dawn', ts(2026, 9, 19, 6)],
+            ['the following morning', ts(2026, 9, 19, 8)],
+            ['tomorrow afternoon', ts(2026, 9, 19, 15)],
+            ['later that night', ts(2026, 9, 18, 22)], // already night: no time passes
+            ['midnight', ts(2026, 9, 19, 0)],
+        ])('a time of day %j through deltaSource moves the clock forward', (text, expected) => {
+            createDeltaSource('jump');
+            createDatetime('clock', { defaultValue: ts(2026, 9, 18, 22), deltaSource: 'pp__jump', timeSemanticMode: 'semanticTimeOfDay' });
+            setDelta('jump', text);
+            expect(stored('clock')).toBe(expected);
+        });
+
+        // Scene Context's Current Time (timeOnly) and Current Date (dateOnly)
+        // share one deltaSource: one clock, so the date turns over when the
+        // time shown passes midnight - even after the time was set by hand.
+        it('a timeOnly and a date variable on one deltaSource move as one clock', () => {
+            createDeltaSource('jump');
+            createDatetime('time', { datetimeMode: 'timeOnly', defaultValue: 0, deltaSource: 'pp__jump', timeSemanticMode: 'semanticTimeOfDay' });
+            createDatetime('date', { datetimeMode: 'dateOnly', defaultValue: ts(2026, 9, 18), deltaSource: 'pp__jump', timeSemanticMode: 'semanticTimeOfDay' });
+            setVar('chat-1', 'pp__time', 22 * 3600, live('time')); // the user sets 22:00
+            setDelta('jump', '3 hours');
+            expect(stored('time')).toBe(1 * 3600);
+            expect(stored('date')).toBe(ts(2026, 9, 19, 1));
+            setDelta('jump', 'the next morning');
+            expect(stored('time')).toBe(8 * 3600);
+            expect(stored('date')).toBe(ts(2026, 9, 20, 8));
+            setDelta('jump', 'that evening');
+            expect(stored('date')).toBe(ts(2026, 9, 20, 18));
+            expect(stored('time')).toBe(18 * 3600);
+        });
+
         it('a semantic phrase through deltaSource is NOT understood when the target leaves timeSemanticMode off', () => {
             createDeltaSource('jump');
             createDatetime('clock', { defaultValue: ts(2026, 9, 18, 12), deltaSource: 'pp__jump' });

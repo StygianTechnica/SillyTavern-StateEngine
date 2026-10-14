@@ -852,7 +852,7 @@ export const SCENE_CONTEXT_BLUEPRINT = Object.freeze({
                 "operation": null
             },
             "prompted": {
-                "instructions": "Read every message in the Latest turn, including the user’s. Answer how much in-story time passed across all of it, as a duration such as “30 minutes” or “2 hours”. Drop hedging words (“about half an hour” → “30 minutes”) and turn vague durations into numbers. Answer “” only if the whole turn happens in a single moment."
+                "instructions": "How much in-story time passed across the whole Latest turn - every message in it, the user’s included. Count everything that takes time: talking (a few minutes), travel, waiting, work, sleep, and any skip the story makes (“hours later”, “the next day”). Answer a duration (“5 minutes”, “2 hours”, “3 days”) or, when the story moves on to a time of day, that time of day (“the next morning”, “that evening”, “tomorrow afternoon”, “until dawn”). Drop hedging words (“about half an hour” → “30 minutes”). Answer “” only if no time passed at all."
             },
             "version": 1
         },

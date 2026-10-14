@@ -20,10 +20,18 @@
 - **A single object variable's object gets its fields asked:** the location Scene Context
   holds now has its prompted fields (its conditions) in the per-message update - before,
   only objects held in a list did.
-- **A character's faction is faction objects**, not text: names given to it (by the
-  prompted update, the API or an edit) are matched to factions or recorded as new ones.
-  Existing faction text is converted once on startup, along with each setting's runtime
-  fields becoming its object presets.
+- **Factions belong to characters and locations, tracked as the story goes:** both have a
+  `factions` runtime field (a list of faction objects - the factions they belong to or are tied
+  to), asked in the per-message update while they are in play and kept when a character leaves
+  the scene; names are matched to factions or recorded as new ones. Any type can be given one.
+- **Starting values for runtime fields:** each object can carry a starting value per runtime
+  field (`record.startValues`, set in the setting - the Object Manager's editor, or
+  `setObjectField` with no chat): every chat begins from it, and the story then changes it in
+  that chat only. A scenario can say which factions a character or a place has before the
+  roleplay starts, and the per-message update sees them from the first message.
+  Existing data is converted once on startup: each setting's runtime fields become its object
+  presets, and a character's faction (text, or this morning's baseline field) becomes the
+  starting value of its factions.
 
 - **Scene Context's location is a location object:** `se__scene_location` now holds a location
   (State Engine object) instead of text, so each place is one record - matched by name and
@@ -88,6 +96,23 @@
 
 **Fixed**
 
+- **The date hardly ever changed:** Scene Context's Current Time (time only) and Current Date
+  (date only) each applied Delta Time to their own clock, and the date's hidden time of day
+  drifted from the time shown - a time set by hand, or "the next morning" read against a
+  different hour - so the date turned over at the wrong moment or not at all. A time-only and a
+  date datetime fed by the same delta source are now one clock: the delta is applied once, to
+  the date's day at the time shown, and both take the result.
+- **Delta Time understands a time of day as time passing:** "until morning", "by dawn", "that
+  evening", "later that night", "the following morning", "tomorrow afternoon", "overnight" and
+  "tomorrow" are understood (with semantic time of day on), and through a delta source a time of
+  day is the next one to come - "until morning" at 22:00 is tomorrow's, never earlier the same
+  day. Scene Context's Delta Time prompt now asks for a duration *or* a time of day, and counts
+  conversation as time passing, instead of turning "the next morning" into a guessed number of
+  hours. Existing installs get the new prompt once, unless they changed it.
+- **A character's intent got stuck:** it was shown back to the model as its current value every
+  turn, and repeated. It is now asked NEW EACH TURN, like the thought (an empty answer keeps
+  the last one), with a prompt asking for their very next move. Existing settings' intent
+  fields are updated once, unless their prompt was changed.
 - **Presets of other extensions could not be deleted from the manager** - including the
   leftovers of an uninstalled extension. They can now (after the warning above while that
   extension runs).

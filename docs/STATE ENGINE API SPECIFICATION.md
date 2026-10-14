@@ -2475,8 +2475,12 @@ RUNTIME field (stored in the chat's entry, by name). Field types: string (option
 `multiline`), number, boolean, enum, array (of strings, enums or objects), object,
 image, imageList, imageMap. Any field may be prompted (`prompted.mode`: 'fill' -
 asked only while empty, the default for baseline fields - or 'update'); a runtime
-field with `clearOnLeave` is cleared when an object with presence leaves. A new
-setting starts from the registry's `fields` and `runtime`, which are only defaults.
+field with `clearOnLeave` is cleared when an object with presence leaves. A runtime
+field may have a STARTING VALUE per object (`record.startValues[field]`, set in the
+setting: `updateObject(..., { startValues })` or `setObjectField` with no chat) that
+every chat begins from until it has its own value. Characters and locations carry a
+`factions` runtime field (faction objects) by default. A new setting starts from the
+registry's `fields` and `runtime`, which are only defaults.
 
 FIELD ROLES (`se__<type>.<field>`, one per default field: `se__character.mood`,
 `se__location.region`...) are what other code reads through: each setting assigns

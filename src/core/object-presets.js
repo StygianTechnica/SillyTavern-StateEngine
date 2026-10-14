@@ -86,18 +86,24 @@ function fromRegistryField(f) {
 }
 
 // A registry (or pre-object-preset setting) runtime field
-// ({ name, type, prompted, description, values?, images?, min?, max?, fresh? }) as a field definition.
+// ({ name, type, prompted, description, values?, images?, min?, max?, fresh?,
+// keep?, itemType?, itemObjectType? }) as a field definition.
 export function fromRuntimeField(f, t) {
     const prompted = f.prompted !== false;
     const def = {
         name: f.name,
         label: f.label ?? '',
         scope: 'chat',
-        type: f.type === 'number' || f.type === 'enum' ? f.type : 'string',
-        clearOnLeave: t.hasPresence,
+        type: ['number', 'enum', 'array'].includes(f.type) ? f.type : 'string',
+        clearOnLeave: t.hasPresence && f.keep !== true,
         behaviors: { prompted, increment: false },
         prompted: { instructions: f.description ?? '', newEachTurn: f.fresh === true, mode: 'update' },
     };
+    if (def.type === 'array') {
+        def.itemType = f.itemType ?? 'string';
+        if (f.itemObjectType) def.itemObjectType = f.itemObjectType;
+        if (f.itemEnumValues) def.itemEnumValues = [...f.itemEnumValues];
+    }
     if (def.type === 'enum') {
         def.enumValues = [...(f.values ?? [])];
         if (isObject(f.images) && Object.keys(f.images).length) def.enumImages = { ...f.images };

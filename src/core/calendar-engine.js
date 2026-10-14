@@ -375,6 +375,20 @@ export function normalizeForDatetimeMode(calendarId, scalarTime, datetimeMode) {
     }
 }
 
+// The moment on `dayScalar`'s day at `timeScalar`'s time of day: a date
+// variable and a timeOnly variable read as the one clock they show
+// (calculated-engine.js, a paired deltaSource clock). `dayScalar` when
+// either cannot be read.
+export function combineDateAndTime(calendarId, dayScalar, timeScalar) {
+    try {
+        const d = toStructured(calendarId, dayScalar);
+        const t = toStructured(calendarId, timeScalar);
+        return fromStructured(calendarId, { year: d.year, month: d.month, day: d.day, hour: t.hour, minute: t.minute, second: t.second });
+    } catch {
+        return dayScalar;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Seasons and cycles (fantasy calendars, requirements spec 1.22)
 // ---------------------------------------------------------------------------
@@ -1448,13 +1462,49 @@ function resolveMonthDay(calendarId, calendar, currentScalar, phrase) {
 // "override duration based deltas" per the request - though in practice a
 // bare phrase like "morning" never matches any of those anyway; this is
 // belt-and-suspenders precedence, not a fix for an actual collision.
+//
+// Narrative wording (2026-10-14): a model telling how much time passed
+// writes "until morning", "by dawn", "that evening", "later that night",
+// "the following morning", "tomorrow afternoon", "early the next morning",
+// "overnight" - a keyword with lead words around it. The lead words
+// (SEMANTIC_FILLERS) are ignored, "next" / "following" / "tomorrow" mean
+// the next day, "overnight" is "until morning", and "tomorrow" alone is one
+// day on. Any other word means it is not a time-of-day phrase.
 const SEMANTIC_TIME_OF_DAY = {
-    morning: 8, dawn: 6, sunrise: 6, noon: 12, afternoon: 15,
-    evening: 18, night: 21, midnight: 0, sunset: 19,
+    morning: 8, dawn: 6, sunrise: 6, noon: 12, midday: 12, afternoon: 15,
+    evening: 18, dusk: 19, night: 21, nightfall: 20, midnight: 0, sunset: 19,
 };
-const SEMANTIC_KEYWORDS_PATTERN = Object.keys(SEMANTIC_TIME_OF_DAY).join('|');
-const SEMANTIC_NEXT_PATTERN = new RegExp(`^(?:the\\s+)?next\\s+(${SEMANTIC_KEYWORDS_PATTERN})$`);
-const SEMANTIC_PLAIN_PATTERN = new RegExp(`^(?:the\\s+)?(${SEMANTIC_KEYWORDS_PATTERN})$`);
+const SEMANTIC_FILLERS = new Set([
+    'the', 'until', 'till', 'til', 'by', 'at', 'around', 'about', 'in', 'into', 'later', 'early', 'late', 'that', 'this', 'on', 'come', 'sometime',
+]);
+const SEMANTIC_NEXT_DAY = new Set(['next', 'following', 'tomorrow']);
+// Forward (time passing): a time of day gone by at most this many hours ago
+// is the current one ("that evening" at 18:30), not tomorrow's.
+const SEMANTIC_SAME_PERIOD_HOURS = 3;
+
+// { hour | null, nextDay } for a time-of-day phrase, or null when `phrase`
+// is not one.
+function parseSemanticPhrase(phrase) {
+    const words = phrase.split(/\s+/).filter(Boolean);
+    if (words.length === 1 && words[0] === 'overnight') return { hour: SEMANTIC_TIME_OF_DAY.morning, nextDay: false };
+    let hour = null;
+    let nextDay = false;
+    let tomorrow = false;
+    for (const word of words) {
+        if (Object.prototype.hasOwnProperty.call(SEMANTIC_TIME_OF_DAY, word)) {
+            if (hour !== null) return null;
+            hour = SEMANTIC_TIME_OF_DAY[word];
+        } else if (SEMANTIC_NEXT_DAY.has(word)) {
+            nextDay = true;
+            tomorrow ||= word === 'tomorrow';
+        } else if (!SEMANTIC_FILLERS.has(word)) {
+            return null;
+        }
+    }
+    // "tomorrow" alone is the next day; "next" or "the" alone is nothing.
+    if (hour === null && !tomorrow) return null;
+    return { hour, nextDay };
+}
 
 // `phrase` is already trimmed/lowercased (resolveInstruction's own prep).
 // Returns the resolved scalar, or undefined when `phrase` does not name a
@@ -1464,17 +1514,27 @@ const SEMANTIC_PLAIN_PATTERN = new RegExp(`^(?:the\\s+)?(${SEMANTIC_KEYWORDS_PAT
 // its thrown error up to resolveInstruction's own try/catch, which returns
 // null - "recognised, but not applicable here" is treated the same as "not
 // understood", consistent with every other unresolvable instruction.
-function resolveSemanticTimeOfDay(calendarId, currentScalar, phrase) {
-    const next = SEMANTIC_NEXT_PATTERN.exec(phrase);
-    const match = next || SEMANTIC_PLAIN_PATTERN.exec(phrase);
-    if (!match) return undefined;
-    const hour = SEMANTIC_TIME_OF_DAY[match[1]];
+//
+// `forward` (a deltaSource's answer - time PASSING): a plain time of day
+// ("until morning", "that evening") is the next one to come, never earlier
+// the same day - tomorrow's once today's has gone by (unless it went by
+// less than SEMANTIC_SAME_PERIOD_HOURS ago: then it is now). Without it, a
+// plain time of day is that time today, earlier or not (spec 1.35).
+function resolveSemanticTimeOfDay(calendarId, currentScalar, phrase, { forward = false } = {}) {
+    const parsed = parseSemanticPhrase(phrase);
+    if (!parsed) return undefined;
     const calendar = requireCalendar(calendarId);
-    const base = next
-        ? applyParsedDelta(calendarId, calendar, currentScalar, parseDeltaFor(calendar, '1 day'), 1)
-        : currentScalar;
-    const s = toStructured(calendarId, base);
-    return fromStructured(calendarId, { year: s.year, month: s.month, day: s.day, hour, minute: 0, second: 0 });
+    const oneDayOn = (scalar) => applyParsedDelta(calendarId, calendar, scalar, parseDeltaFor(calendar, '1 day'), 1);
+    const atHour = (scalar) => {
+        const s = toStructured(calendarId, scalar);
+        return fromStructured(calendarId, { year: s.year, month: s.month, day: s.day, hour: parsed.hour, minute: 0, second: 0 });
+    };
+    if (parsed.hour === null) return oneDayOn(currentScalar);
+    const target = atHour(parsed.nextDay ? oneDayOn(currentScalar) : currentScalar);
+    if (!forward || parsed.nextDay || target > currentScalar) return target;
+    const secondsPerHour = (calendar.secondsPerMinute ?? 60) * (calendar.minutesPerHour ?? 60);
+    if (currentScalar - target < SEMANTIC_SAME_PERIOD_HOURS * secondsPerHour) return currentScalar;
+    return atHour(oneDayOn(currentScalar));
 }
 
 const normalizePhrase = (text) => text.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -1542,7 +1602,10 @@ function resolvePhraseRule(calendarId, calendar, currentScalar, phrase) {
 // else - a datetime variable opts into this via its own
 // def.timeSemanticMode === 'semanticTimeOfDay'; every existing caller that
 // does not pass it (deltaSource's applyDatetimeDeltaTriggers, schedule-
-// engine.js, the calendar-manager preview) is completely unaffected. Returns
+// engine.js, the calendar-manager preview) is completely unaffected.
+// `options.forward` (with semanticTimeOfDay) reads a time of day as time
+// passing: the next one to come, never earlier (resolveSemanticTimeOfDay).
+// Returns
 // the resulting scalar, or null when the text is not an instruction this
 // understands (the caller skips the write rather than guessing). Never throws.
 export function resolveInstruction(calendarId, currentScalar, text, options = {}) {
@@ -1575,7 +1638,7 @@ function resolvePhrase(calendarId, calendar, currentScalar, phrase, options) {
         const keepTime = (result, dateText) => keepTimeOfDay(calendarId, result, currentScalar, dateText);
 
         if (options?.semanticTimeOfDay) {
-            const semantic = resolveSemanticTimeOfDay(calendarId, currentScalar, phrase);
+            const semantic = resolveSemanticTimeOfDay(calendarId, currentScalar, phrase, { forward: options.forward === true });
             if (semantic !== undefined) return semantic;
         }
 

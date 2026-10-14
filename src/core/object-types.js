@@ -20,9 +20,13 @@
 //   kind: 'text' (short) | 'longtext' | 'list' (of short strings)
 //       | 'enum' (one of values) | 'timestamp' (free text, e.g. a story date)
 //       | 'ref' (one object id of refType) | 'refs' (object ids of refType)
-// `runtime` lists the built-in PER-CHAT fields (ephemeral state, rewritten by
-// the prompted update). `fresh` runtime fields are asked new each turn and
-// never shown back to the model.
+// `runtime` lists the built-in PER-CHAT fields (state rewritten by the
+// prompted update): { name, type: string | number | enum | array (with
+// itemType / itemObjectType), ... }. `fresh` runtime fields are asked new
+// each turn and never shown back to the model; `keep` ones stay when an
+// object with presence leaves the scene. A runtime field can have a
+// STARTING VALUE per object, set in its setting, that every chat begins from
+// (objects.js) - a character's factions, authored before the story starts.
 //
 // `fields` and `runtime` are only DEFAULTS: each setting has its own object
 // preset per type (object-presets.js), starting from them, that the user can
@@ -43,7 +47,6 @@ export const OBJECT_TYPES = freeze({
         hasPresence: true,
         fields: freeze([
             { name: 'personality', label: 'Personality', kind: 'longtext' },
-            { name: 'faction', label: 'Faction', kind: 'refs', refType: 'faction' },
             { name: 'role', label: 'Role', kind: 'text' },
             { name: 'goals', label: 'Goals', kind: 'longtext' },
             { name: 'relationships', label: 'Relationships', kind: 'longtext' },
@@ -51,7 +54,15 @@ export const OBJECT_TYPES = freeze({
         runtime: freeze([
             { name: 'thought', type: 'string', prompted: true, fresh: true, description: 'A short internal thought, in their voice (under 20 words).' },
             { name: 'mood', type: 'enum', prompted: true, values: [...DEFAULT_MOODS], description: 'Their mood right now - the closest listed value, never another word.' },
-            { name: 'intent', type: 'string', prompted: true, description: 'A short phrase: what they mean to do next.' },
+            // Fresh: shown back as "currently", it was repeated turn after turn.
+            {
+                name: 'intent', type: 'string', prompted: true, fresh: true,
+                description: 'A short phrase: what they mean to do next, judging by the latest messages - their very next move, not a long-term goal. Once they have done it, or the situation has changed, give the new one.',
+            },
+            {
+                name: 'factions', label: 'Factions', type: 'array', itemType: 'object', itemObjectType: 'faction', prompted: true, keep: true,
+                description: 'The factions, groups or organizations they belong to or are openly tied to, as the story shows them - keep the current ones unless the story changes them; [] if none is known.',
+            },
         ]),
         prompt: freeze({
             single: 'a character\'s name, exactly as the story calls them (e.g. "Kael" or "the stranger"). Reply with the name only; "" if nobody fits',
@@ -72,10 +83,13 @@ export const OBJECT_TYPES = freeze({
         hasPresence: false,
         fields: freeze([
             { name: 'region', label: 'Region', kind: 'text' },
-            { name: 'faction_influence', label: 'Faction influence', kind: 'longtext' },
         ]),
         runtime: freeze([
             { name: 'conditions', type: 'string', prompted: true, description: 'The weather, light and state of the place right now (short).' },
+            {
+                name: 'factions', label: 'Factions', type: 'array', itemType: 'object', itemObjectType: 'faction', prompted: true, keep: true,
+                description: 'The factions or groups that hold, run or are tied to this place (its guards, a gang, "the citizens of Riverton") - keep the current ones unless the story changes them; [] if none.',
+            },
         ]),
         prompt: freeze({
             single: 'a location\'s name, exactly as the story calls it (e.g. "the Rusty Anchor" or "Brass Market"). Reply with the name only; "" if no place fits',
@@ -243,6 +257,7 @@ export function isWorldType(type) {
 // A field role's type (roles.js ROLE_TYPES) for a registry field.
 function roleTypeOf(field) {
     if (field.type === 'number') return 'number';
+    if (field.type === 'array') return 'list';
     if (field.kind === 'ref') return 'object';
     if (field.kind === 'list' || field.kind === 'refs') return 'list';
     return 'text';

@@ -150,7 +150,19 @@ default for types with presence.
   - The built-in sets move to State Engine's `assets/image-sets/`.
   - Files Pretty Panels exported (`pretty-panels-image-set`) still import.
 
-## 6. Factions: inferred by Archivist
+## 6. Factions: carried by characters and locations
+
+**Revised 2026-10-13 (built):** a faction is something an object *carries*: characters and
+locations (and any type given the field) have a `factions` runtime field - the factions they
+belong to or are tied to - prompted while they are in play, so factions are detected and updated
+as the story goes, the way characters and locations are. A runtime field can have a **starting
+value** per object, set in the setting (by Scenario Builder before the roleplay starts): every
+chat begins from it, and the story changes it in that chat only. The factions in a scene are those
+of the characters present and of the location. A faction's own `members` field is now redundant
+(membership is on the characters) and can be derived later. What follows still holds for
+Archivist, which can write its findings into those fields.
+
+### 6.1 Earlier: inferred by Archivist
 
 Faction presence is rarely stated outright. It shows through members acting, a faction's
 ground, symbols. So there's **no scene faction list**. Instead:

@@ -20,7 +20,7 @@ import { LOG_PREFIX, DEFAULT_CALENDAR_ID } from './settings-core.js';
 import { getVar, setVar } from './chat-state.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
 import { evaluateExpression } from './expression-dsl.js';
-import { toScalar, resolveInstruction } from './calendar-engine.js';
+import { toScalar, resolveInstruction, combineDateAndTime } from './calendar-engine.js';
 import { getDefaultValue } from './variable-schema.js';
 
 // Builds a name-keyed map of every variable definition active for this chat,
@@ -196,6 +196,28 @@ export function consumeDatetimeJump(chatId, varName) {
 // caller (recalculateDependents) can cascade into their own dependents -
 // both ordinary calculated variables and, via deltaSource chaining, another
 // datetime variable's own trigger.
+//
+// PAIRED CLOCK (2026-10-14): a timeOnly datetime and a datetime carrying the
+// date (dateOnly or full) fed by the same source - Scene Context's Current
+// Time and Current Date - are one clock shown in two parts. Each used to
+// apply the delta to its own copy, so the date's hidden time of day drifted
+// from the time shown (a time set by hand, "the next morning" read against
+// a different hour) and the date turned over at the wrong moment, or not at
+// all. Now the delta is applied to the date's day AT the time variable's
+// time of day (pairedCurrents), and both take the result.
+function pairedCurrents(targets, scalarOf) {
+    const currents = new Map();
+    const timeDef = targets.find((def) => def.datetimeMode === 'timeOnly');
+    if (!timeDef) return currents;
+    const calendarId = timeDef.calendar || DEFAULT_CALENDAR_ID;
+    const dateDefs = targets.filter((def) => def.datetimeMode !== 'timeOnly' && (def.calendar || DEFAULT_CALENDAR_ID) === calendarId);
+    if (dateDefs.length === 0) return currents;
+    const time = scalarOf(timeDef);
+    for (const def of dateDefs) currents.set(def.name, combineDateAndTime(calendarId, scalarOf(def), time));
+    currents.set(timeDef.name, currents.get(dateDefs[0].name));
+    return currents;
+}
+
 function applyDatetimeDeltaTriggers(chatId, sourceVarName, allDefs) {
     const sourceValue = getVar(chatId, sourceVarName)?.value;
     if (typeof sourceValue !== 'string' || sourceValue.trim() === '') return [];
@@ -204,12 +226,19 @@ function applyDatetimeDeltaTriggers(chatId, sourceVarName, allDefs) {
     const touched = [];
     let anyApplied = false;
 
-    for (const def of defs) {
-        if (def?.type !== 'datetime' || def.deltaSource !== sourceVarName || !def.name) continue;
+    const targets = defs.filter((def) => def?.type === 'datetime' && def.deltaSource === sourceVarName && def.name);
+    const scalarOf = (def) => toScalar(def.calendar || DEFAULT_CALENDAR_ID, getVar(chatId, def.name)?.value ?? getDefaultValue(def)) ?? 0;
+    let paired = new Map();
+    try {
+        paired = pairedCurrents(targets, scalarOf);
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'datetime delta: could not pair the date and time variables (gracefully handled)', err);
+    }
+
+    for (const def of targets) {
         try {
             const calendarId = def.calendar || DEFAULT_CALENDAR_ID;
-            const stored = getVar(chatId, def.name)?.value ?? getDefaultValue(def);
-            const current = toScalar(calendarId, stored) ?? 0;
+            const current = paired.get(def.name) ?? scalarOf(def);
             // resolveInstruction() as prompted-engine.js's direct "update" mode
             // already uses it requires a verb ("advance 3 hours") or an absolute
             // date/scalar - a bare duration ("3 days", the example phrasing
@@ -223,8 +252,10 @@ function applyDatetimeDeltaTriggers(chatId, sourceVarName, allDefs) {
             // morning"), the same as a prompted answer written to it directly -
             // the toggle lives on the datetime, and a datetime fed by a
             // deltaSource has no other way to receive one.
+            // A delta is time passing: a time of day is the next one to
+            // come ("until morning" at 22:00 is tomorrow's), never earlier.
             const semanticTimeOfDay = def.timeSemanticMode === 'semanticTimeOfDay';
-            const next = resolveInstruction(calendarId, current, sourceValue, { semanticTimeOfDay })
+            const next = resolveInstruction(calendarId, current, sourceValue, { semanticTimeOfDay, forward: true })
                 ?? resolveInstruction(calendarId, current, `advance ${sourceValue}`);
             if (next === null) {
                 console.warn(LOG_PREFIX, `datetime delta skipped for "${def.name}": could not understand ${JSON.stringify(sourceValue)} from "${sourceVarName}"`);
