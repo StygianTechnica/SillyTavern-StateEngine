@@ -169,6 +169,42 @@ function closeUnclosed(s) {
     return `${trimmed}${open.reverse().join('')}`;
 }
 
+// The list `text` answers with when it is one at the top - [...] before any
+// {...} - read as extractJsonObject() reads an object (repaired, closed);
+// null otherwise.
+export function extractJsonArray(text) {
+    if (!text) return null;
+    const s = String(text).trim().replace(/^```(?:json)?/i, '').replace(/```\s*$/i, '').trim();
+    const first = s.indexOf('[');
+    const brace = s.indexOf('{');
+    if (first === -1 || (brace !== -1 && brace < first)) return null;
+    const asList = (candidate) => {
+        try {
+            const parsed = JSON.parse(candidate);
+            return Array.isArray(parsed) ? parsed : null;
+        } catch {
+            return null;
+        }
+    };
+    const body = s.slice(first, s.lastIndexOf(']') + 1);
+    return asList(body) ?? asList(repairJson(body)) ?? asList(closeUnclosed(repairJson(s.slice(first))));
+}
+
+// The model's answer for `updateVars` (the variable definitions asked
+// for): the object extractJsonObject() reads - or, when exactly one
+// variable was asked for and it is a list, a bare list answered in place of
+// the object ([{...}] for {"name": [{...}]}), as that variable's value.
+// Null when neither.
+export function extractJsonAnswer(raw, updateVars = []) {
+    const parsed = extractJsonObject(raw);
+    if (parsed) return parsed;
+    if (updateVars.length !== 1 || updateVars[0]?.type !== 'array') return parsed;
+    const list = extractJsonArray(raw);
+    if (!list) return parsed;
+    console.warn('[StateEngine] the model answered with the list itself - taken as', updateVars[0].name);
+    return { [updateVars[0].name]: list };
+}
+
 // The object `text` parses to, null for valid JSON that is not an object,
 // or undefined when it does not parse.
 function parseObject(text) {
@@ -241,12 +277,12 @@ export function repairJson(text) {
             if (comma) i += comma[0].length;
             continue;
         }
-        // Bare text as an object's value ("id": f4, "from": Remus Watt,
+        // Bare text as an object's value ("id": f4, "message_index": #180, "from": Remus Watt,
         // "type": mentor · wary (-1): a note) is quoted whole, up to the
         // next key (, "key":), a comma at the line's end, a closing bracket
         // or the line end - notes, colons and all; a quote stuck at its end
         // (f4") is taken as its closing one.
-        if (open.at(-1) === '{' && out.trimEnd().endsWith(':') && /[\p{L}_]/u.test(ch)) {
+        if (open.at(-1) === '{' && out.trimEnd().endsWith(':') && /[\p{L}_#]/u.test(ch)) {
             let end = i;
             while (end < text.length && !/[\n\r}\]]/.test(text[end])
                 && !(text[end] === ',' && /^,[ \t]*([\r\n]|$|"[^"\n]*"\s*:|[A-Za-z_]\w*\s*:)/.test(text.slice(end, end + 200)))) end++;
@@ -259,7 +295,7 @@ export function repairJson(text) {
         // Bare words elsewhere - a list's items ([m2, m3]) - are quoted, as
         // one value up to the next , ] } : or line end; a quote stuck right
         // after them (m7") is taken as their closing one.
-        if (/[A-Za-z_]/.test(ch)) {
+        if (/[A-Za-z_#]/.test(ch)) {
             let end = i;
             while (end < text.length && !/[,\]}:"\n\r([{]/.test(text[end]) && !text.startsWith('//', end) && !text.startsWith('/*', end) && !text.startsWith('...', end)) end++;
             const word = text.slice(i, end).trimEnd();

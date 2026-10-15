@@ -3,7 +3,7 @@
 // and a variable marked ANSWER LAST is asked last, so it is the one lost
 // (prompted-engine.js classifyPromptedVariables).
 
-import { extractJsonObject, salvageTruncatedObject, matchAnswerKeys, repairJson } from '../src/ui/formatting-utils.js';
+import { extractJsonObject, extractJsonAnswer, salvageTruncatedObject, matchAnswerKeys, repairJson } from '../src/ui/formatting-utils.js';
 import { classifyPromptedVariables } from '../src/core/prompted-engine.js';
 
 vi.mock('../src/core/background-llm.js', () => ({ callBackgroundLLM: vi.fn() }));
@@ -236,6 +236,28 @@ describe('notes and comments in an answer', () => {
         });
         // Valid nesting is left alone.
         expect(repairJson('{"a": [{"b": [1]}], "c": {"d": []}}')).toBe('{"a": [{"b": [1]}], "c": {"d": []}}');
+    });
+
+    it('takes a bare list as the one list variable asked for, and quotes bare #numbers (the reported catch-up answers)', () => {
+        const list = { name: 'archivist__catchup_memories', type: 'array' };
+        const valid = `[
+  {"text": "Remus and Varyn share a peaceful moment.", "subtype": "event", "message_index": "#94"},
+  {"text": "Varyn discusses his past as Ferunox's agent.", "entities": ["Remus Watt", "Ferunox"], "message_index": "#98"}
+]`;
+        expect(extractJsonAnswer(valid, [list])).toEqual({ archivist__catchup_memories: [
+            { text: 'Remus and Varyn share a peaceful moment.', subtype: 'event', message_index: '#94' },
+            { text: 'Varyn discusses his past as Ferunox\'s agent.', entities: ['Remus Watt', 'Ferunox'], message_index: '#98' },
+        ] });
+        const hashes = `[
+  {"text": "Remus hopes to find an old road.", "entities": ["Remus Watt", "civilization"], "message_index": #180},
+  {"text": "Remus believes Elyon guides him.", "present": [ ], "message_index": #182}
+]`;
+        expect(extractJsonAnswer(hashes, [list]).archivist__catchup_memories.map((m) => m.message_index)).toEqual(['#180', '#182']);
+        // Two variables asked for, or one that is not a list: a bare list can't be placed.
+        expect(extractJsonAnswer(valid, [list, { name: 'other', type: 'array' }])).toBeNull();
+        expect(extractJsonAnswer(valid, [{ name: 'mood', type: 'string' }])).toBeNull();
+        // An object answer is read as always.
+        expect(extractJsonAnswer('{"archivist__catchup_memories": []}', [list])).toEqual({ archivist__catchup_memories: [] });
     });
 
     it('does not close a list a cut-off answer left open', () => {

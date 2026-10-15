@@ -4,6 +4,10 @@
 
 **Added**
 
+- **A bare list is taken as the one list asked for:** when a run asks for exactly one variable and
+  it is a list, an answer that is the list itself (`[{...}, {...}]`) instead of the object holding
+  it is read as that variable's value. Bare values starting with `#` (`"message_index": #180`) are
+  quoted like other bare values.
 - **An independent preset's unreadable answer is kept for its caller:** `getIndependentPresetStatus()`
   now returns `lastResponse` - the raw text of the last response that could not be parsed (this
   session only, never saved with the settings; cleared by the next run) - so the extension running

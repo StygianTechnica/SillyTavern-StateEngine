@@ -59,7 +59,7 @@ import { getVar, setVar, applyIncrement } from '../core/chat-state.js';
 import { incrementDelta } from '../core/increment-delta.js';
 import { recalculateDependents } from '../core/calculated-engine.js';
 import { callBackgroundLLM } from '../core/background-llm.js';
-import { extractJsonObject, matchAnswerKeys, describeConstraint, buildRecentMessagesSection, selectPromptMessages } from '../ui/formatting-utils.js';
+import { extractJsonAnswer, matchAnswerKeys, describeConstraint, buildRecentMessagesSection, selectPromptMessages } from '../ui/formatting-utils.js';
 import { shouldSkipPromptedRefresh, isDoneFlag, isNewEachTurn, newEachTurnLine } from '../core/prompted-engine.js';
 import { parseScheduleTarget, scheduleAfterRun } from '../core/schedule-engine.js';
 import { chunkPromptUnits } from '../core/prompt-chunking.js';
@@ -630,7 +630,7 @@ async function runIndependentPresetNow(chatId, presetRef) {
             let parsed;
             try {
                 const raw = await callBackgroundLLM(context, effectiveSettings, messages, maxTokens);
-                parsed = extractJsonObject(raw);
+                parsed = extractJsonAnswer(raw, chunk.incrementVars.length ? [] : chunk.updateVars);
                 if (!parsed) {
                     console.warn(LOG_PREFIX, 'runIndependentPreset: could not parse a JSON object from the model response:', raw);
                     badResponse = String(raw ?? '').slice(0, MAX_KEPT_RESPONSE);

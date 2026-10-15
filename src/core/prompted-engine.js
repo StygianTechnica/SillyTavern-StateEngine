@@ -9,7 +9,7 @@ import { getVar, setVar, applyIncrement, loadChatState } from './chat-state.js';
 import { incrementDelta } from './increment-delta.js';
 import { recalculateDependents } from './calculated-engine.js';
 import { callBackgroundLLM } from './background-llm.js';
-import { extractJsonObject, matchAnswerKeys, describeConstraint, buildRecentMessagesSection, selectPromptMessages } from '../ui/formatting-utils.js';
+import { extractJsonAnswer, matchAnswerKeys, describeConstraint, buildRecentMessagesSection, selectPromptMessages } from '../ui/formatting-utils.js';
 import { setStatus } from '../ui/settings-panel-ui.js';
 import { refreshPanelIfOpen } from '../ui/ui-entrypoints.js';
 import { chunkPromptUnits } from './prompt-chunking.js';
@@ -453,7 +453,7 @@ async function runPromptedChunk(context, settings, contextSection, chunk) {
     const maxTokens = Number(settings.responseLength) || 300;
 
     const raw = await callBackgroundLLM(context, settings, messages, maxTokens);
-    const parsed = extractJsonObject(raw);
+    const parsed = extractJsonAnswer(raw, incrementVars.length ? [] : updateVars);
     if (!parsed) {
         console.warn(LOG_PREFIX, 'could not parse a JSON object from the model response:', raw);
         throw new Error('response was not valid JSON');
