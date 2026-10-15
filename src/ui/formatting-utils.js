@@ -195,7 +195,9 @@ function isKeyAt(text, i) {
 // everywhere outside strings: parenthetical notes after a value
 // ("motivations": [] (unknown),), // and /* */ comments, a comma right
 // before a closing bracket, and unquoted words as values ("id": f4,
-// "from": Remus Watt, [m2, m3], m7") - quoted. Strings are never touched.
+// "from": Remus Watt, [m2, m3], m7") - quoted; commas left out are put
+// back, swapped closers (]} for }]) put right, and a list closed too soon
+// ([{...}], {...}]) kept open. Strings are never touched.
 export function repairJson(text) {
     let out = '';
     let inString = false;
@@ -270,6 +272,24 @@ export function repairJson(text) {
         const startsKey = ch === '"' && open.at(-1) === '{' && isKeyAt(text, i);
         const startsItem = (ch === '{' || ch === '[' || ch === '"') && open.at(-1) === '[';
         if ((startsKey || startsItem) && /(["}\]\d]|true|false|null)\s*$/.test(out)) out = out.replace(/(\S)(\s*)$/, '$1,$2');
+        if (ch === '}' || ch === ']') {
+            const rest = text.slice(i + 1);
+            const other = ch === '}' ? ']' : '}';
+            // Two closers swapped - "note": ""]} for }] - when this one
+            // doesn't close what is open and the next one does.
+            const swapped = open.at(-1) !== (ch === '}' ? '{' : '[') && rest.match(new RegExp(`^\\s*\\${other}`));
+            if (swapped && open.length >= 2) {
+                out = out.replace(/,\s*$/, '');
+                out += other + ch;
+                open.pop();
+                open.pop();
+                i += swapped[0].length;
+                continue;
+            }
+            // A list closed too soon: [{...}], {...}] - an object's next
+            // member is never an object, so the list goes on.
+            if (ch === ']' && open.at(-1) === '[' && open.at(-2) === '{' && /^\s*,\s*\{/.test(rest)) continue;
+        }
         if (ch === '"') inString = true;
         if (ch === '{' || ch === '[') open.push(ch);
         if (ch === '}' || ch === ']') {

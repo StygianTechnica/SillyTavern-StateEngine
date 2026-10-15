@@ -206,6 +206,38 @@ describe('notes and comments in an answer', () => {
         expect(repairJson('{"a": "x", "b": ["c", "d"]}')).toBe('{"a": "x", "b": ["c", "d"]}');
     });
 
+    it('fixes swapped closing brackets and a list closed too soon (the reported 8B answers)', () => {
+        const swapped = `{
+  "archivist__compiled_threads": [
+    {"id": t2, "steps": [{"text": "Discuss", "status": "pending", "note": ""}, {"text": "Adapt", "status": "pending", "note": ""]}, "sources": []},
+    {"id": t8, "steps": [{"text": "Explore", "status": "active", "note": ""}], "sources": [m1, m3]}
+  ]
+}`;
+        expect(extractJsonObject(swapped)).toEqual({
+            archivist__compiled_threads: [
+                { id: 't2', steps: [{ text: 'Discuss', status: 'pending', note: '' }, { text: 'Adapt', status: 'pending', note: '' }], sources: [] },
+                { id: 't8', steps: [{ text: 'Explore', status: 'active', note: '' }], sources: ['m1', 'm3'] },
+            ],
+        });
+        const early = `{
+  "archivist__compiled_threads": [{"id": t2, "title": "Remus' Departure"}],
+  "archivist__compiled_world": [
+    {"id": w1, "kind": "location", "name": "Enclave", "sources": [m1]}
+  ], {"id": w2, "kind": "secret",
+     "name": "Remus' connection to Elyon", "sources": [m3]}
+  ]
+}`;
+        expect(extractJsonObject(early)).toEqual({
+            archivist__compiled_threads: [{ id: 't2', title: 'Remus\' Departure' }],
+            archivist__compiled_world: [
+                { id: 'w1', kind: 'location', name: 'Enclave', sources: ['m1'] },
+                { id: 'w2', kind: 'secret', name: 'Remus\' connection to Elyon', sources: ['m3'] },
+            ],
+        });
+        // Valid nesting is left alone.
+        expect(repairJson('{"a": [{"b": [1]}], "c": {"d": []}}')).toBe('{"a": [{"b": [1]}], "c": {"d": []}}');
+    });
+
     it('does not close a list a cut-off answer left open', () => {
         expect(extractJsonObject('{"a": 1, "b": [1, 2')).toEqual({ a: 1 });
         expect(extractJsonObject('{"a": 1, "b": [1, 2]')).toEqual({ a: 1, b: [1, 2] });
