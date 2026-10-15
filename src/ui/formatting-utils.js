@@ -128,6 +128,13 @@ export function extractJsonObject(text) {
             return repaired;
         }
     }
+    // Complete, but missing its closing brackets (it stops after its last
+    // value: ...}]).
+    const closed = parseObject(closeUnclosed(repairJson(s.slice(first))));
+    if (closed) {
+        console.warn('[StateEngine] the model\'s answer was missing its closing brackets - read it with them');
+        return closed;
+    }
     // Maybe cut off before its end.
     const salvaged = salvageTruncatedObject(repairJson(s.slice(first)));
     if (salvaged) {
@@ -135,6 +142,31 @@ export function extractJsonObject(text) {
             Object.keys(salvaged).join(', ') || '(none)', '- raise "Max response length" (or the connection profile\'s Max tokens) if this keeps happening');
     }
     return salvaged;
+}
+
+// `s` with its outermost brace closed when that is all it left open, after
+// a finished list or object - '' otherwise (a number or word at the end may
+// be cut short). A list left open is a cut-off answer:
+// closing it would keep half a list as if it were whole, so that is left to
+// salvageTruncatedObject(), which drops the unfinished value.
+function closeUnclosed(s) {
+    const open = [];
+    let inString = false;
+    let escaped = false;
+    for (const ch of s) {
+        if (inString) {
+            if (escaped) escaped = false;
+            else if (ch === '\\') escaped = true;
+            else if (ch === '"') inString = false;
+            continue;
+        }
+        if (ch === '"') inString = true;
+        else if (ch === '{' || ch === '[') open.push(ch === '{' ? '}' : ']');
+        else if (ch === '}' || ch === ']') open.pop();
+    }
+    const trimmed = s.trimEnd();
+    if (inString || open.length !== 1 || !/[}\]]$/.test(trimmed)) return '';
+    return `${trimmed}}`;
 }
 
 // The object `text` parses to, null for valid JSON that is not an object,
@@ -186,13 +218,23 @@ export function repairJson(text) {
             i = end === -1 ? text.length : end + 1;
             continue;
         }
-        // A bare word where a value belongs ("id": f4, [m2, m3]) is quoted;
-        // a quote stuck right after it (m7") is taken as its closing one.
+        // An elision ("...", "…") standing for items the model left out -
+        // [m1, ...], or a line of its own - is dropped with its comma.
+        if (ch === '…' || (ch === '.' && text.startsWith('...', i))) {
+            while (text[i + 1] === '.' || text[i + 1] === '…') i++;
+            const comma = text.slice(i + 1).match(/^\s*,/);
+            if (comma) i += comma[0].length;
+            continue;
+        }
+        // Bare words where a value belongs ("id": f4, [m2, m3], "from":
+        // Remus Watt) are quoted, as one value up to the next , ] } : or
+        // line end; a quote stuck right after them (m7") is taken as their
+        // closing one.
         if (/[A-Za-z_]/.test(ch)) {
             let end = i;
-            while (end < text.length && /[A-Za-z0-9_.-]/.test(text[end])) end++;
-            const word = text.slice(i, end);
-            out += ['true', 'false', 'null'].includes(word) ? word : `"${word}"`;
+            while (end < text.length && !/[,\]}:"\n\r([{]/.test(text[end]) && !text.startsWith('//', end) && !text.startsWith('/*', end) && !text.startsWith('...', end)) end++;
+            const word = text.slice(i, end).trimEnd();
+            out += ['true', 'false', 'null'].includes(word) ? word : `"${word.replace(/\\/g, '\\\\')}"`;
             i = text[end] === '"' ? end : end - 1;
             continue;
         }

@@ -115,6 +115,47 @@ describe('notes and comments in an answer', () => {
         });
     });
 
+    it('reads multi-word bare values, drops "..." elisions, and closes a missing final brace (the reported 8B answer)', () => {
+        const raw = `{
+  "archivist__compiled_facts": [
+    {"id": f1, "text": "Remus was late.", "entities": ["Remus Watt"], "sources": [m1], "contradicts": []},
+    ...,
+    {"id": f40, "text": "Varyn fights out of necessity.", "sources": [m49], "contradicts": [f1]}
+  ],
+  "archivist__compiled_relationships": [
+    {"from": Remus Watt, "to": High Seer Maren, "type": mentor, "polarity": 2, "trend": cooling, "sources": [m3, m5]},
+    {"from": Lila Thorne, "to": Remus Watt, "type": friend, "sources": [m1, ...]},
+    ...
+    {"from": Varyn Vance, "to": Morvath, "type": opponent, "polarity": -3, "sources": [m49]}
+  ],
+  "archivist__compiled_characters": [
+    {"name": Remus Watt, "sources": [m1, m5, ...]},
+    …
+  ],
+  "archivist__compiled_phrase_tics": [{"ref": [p1], "phrase": "a wry smile"}],
+  "archivist__compiled_tension":
+  [{"threat": 2, "uncertainty": 4, "emotional": 3, "reason": "Unknown perils... in Liston."}]`;
+        expect(extractJsonObject(raw)).toEqual({
+            archivist__compiled_facts: [
+                { id: 'f1', text: 'Remus was late.', entities: ['Remus Watt'], sources: ['m1'], contradicts: [] },
+                { id: 'f40', text: 'Varyn fights out of necessity.', sources: ['m49'], contradicts: ['f1'] },
+            ],
+            archivist__compiled_relationships: [
+                { from: 'Remus Watt', to: 'High Seer Maren', type: 'mentor', polarity: 2, trend: 'cooling', sources: ['m3', 'm5'] },
+                { from: 'Lila Thorne', to: 'Remus Watt', type: 'friend', sources: ['m1'] },
+                { from: 'Varyn Vance', to: 'Morvath', type: 'opponent', polarity: -3, sources: ['m49'] },
+            ],
+            archivist__compiled_characters: [{ name: 'Remus Watt', sources: ['m1', 'm5'] }],
+            archivist__compiled_phrase_tics: [{ ref: ['p1'], phrase: 'a wry smile' }],
+            archivist__compiled_tension: [{ threat: 2, uncertainty: 4, emotional: 3, reason: 'Unknown perils... in Liston.' }],
+        });
+    });
+
+    it('does not close a list a cut-off answer left open', () => {
+        expect(extractJsonObject('{"a": 1, "b": [1, 2')).toEqual({ a: 1 });
+        expect(extractJsonObject('{"a": 1, "b": [1, 2]')).toEqual({ a: 1, b: [1, 2] });
+    });
+
     it('still keeps what a cut-off answer with notes finished', () => {
         expect(extractJsonObject('{"a": [] (none), "b": "unfin')).toEqual({ a: [] });
     });

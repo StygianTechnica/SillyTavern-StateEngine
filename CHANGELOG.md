@@ -63,8 +63,10 @@
   setting for the chat on the spot.
 - **Sloppy JSON in an answer is repaired:** notes or comments outside its values
   (`"motivations": [] (unknown),`, `// ...`), a trailing comma, and unquoted words as values
-  (`"id": f4`, `[m2, m3]`, `m7"`) no longer get the whole answer thrown away as invalid JSON -
-  they are dropped or quoted, and the answer read. Strings are never changed.
+  (`"id": f4`, `[m2, m3]`, `m7"`, several words: `"from": Remus Watt`), `...` standing for
+  items the model left out (`[m1, ...]`, a line of its own), and a missing closing brace after
+  the last value no longer get the whole answer thrown away as invalid JSON - they are dropped,
+  quoted or closed, and the answer read. Strings are never changed.
 - **A cut-off answer keeps what it finished:** an answer that hits *Max response length*
   mid-way is no longer thrown away whole - every value the model finished before the cut is
   applied, only the one it was still writing is lost (a console warning names what was kept).
