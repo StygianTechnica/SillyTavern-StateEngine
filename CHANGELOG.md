@@ -4,6 +4,10 @@
 
 **Added**
 
+- **An independent preset's unreadable answer is kept for its caller:** `getIndependentPresetStatus()`
+  now returns `lastResponse` - the raw text of the last response that could not be parsed (this
+  session only, never saved with the settings; cleared by the next run) - so the extension running
+  the preset can show the user what the model wrote.
 - **Object presets and field roles** (phase 1 of `docs/DESIGN - OBJECT PRESETS.md`): each
   setting now has one object preset per type - a real preset (hidden from the chat preset
   picker, the tracker, the manager's preset lists, Curator and lorebook bindings) whose

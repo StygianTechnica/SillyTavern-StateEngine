@@ -372,9 +372,18 @@ function recordStatus(preset, patch) {
     persistSettings();
 }
 
+// The raw text of each preset's last response that could not be parsed, so
+// the extension running it can show the user what the model wrote. Kept in
+// memory only (never saved with the settings - it can be long), cleared by
+// the preset's next run. Preset object -> text.
+const lastBadResponses = new WeakMap();
+export const MAX_KEPT_RESPONSE = 20000;
+
 // -> { enabled, contextMode, lastRunAt, lastOutcome, lastError,
-// changedVariables } or null when namespace.name is not an independent
-// preset. lastRunAt is null and lastOutcome is 'never-run' before the first run.
+// changedVariables, lastResponse } or null when namespace.name is not an
+// independent preset. lastRunAt is null and lastOutcome is 'never-run'
+// before the first run. lastResponse: the raw text of the last run's
+// response when it could not be parsed (this session only), else null.
 export function getIndependentPresetStatus(namespace, name) {
     try {
         const entry = findPresetEntry(namespace, name);
@@ -389,6 +398,7 @@ export function getIndependentPresetStatus(namespace, name) {
             lastOutcome: status.lastOutcome ?? 'never-run',
             lastError: status.lastError ?? null,
             changedVariables: Array.isArray(status.changedVariables) ? [...status.changedVariables] : [],
+            lastResponse: lastBadResponses.get(preset) ?? null,
         };
     } catch (err) {
         console.warn(LOG_PREFIX, 'getIndependentPresetStatus failed (gracefully handled)', err);
@@ -595,6 +605,7 @@ async function runIndependentPresetNow(chatId, presetRef) {
         let incrementedCount = 0;
         let anyParseError = false;
         let lastParseError = null;
+        let badResponse = null;
 
         for (const chunk of chunks) {
             // 1.29: no WI, fantasy-calendar/image-variable metadata, other
@@ -622,6 +633,7 @@ async function runIndependentPresetNow(chatId, presetRef) {
                 parsed = extractJsonObject(raw);
                 if (!parsed) {
                     console.warn(LOG_PREFIX, 'runIndependentPreset: could not parse a JSON object from the model response:', raw);
+                    badResponse = String(raw ?? '').slice(0, MAX_KEPT_RESPONSE);
                     anyParseError = true;
                     lastParseError = 'response was not valid JSON';
                     continue;
@@ -663,6 +675,8 @@ async function runIndependentPresetNow(chatId, presetRef) {
         }
 
         const didWrite = updatedCount > 0 || incrementedCount > 0;
+        if (badResponse !== null) lastBadResponses.set(preset, badResponse);
+        else lastBadResponses.delete(preset);
         if (!didWrite && anyParseError) {
             // Every chunk that ran failed to produce anything - the exact
             // single-chunk-failure outcome this status has always reported.

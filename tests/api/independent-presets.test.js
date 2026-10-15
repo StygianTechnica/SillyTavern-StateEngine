@@ -573,6 +573,11 @@ describe('1.29 status', () => {
         callBackgroundLLM.mockResolvedValue('not json');
         await runIndy();
         expect(status()).toMatchObject({ lastOutcome: 'skipped-parse-error', lastError: expect.any(String) });
+        // What the model wrote, for the caller to show - until the next run.
+        expect(status().lastResponse).toBe('not json');
+        callBackgroundLLM.mockResolvedValue('{"se__mood":"tense"}');
+        await runIndy();
+        expect(status().lastResponse).toBeNull();
     });
 
     it('records skipped-nothing-to-update when the preset has nothing prompted', async () => {
