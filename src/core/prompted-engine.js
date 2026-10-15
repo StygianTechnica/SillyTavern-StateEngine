@@ -183,6 +183,14 @@ export function chunkPromptedVariables(chatId, updateVars, incrementVars, maxCha
 // every variable's write is isolated (a malformed def, an unexpected value
 // shape, anything) so one bad entry can never prevent every other variable in
 // this same response from being written.
+// Whether `value` is one record of record-list `def`: a plain object with
+// every field of its itemSchema (a list with no schema takes none).
+function isLoneRecord(def, value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const fields = def.itemSchema && typeof def.itemSchema === 'object' ? Object.keys(def.itemSchema) : [];
+    return fields.length > 0 && fields.every((field) => Object.prototype.hasOwnProperty.call(value, field));
+}
+
 function applyPromptedResponse(chatId, updateVars, incrementVars, answer, { source = '' } = {}) {
     // A shortened variable name in the answer is taken as the one it means.
     const parsed = matchAnswerKeys(answer, [...updateVars, ...incrementVars].map((def) => def.name));
@@ -191,7 +199,13 @@ function applyPromptedResponse(chatId, updateVars, incrementVars, answer, { sour
         try {
             if (!Object.prototype.hasOwnProperty.call(parsed, def.name)) continue;
 
-            const rawValue = parsed[def.name];
+            let rawValue = parsed[def.name];
+
+            // A record list answered with its one record, not a list of it
+            // ({"threat": 2, ...} for [{"threat": 2, ...}]) - taken as that
+            // list when the object has every field the records require, so
+            // an operation object is still never taken for a record.
+            if (def.type === 'array' && def.itemType === 'record' && isLoneRecord(def, rawValue)) rawValue = [rawValue];
 
             // Objects: the model answered with names. Each is matched to an
             // object of the variable's type (or recorded as a new one, with

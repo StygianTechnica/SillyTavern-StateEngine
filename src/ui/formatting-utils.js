@@ -180,6 +180,17 @@ function parseObject(text) {
     }
 }
 
+// Whether the string starting at `text[i]` (a quote) is an object's key -
+// followed by a colon.
+function isKeyAt(text, i) {
+    for (let j = i + 1; j < text.length; j++) {
+        if (text[j] === '\\') j++;
+        else if (text[j] === '"') return /^\s*:/.test(text.slice(j + 1, j + 40));
+        else if (text[j] === '\n') return false;
+    }
+    return false;
+}
+
 // `text` without what small models write into JSON that JSON doesn't allow,
 // everywhere outside strings: parenthetical notes after a value
 // ("motivations": [] (unknown),), // and /* */ comments, a comma right
@@ -253,6 +264,12 @@ export function repairJson(text) {
             i = text[end] === '"' ? end : end - 1;
             continue;
         }
+        // A comma the model left out between two values: before a key
+        // ("a": x\n"b": y) in an object, before an item ({...} {...}) in a
+        // list.
+        const startsKey = ch === '"' && open.at(-1) === '{' && isKeyAt(text, i);
+        const startsItem = (ch === '{' || ch === '[' || ch === '"') && open.at(-1) === '[';
+        if ((startsKey || startsItem) && /(["}\]\d]|true|false|null)\s*$/.test(out)) out = out.replace(/(\S)(\s*)$/, '$1,$2');
         if (ch === '"') inString = true;
         if (ch === '{' || ch === '[') open.push(ch);
         if (ch === '}' || ch === ']') {

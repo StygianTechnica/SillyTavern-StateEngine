@@ -170,6 +170,42 @@ describe('notes and comments in an answer', () => {
         });
     });
 
+    it('puts back commas left out before a key or a list item, and reads a bare value on its own line (the reported 8B answer)', () => {
+        const raw = `{
+  "archivist__compiled_characters": [
+    {"name": Remus Watt,
+     "summary": An initiate fleeing visions. He left the Enclave in secret., 
+     "traits": curious, introspective,
+     "habits": none mentioned,
+     "sources": [m1]}
+    {"name": Varyn Vance, "n": 2
+     "sources": ["m1" "m2"]}
+  ],
+  "archivist__compiled_story_summary": 
+  Remus Watt fled visions of Elyon's return. Now they're at an old interstate section.
+  "archivist__compiled_scene_summary": 
+  Remus Watt and Varyn Vance are on an old highway.
+  "archivist__compiled_phrase_tics": [],  
+  "archivist__compiled_tension":
+  {
+    "threat": 2,
+    "reason": "Uncertain next steps."
+  }
+}`;
+        expect(extractJsonObject(raw)).toEqual({
+            archivist__compiled_characters: [
+                { name: 'Remus Watt', summary: 'An initiate fleeing visions. He left the Enclave in secret.', traits: 'curious, introspective', habits: 'none mentioned', sources: ['m1'] },
+                { name: 'Varyn Vance', n: 2, sources: ['m1', 'm2'] },
+            ],
+            archivist__compiled_story_summary: "Remus Watt fled visions of Elyon's return. Now they're at an old interstate section.",
+            archivist__compiled_scene_summary: 'Remus Watt and Varyn Vance are on an old highway.',
+            archivist__compiled_phrase_tics: [],
+            archivist__compiled_tension: { threat: 2, reason: 'Uncertain next steps.' },
+        });
+        // Commas already there are left alone.
+        expect(repairJson('{"a": "x", "b": ["c", "d"]}')).toBe('{"a": "x", "b": ["c", "d"]}');
+    });
+
     it('does not close a list a cut-off answer left open', () => {
         expect(extractJsonObject('{"a": 1, "b": [1, 2')).toEqual({ a: 1 });
         expect(extractJsonObject('{"a": 1, "b": [1, 2]')).toEqual({ a: 1, b: [1, 2] });

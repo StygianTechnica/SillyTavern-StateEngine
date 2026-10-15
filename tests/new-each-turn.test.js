@@ -13,7 +13,7 @@ import { describeConstraint } from '../src/ui/formatting-utils.js';
 import { normalizeCollectedValues } from '../src/ui/manager-modal/variable-ui-schema.js';
 import { blankDefinition } from '../src/core/variable-schema.js';
 import { DEFAULT_UNIFIED_VARIABLE_RULES } from '../src/core/settings-core.js';
-import { setVar } from '../src/core/chat-state.js';
+import { setVar, getVar } from '../src/core/chat-state.js';
 
 vi.mock('../src/core/background-llm.js', () => ({ callBackgroundLLM: vi.fn() }));
 vi.mock('../src/ui/settings-panel-ui.js', () => ({ setStatus: vi.fn() }));
@@ -74,6 +74,17 @@ describe('the main per-message update', () => {
         expect(line).toContain('(e.g. [{"text":"..."}])');
         expect(line).toContain('NEW EACH TURN - [] when nothing new applies]');
         expect(line).not.toContain('currently');
+    });
+
+    it('takes a record list answered with one record as a list of it - but never an object without its fields', async () => {
+        callBackgroundLLM.mockResolvedValue('{"pp__memories": {"text": "Mira hid the key."}}');
+        await runPromptedStateUpdate('ai');
+        await vi.waitFor(() => expect(getVar('chat-1', 'pp__memories')?.value).toEqual([{ text: 'Mira hid the key.' }]));
+
+        callBackgroundLLM.mockResolvedValue('{"pp__memories": {"op": "push", "value": "x"}, "pp__mood": "tense"}');
+        await runPromptedStateUpdate('ai');
+        await vi.waitFor(() => expect(getVar('chat-1', 'pp__mood')?.value).toBe('tense'));
+        expect(getVar('chat-1', 'pp__memories')?.value).toEqual([{ text: 'Mira hid the key.' }]);
     });
 
     it('leaves other variables as they were', async () => {
