@@ -66,8 +66,9 @@
   (`"id": f4`, `[m2, m3]`, `m7"`, several words, even with notes and colons: `"from": Remus Watt`, `"type": mentor · wary (-1):
   a note` - read up to the next key), `...` standing for
   items the model left out (`[m1, ...]`, a line of its own), commas left out, closing brackets
-  swapped (`]}` for `}]`) or a list closed too soon (`[{...}], {...}]`), and a missing closing
-  brace after the last value no longer get the whole answer thrown away as invalid JSON - they are dropped,
+  swapped (`]}` for `}]`), a list closed too soon (`[{...}], {...}]`) or left open before the next
+  key, a stray brace inside an object, unquoted keys (`{id: f19}`), and closing brackets missing
+  after the last value no longer get the whole answer thrown away as invalid JSON - they are dropped,
   quoted or closed, and the answer read. Strings are never changed.
 - **A cut-off answer keeps what it finished:** an answer that hits *Max response length*
   mid-way is no longer thrown away whole - every value the model finished before the cut is

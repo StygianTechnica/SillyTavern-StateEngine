@@ -243,6 +243,41 @@ describe('notes and comments in an answer', () => {
         expect(extractJsonObject('{"a": 1, "b": [1, 2]')).toEqual({ a: 1, b: [1, 2] });
     });
 
+    it('drops a stray brace inside an object, closes lists left open, and reads unquoted keys (the reported 8B answers)', () => {
+        const raw = `{
+  "facts": [
+    {"id":"f24",
+     "text":"A guard warned Varyn.",
+     {"entities":["Varyn Vance", "guard"],
+      "sources":[m15]}
+  ],
+  "more": [
+    {id: f19, text: "... (remains the same)", sources: [...], contradict: [...]},  // a note
+    ...
+  ],
+  "relationships": [
+    {"from": "Remus Watt", "to": "Varyn Vance"},
+    ...
+
+  "characters":
+  [
+    {"name": "Remus Watt"},
+
+  "story":
+  Remus and Varyn reached Liston.
+
+  "tension": [
+    {"threat": 2, "reason": "Unknown perils"}`;
+        expect(extractJsonObject(raw)).toEqual({
+            facts: [{ id: 'f24', text: 'A guard warned Varyn.', entities: ['Varyn Vance', 'guard'], sources: ['m15'] }],
+            more: [{ id: 'f19', text: '... (remains the same)', sources: [], contradict: [] }],
+            relationships: [{ from: 'Remus Watt', to: 'Varyn Vance' }],
+            characters: [{ name: 'Remus Watt' }],
+            story: 'Remus and Varyn reached Liston.',
+            tension: [{ threat: 2, reason: 'Unknown perils' }],
+        });
+    });
+
     it('still keeps what a cut-off answer with notes finished', () => {
         expect(extractJsonObject('{"a": [] (none), "b": "unfin')).toEqual({ a: [] });
     });

@@ -144,11 +144,11 @@ export function extractJsonObject(text) {
     return salvaged;
 }
 
-// `s` with its outermost brace closed when that is all it left open, after
-// a finished list or object - '' otherwise (a number or word at the end may
-// be cut short). A list left open is a cut-off answer:
-// closing it would keep half a list as if it were whole, so that is left to
-// salvageTruncatedObject(), which drops the unfinished value.
+// `s` with what it left open closed, when it ends on a finished list or
+// object ({..."tension": [{...}]) - '' otherwise. An answer that stops
+// anywhere else (mid-string, after a number or a word) may have been cut
+// short, so that is left to salvageTruncatedObject(), which drops the
+// unfinished value.
 function closeUnclosed(s) {
     const open = [];
     let inString = false;
@@ -165,8 +165,8 @@ function closeUnclosed(s) {
         else if (ch === '}' || ch === ']') open.pop();
     }
     const trimmed = s.trimEnd();
-    if (inString || open.length !== 1 || !/[}\]]$/.test(trimmed)) return '';
-    return `${trimmed}}`;
+    if (inString || open.length === 0 || !/[}\]]$/.test(trimmed)) return '';
+    return `${trimmed}${open.reverse().join('')}`;
 }
 
 // The object `text` parses to, null for valid JSON that is not an object,
@@ -204,6 +204,7 @@ export function repairJson(text) {
     let escaped = false;
     let notes = 0; // depth of ( ... ) being dropped
     const open = []; // the brackets open where we are: '{' | '['
+    const strays = []; // depths of stray braces being dropped
     for (let i = 0; i < text.length; i++) {
         const ch = text[i];
         if (inString) {
@@ -248,7 +249,7 @@ export function repairJson(text) {
         if (open.at(-1) === '{' && out.trimEnd().endsWith(':') && /[\p{L}_]/u.test(ch)) {
             let end = i;
             while (end < text.length && !/[\n\r}\]]/.test(text[end])
-                && !(text[end] === ',' && /^,[ \t]*([\r\n]|$|"[^"\n]*"\s*:)/.test(text.slice(end, end + 200)))) end++;
+                && !(text[end] === ',' && /^,[ \t]*([\r\n]|$|"[^"\n]*"\s*:|[A-Za-z_]\w*\s*:)/.test(text.slice(end, end + 200)))) end++;
             let value = text.slice(i, end).trim();
             if (value.endsWith('"') && (value.match(/"/g) ?? []).length % 2 === 1) value = value.slice(0, -1).trimEnd();
             out += ['true', 'false', 'null'].includes(value) ? value : JSON.stringify(value);
@@ -264,6 +265,23 @@ export function repairJson(text) {
             const word = text.slice(i, end).trimEnd();
             out += ['true', 'false', 'null'].includes(word) ? word : `"${word.replace(/\\/g, '\\\\')}"`;
             i = text[end] === '"' ? end : end - 1;
+            continue;
+        }
+        // A list left open when the object's next key comes ([{...},
+        // "next": ...): closed there.
+        if (ch === '"' && open.at(-1) === '[' && open.at(-2) === '{' && isKeyAt(text, i)) {
+            out = `${out.replace(/,\s*$/, '')}]`;
+            open.pop();
+        }
+        // An object opened where a member belongs ({"text": "...", {"entities":
+        // ...}}): its brace and the one closing it are dropped, its members
+        // kept in the object around it.
+        if (ch === '{' && open.at(-1) === '{' && /[{,]\s*$/.test(out)) {
+            strays.push(open.length);
+            continue;
+        }
+        if (ch === '}' && strays.at(-1) === open.length) {
+            strays.pop();
             continue;
         }
         // A comma the model left out between two values: before a key
@@ -289,6 +307,14 @@ export function repairJson(text) {
             // A list closed too soon: [{...}], {...}] - an object's next
             // member is never an object, so the list goes on.
             if (ch === ']' && open.at(-1) === '[' && open.at(-2) === '{' && /^\s*,\s*\{/.test(rest)) continue;
+            // A closer for something further out ({...]: an item left open
+            // before its list closes): what is still open inside is closed
+            // first. One that closes nothing open is dropped.
+            const want = ch === '}' ? '{' : '[';
+            if (!open.includes(want)) continue;
+            while (open.at(-1) !== want) {
+                out = `${out.replace(/,\s*$/, '')}${open.pop() === '{' ? '}' : ']'}`;
+            }
         }
         if (ch === '"') inString = true;
         if (ch === '{' || ch === '[') open.push(ch);
