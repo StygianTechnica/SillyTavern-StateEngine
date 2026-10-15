@@ -151,6 +151,25 @@ describe('notes and comments in an answer', () => {
         });
     });
 
+    it('reads bare text with notes and colons as one value, up to the next key (the reported 8B answer)', () => {
+        const raw = `{
+  "archivist__compiled_relationships": [
+    {"from": Remus Watt, "to": High Seer Maren, "type": mentor · wary (-1) · high intensity · cooling: Disputes her interpretation of his visions, "polarity": -1, "sources": [m3]},
+    {"from": Remus Watt, "to": Varyn Vance, "type": traveling companion · friendly (2) · warming: Shared experiences deepen their connection., "polarity": 2, "sources": [m8, m28]}
+  ],
+  "archivist__compiled_characters": [
+    {"name": Remus Watt,
+     "id": f4", "ok": true , "none": null}
+  ]}`;
+        expect(extractJsonObject(raw)).toEqual({
+            archivist__compiled_relationships: [
+                { from: 'Remus Watt', to: 'High Seer Maren', type: 'mentor · wary (-1) · high intensity · cooling: Disputes her interpretation of his visions', polarity: -1, sources: ['m3'] },
+                { from: 'Remus Watt', to: 'Varyn Vance', type: 'traveling companion · friendly (2) · warming: Shared experiences deepen their connection.', polarity: 2, sources: ['m8', 'm28'] },
+            ],
+            archivist__compiled_characters: [{ name: 'Remus Watt', id: 'f4', ok: true, none: null }],
+        });
+    });
+
     it('does not close a list a cut-off answer left open', () => {
         expect(extractJsonObject('{"a": 1, "b": [1, 2')).toEqual({ a: 1 });
         expect(extractJsonObject('{"a": 1, "b": [1, 2]')).toEqual({ a: 1, b: [1, 2] });

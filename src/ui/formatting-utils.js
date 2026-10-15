@@ -184,12 +184,13 @@ function parseObject(text) {
 // everywhere outside strings: parenthetical notes after a value
 // ("motivations": [] (unknown),), // and /* */ comments, a comma right
 // before a closing bracket, and unquoted words as values ("id": f4,
-// [m2, m3], m7") - quoted. Strings are never touched.
+// "from": Remus Watt, [m2, m3], m7") - quoted. Strings are never touched.
 export function repairJson(text) {
     let out = '';
     let inString = false;
     let escaped = false;
     let notes = 0; // depth of ( ... ) being dropped
+    const open = []; // the brackets open where we are: '{' | '['
     for (let i = 0; i < text.length; i++) {
         const ch = text[i];
         if (inString) {
@@ -226,10 +227,24 @@ export function repairJson(text) {
             if (comma) i += comma[0].length;
             continue;
         }
-        // Bare words where a value belongs ("id": f4, [m2, m3], "from":
-        // Remus Watt) are quoted, as one value up to the next , ] } : or
-        // line end; a quote stuck right after them (m7") is taken as their
-        // closing one.
+        // Bare text as an object's value ("id": f4, "from": Remus Watt,
+        // "type": mentor · wary (-1): a note) is quoted whole, up to the
+        // next key (, "key":), a comma at the line's end, a closing bracket
+        // or the line end - notes, colons and all; a quote stuck at its end
+        // (f4") is taken as its closing one.
+        if (open.at(-1) === '{' && out.trimEnd().endsWith(':') && /[\p{L}_]/u.test(ch)) {
+            let end = i;
+            while (end < text.length && !/[\n\r}\]]/.test(text[end])
+                && !(text[end] === ',' && /^,[ \t]*([\r\n]|$|"[^"\n]*"\s*:)/.test(text.slice(end, end + 200)))) end++;
+            let value = text.slice(i, end).trim();
+            if (value.endsWith('"') && (value.match(/"/g) ?? []).length % 2 === 1) value = value.slice(0, -1).trimEnd();
+            out += ['true', 'false', 'null'].includes(value) ? value : JSON.stringify(value);
+            i = end - 1;
+            continue;
+        }
+        // Bare words elsewhere - a list's items ([m2, m3]) - are quoted, as
+        // one value up to the next , ] } : or line end; a quote stuck right
+        // after them (m7") is taken as their closing one.
         if (/[A-Za-z_]/.test(ch)) {
             let end = i;
             while (end < text.length && !/[,\]}:"\n\r([{]/.test(text[end]) && !text.startsWith('//', end) && !text.startsWith('/*', end) && !text.startsWith('...', end)) end++;
@@ -239,7 +254,11 @@ export function repairJson(text) {
             continue;
         }
         if (ch === '"') inString = true;
-        if (ch === '}' || ch === ']') out = out.replace(/,\s*$/, '');
+        if (ch === '{' || ch === '[') open.push(ch);
+        if (ch === '}' || ch === ']') {
+            open.pop();
+            out = out.replace(/,\s*$/, '');
+        }
         out += ch;
     }
     return out;

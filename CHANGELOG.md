@@ -63,7 +63,8 @@
   setting for the chat on the spot.
 - **Sloppy JSON in an answer is repaired:** notes or comments outside its values
   (`"motivations": [] (unknown),`, `// ...`), a trailing comma, and unquoted words as values
-  (`"id": f4`, `[m2, m3]`, `m7"`, several words: `"from": Remus Watt`), `...` standing for
+  (`"id": f4`, `[m2, m3]`, `m7"`, several words, even with notes and colons: `"from": Remus Watt`, `"type": mentor · wary (-1):
+  a note` - read up to the next key), `...` standing for
   items the model left out (`[m1, ...]`, a line of its own), and a missing closing brace after
   the last value no longer get the whole answer thrown away as invalid JSON - they are dropped,
   quoted or closed, and the answer read. Strings are never changed.
