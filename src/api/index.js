@@ -15,3 +15,4 @@ export * from './notification-api.js';
 export * from './image-api.js';
 export * from './role-api.js';
 export * from './object-api.js';
+export * from './json-api.js';

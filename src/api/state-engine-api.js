@@ -14,6 +14,7 @@ import * as notifications from './notification-api.js';
 import * as images from './image-api.js';
 import * as roles from './role-api.js';
 import * as objectApi from './object-api.js';
+import * as jsonApi from './json-api.js';
 
 export const stateEngine = {
     ...ns,
@@ -30,4 +31,5 @@ export const stateEngine = {
     ...images,
     ...roles,
     ...objectApi,
+    ...jsonApi,
 };

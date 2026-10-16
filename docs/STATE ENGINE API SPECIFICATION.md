@@ -2536,3 +2536,26 @@ special-cases the character type. `tests/object-presets.test.js` - object
 presets (defaults, hidden from preset lists, validation), field values and
 roles, renames, prompted baseline fields, a single object variable's fields
 in the prompt, clearOnLeave, and the migration.
+
+SECTION 25 — JSON API (2026-10-16)
+
+`src/api/json-api.js`. Reading JSON out of a model's answer the forgiving
+way State Engine's own prompted updates do (`src/ui/formatting-utils.js`
+extractJsonObject / extractJsonArray), for extensions that make their own
+model calls (first user: Scenario Builder's content generation). Pure
+functions - no caller identity, nothing stored.
+
+**25.1 Functions**
+
+- `parseModelJson(text)` - the JSON object in a model's answer, or null.
+  Tolerates code fences and chatter around it, notes and comments between
+  values, bare words as values, missing commas, swapped or missing closing
+  brackets, and an answer cut off before its end (the finished values are
+  kept, with a console warning).
+- `parseModelJsonArray(text)` - the top-level list in an answer, read the
+  same way, or null.
+
+**25.2 Verification**
+
+Covered by the existing formatting-utils tests of extractJsonObject /
+extractJsonArray; the API adds no logic of its own.
