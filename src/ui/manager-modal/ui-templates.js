@@ -4,7 +4,7 @@
 
 import { escapeHtml } from './utils.js';
 import * as variableSchema from './variable-ui-schema.js';
-import { listCalendars } from '../../core/calendar-engine.js';
+import { listCalendars, SETTING_CALENDAR_ID } from '../../core/calendar-engine.js';
 import { BUILTIN_CALENDAR_IDS } from '../../core/settings-core.js';
 import { isImageType } from '../../core/image-variables.js';
 import { thumbHtml } from '../image-preview.js';
@@ -251,7 +251,7 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
 
     // A datetime variable pointing at a calendar that is not in the list
     // (deleted or corrupt settings) is warned about, never silently re-pointed.
-    const calendarMissing = d.type === 'datetime' && !!d.calendar && !Object.values(calendars || {}).some((c) => c.id === d.calendar);
+    const calendarMissing = d.type === 'datetime' && !!d.calendar && d.calendar !== SETTING_CALENDAR_ID && !Object.values(calendars || {}).some((c) => c.id === d.calendar);
 
     // The array-default-value row editor round-trips through
     // collectInlineVariableValues() the same way enumValuesMultiline does,
@@ -305,7 +305,8 @@ export function buildInlineVariableEditor(d, canIncrement, otherVars, calendars 
 
             ${d.type === 'datetime' ? `
                 <label class="se-manager-label">Calendar</label>
-                <select class="text_pole se-manager-var-field" data-field="calendar">
+                <select class="text_pole se-manager-var-field" data-field="calendar" title="Follow the chat's setting: each setting's chats read this date through that setting's calendar (set on the setting).">
+                    <option value="${SETTING_CALENDAR_ID}" ${d.calendar === SETTING_CALENDAR_ID ? 'selected' : ''}>Follow the chat's setting</option>
                     ${Object.values(calendars || {}).map((c) => `
                         <option value="${escapeHtml(c.id)}" ${(d.calendar || 'gregorian') === c.id ? 'selected' : ''}>${escapeHtml(c.label || c.id)}</option>
                     `).join('')}

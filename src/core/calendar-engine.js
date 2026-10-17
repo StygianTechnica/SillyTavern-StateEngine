@@ -19,18 +19,51 @@
 // Any other leapYearRule is refused with an error rather than guessed at -
 // see requireCalendar() below.
 
-import { getSettings, persistSettings, structuredCloneSafe, BUILTIN_CALENDAR_IDS } from './settings-core.js';
+import { getSettings, persistSettings, structuredCloneSafe, BUILTIN_CALENDAR_IDS, DEFAULT_CALENDAR_ID } from './settings-core.js';
 
 // ---------------------------------------------------------------------------
 // Calendar lookup
 // ---------------------------------------------------------------------------
 
-// settings.calendars[calendarId], or null when there is no such calendar.
-export function getCalendar(calendarId) {
+// "Follow the setting" (requirements spec 1.22.6): a datetime variable whose
+// calendar is SETTING_CALENDAR_ID reads its scalar through the calendar of
+// the setting the open chat uses - so one variable shows a fantasy date in
+// one setting's chats and a Gregorian one in another's, with nothing
+// rewritten when chats change. A setting with no calendar (or one since
+// deleted) follows the default calendar. Every lookup below goes through
+// getCalendar(), so every caller resolves it the same way. The resolver
+// (which setting, which calendar) is registered by objects.js, which owns
+// settings; this module stays free of the object layer.
+export const SETTING_CALENDAR_ID = '@setting';
+let settingCalendarResolver = null;
+
+export function setSettingCalendarResolver(fn) {
+    settingCalendarResolver = typeof fn === 'function' ? fn : null;
+}
+
+function calendarById(calendarId) {
     const calendars = getSettings().calendars;
     if (!calendars || typeof calendars !== 'object') return null;
     if (typeof calendarId !== 'string' || !Object.prototype.hasOwnProperty.call(calendars, calendarId)) return null;
     return calendars[calendarId] ?? null;
+}
+
+// The real calendar id behind `calendarId`: SETTING_CALENDAR_ID becomes the
+// open chat's setting calendar (else the default); any other id is itself.
+export function resolveCalendarId(calendarId) {
+    if (calendarId !== SETTING_CALENDAR_ID) return calendarId;
+    let id = null;
+    try {
+        id = settingCalendarResolver?.() ?? null;
+    } catch {
+        id = null;
+    }
+    return typeof id === 'string' && calendarById(id) ? id : DEFAULT_CALENDAR_ID;
+}
+
+// settings.calendars[calendarId], or null when there is no such calendar.
+export function getCalendar(calendarId) {
+    return calendarById(resolveCalendarId(calendarId));
 }
 
 const SUPPORTED_LEAP_RULES = ['gregorian', 'none'];
@@ -217,7 +250,7 @@ export function toDateTimeParts(calendarId, scalarTime) {
         ...s,
         time: { hour: s.hour, minute: s.minute, second: s.second, fraction: scalarTime - Math.floor(scalarTime) },
         calendar: {
-            id: calendarId,
+            id: resolveCalendarId(calendarId),
             hoursPerDay: calendar.hoursPerDay,
             minutesPerHour: calendar.minutesPerHour,
             secondsPerMinute: calendar.secondsPerMinute,
@@ -611,9 +644,10 @@ export function listCalendars() {
     return getSettings().calendars || {};
 }
 
-// One calendar definition, or null.
+// One calendar definition, or null. SETTING_CALENDAR_ID gives the
+// definition it currently resolves to.
 export function getCalendarDefinition(calendarId) {
-    return getSettings().calendars?.[calendarId] || null;
+    return getSettings().calendars?.[resolveCalendarId(calendarId)] || null;
 }
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;

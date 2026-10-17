@@ -1288,6 +1288,20 @@ advanceDateTime(extensionId, instanceId, calendarId, scalarTime, text)
   clock and need the same arithmetic State Engine uses.
 ```
 
+**Following the setting's calendar.** A setting can name the calendar its
+dates are on: `updateSetting(extensionId, instanceId, settingId, { calendarId })`
+(`null` = the default calendar; an unknown id is refused), and `getSetting` /
+`listSettings` report it as `calendarId`. A datetime variable whose `calendar`
+is the special id `"@setting"` reads its scalar through the calendar of the
+setting the open chat uses - so one variable shows a fantasy date in one
+setting's chats and a Gregorian one in another's, and nothing is rewritten
+when chats change. Every calendar call accepts `"@setting"`
+(`formatDateTime`, `getDateTimeParts`, `advanceDateTime`,
+`getCalendarDefinition`...) and resolves it the same way; `getDateTimeParts`
+reports the real calendar in `calendar.id`. A chat with no setting, or a
+setting with no calendar (or one since deleted), follows the default
+calendar.
+
 **Weekdays.** A calendar only has weekdays when its definition says so
 (`daysPerWeek`, `weekdayNames`, `weekdayShortNames` - all optional, null or
 absent means "not defined"):

@@ -55,6 +55,7 @@ import { loadChatState, saveChatState, hydrateMacroStoreForChat } from './chat-s
 import { notifyVariablesChanged } from './variable-change-signal.js';
 import { putNotification, removeNotification, getNotification, notificationId, setCallback } from './notification-core.js';
 import { genId } from './variable-schema.js';
+import { setSettingCalendarResolver, getCalendarDefinition as calendarDefinition } from './calendar-engine.js';
 import { setObjectNameResolver, objectTypeOf } from './object-display.js';
 import { safeImageSrc } from './image-variables.js';
 import { OBJECT_TYPES, OBJECT_TYPE_IDS, getObjectType, objectTypeOfId, isObjectType } from './object-types.js';
@@ -564,7 +565,7 @@ export function setRuntimeValue(chatId, id, fieldName, value) {
 // ----------------------------------------------------------------- settings
 
 function newSetting(id, name, autoConfirm) {
-    return { id, name, autoConfirm, createdAt: Date.now(), objects: Object.fromEntries(OBJECT_TYPE_IDS.map((type) => [type, {}])), fieldRoles: {} };
+    return { id, name, autoConfirm, createdAt: Date.now(), objects: Object.fromEntries(OBJECT_TYPE_IDS.map((type) => [type, {}])), fieldRoles: {}, calendarId: null };
 }
 
 function settingStore() {
@@ -585,6 +586,7 @@ function settingSummary(setting) {
     const counts = Object.fromEntries(OBJECT_TYPE_IDS.map((type) => [type, Object.keys(setting.objects[type] ?? {}).length]));
     return {
         id: setting.id, name: setting.name, autoConfirm: setting.autoConfirm === true, isDefault: setting.id === DEFAULT_SETTING_ID,
+        calendarId: typeof setting.calendarId === 'string' && setting.calendarId ? setting.calendarId : null,
         counts, objectCount: Object.values(counts).reduce((a, b) => a + b, 0), createdAt: setting.createdAt,
     };
 }
@@ -612,7 +614,10 @@ export function createSetting({ name, autoConfirm = false } = {}) {
     return getSetting(id);
 }
 
-export function updateSetting(settingId, { name, autoConfirm } = {}) {
+// patch: { name?, autoConfirm?, calendarId? } - calendarId: the calendar
+// this setting's dates are on (null = the default), what datetime variables
+// set to follow the setting read through (calendar-engine.js).
+export function updateSetting(settingId, { name, autoConfirm, calendarId } = {}) {
     const setting = settingStore()[settingId];
     if (!setting) throw new Error(`setting ${JSON.stringify(settingId)} does not exist`);
     if (name !== undefined) {
@@ -623,6 +628,10 @@ export function updateSetting(settingId, { name, autoConfirm } = {}) {
         renameObjectPresets(settingId);
     }
     if (autoConfirm !== undefined) setting.autoConfirm = autoConfirm === true;
+    if (calendarId !== undefined) {
+        if (calendarId !== null && calendarId !== '' && !calendarDefinition(calendarId)) throw new Error(`calendar ${JSON.stringify(calendarId)} does not exist`);
+        setting.calendarId = calendarId || null;
+    }
     persistSettings();
     changed(null);
     return getSetting(settingId);
@@ -691,6 +700,23 @@ export function setChatSetting(chatId, settingId) {
 function effectiveSetting(chatId) {
     return settingStore()[getChatSetting(chatId) ?? DEFAULT_SETTING_ID];
 }
+
+// The open chat's id, or null.
+function openChatId() {
+    try {
+        const context = globalThis.SillyTavern?.getContext?.();
+        return context?.chatId || context?.groupId || null;
+    } catch {
+        return null;
+    }
+}
+
+// Datetime variables that follow the setting read through the open chat's
+// setting calendar.
+setSettingCalendarResolver(() => {
+    const chatId = openChatId();
+    return chatId ? effectiveSetting(chatId)?.calendarId ?? null : null;
+});
 
 // "Ask on first use": the chat's setting, choosing one if it has none. With
 // only the Default setting there is nothing to ask - it is chosen. Otherwise
