@@ -2502,7 +2502,8 @@ field with `clearOnLeave` is cleared when an object with presence leaves. A runt
 field may have a STARTING VALUE per object (`record.startValues[field]`, set in the
 setting: `updateObject(..., { startValues })` or `setObjectField` with no chat) that
 every chat begins from until it has its own value. Characters and locations carry a
-`factions` runtime field (faction objects) by default. A new setting starts from the
+`factions` runtime field (faction objects) by default - a character's is SETTABLE, with a
+prompted `faction_ties` beside it whose newly shown ties are added to it; a location's is prompted. A new setting starts from the
 registry's `fields` and `runtime`, which are only defaults.
 
 FIELD ROLES (`se__<type>.<field>`, one per default field: `se__character.mood`,

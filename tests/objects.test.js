@@ -523,7 +523,7 @@ describe('migration from the character-only engine', () => {
             runtime: { present: true, values: { thought: 'Hm.', mood: 'Calm', intent: null, fear: 'Low' }, images: {} } });
         expect(O.getObject('chat-legacy', 'chr_old')).toMatchObject({ scope: 'setting', settingId: 'set_legacy', confirmed: true });
         expect(O.getObject('chat-legacy', 'chr_new')).toMatchObject({ scope: 'chat', confirmed: false });
-        expect(O.getRuntimeFields('set_legacy', 'character').map((f) => f.name)).toEqual(['thought', 'mood', 'intent', 'factions', 'fear']);
+        expect(O.getRuntimeFields('set_legacy', 'character').map((f) => f.name)).toEqual(['thought', 'mood', 'intent', 'factions', 'faction_ties', 'fear']);
         expect(O.getRuntimeFields('set_legacy', 'character')[0].fresh).toBe(true); // from the registry
         expect(settings.get().presets.p_legacy.variables).toMatchObject({
             who: { type: 'object', objectType: 'character' },
@@ -546,7 +546,7 @@ describe('runtime state', () => {
 
     it('every setting starts with each type\'s built-ins - characters: thought, mood (enum) and intent', () => {
         expect(O.getRuntimeFields(story.id, 'character').map((f) => [f.name, f.type, f.prompted, f.builtIn])).toEqual([
-            ['thought', 'string', true, true], ['mood', 'enum', true, true], ['intent', 'string', true, true], ['factions', 'array', true, true],
+            ['thought', 'string', true, true], ['mood', 'enum', true, true], ['intent', 'string', true, true], ['factions', 'array', false, true], ['faction_ties', 'array', true, true],
         ]);
         expect(O.getRuntimeFields(story.id, 'character')[1].values).toEqual(['Neutral', 'Angry', 'Afraid', 'Curious', 'Confident', 'Sad', 'Suspicious', 'Determined']);
         expect(O.getRuntimeFields(story.id, 'quest').map((f) => f.name)).toEqual(['status']);
@@ -559,8 +559,8 @@ describe('runtime state', () => {
             { name: 'amorousness', type: 'number', prompted: true, min: 0, max: 100 },
             { name: 'fear_level', type: 'enum', prompted: false, values: ['Low', 'Medium', 'High'] },
         ]);
-        expect(fields.map((f) => f.name)).toEqual(['thought', 'mood', 'intent', 'factions', 'amorousness', 'fear_level']);
-        expect(O.setRuntimeFields(story.id, 'character', []).map((f) => f.name)).toEqual(['thought', 'mood', 'intent', 'factions']);
+        expect(fields.map((f) => f.name)).toEqual(['thought', 'mood', 'intent', 'factions', 'faction_ties', 'amorousness', 'fear_level']);
+        expect(O.setRuntimeFields(story.id, 'character', []).map((f) => f.name)).toEqual(['thought', 'mood', 'intent', 'factions', 'faction_ties']);
         // A list field comes back through this view unchanged.
         const views = O.getRuntimeFields(story.id, 'character');
         O.setRuntimeFields(story.id, 'character', views);
@@ -577,7 +577,7 @@ describe('runtime state', () => {
         const rhys = O.createObject(story.id, 'character', { name: 'Rhys' });
         O.markObjectPresent(CHAT, rhys.id);
         O.applyRuntimeUpdates(CHAT, 'character', { [rhys.id]: { thought: 'Trust no one.', mood: 'suspicious', intent: 'Watch the door' } });
-        expect(O.getObject(CHAT, rhys.id).runtime).toEqual({ present: true, values: { thought: 'Trust no one.', mood: 'Suspicious', intent: 'Watch the door', factions: null }, images: {} });
+        expect(O.getObject(CHAT, rhys.id).runtime).toEqual({ present: true, values: { thought: 'Trust no one.', mood: 'Suspicious', intent: 'Watch the door', factions: null, faction_ties: null }, images: {} });
         expect(O.getObject(null, rhys.id, story.id).runtime).toBeNull();
         expect(JSON.stringify(settings.get().variableStore.settings[story.id].objects)).not.toContain('Trust no one');
         O.setChatSetting('chat-2', story.id);
@@ -707,7 +707,8 @@ describe('runtime state', () => {
         expect(prompt).toContain('write a new thought for every character, never empty');
         // The intent is asked new each turn too: shown back, it got stuck.
         expect(prompt).toContain('"intent": short text, NEW EACH TURN');
-        expect(prompt).toContain('currently {"Rhys":{"mood":"Sad","factions":null}}');
+        // Factions is settable, not asked; Faction ties is what the story is asked for.
+        expect(prompt).toContain('currently {"Rhys":{"mood":"Sad","faction_ties":null}}');
         expect(prompt).not.toContain('Old thought.');
     });
 });

@@ -59,9 +59,20 @@ export const OBJECT_TYPES = freeze({
                 name: 'intent', type: 'string', prompted: true, fresh: true,
                 description: 'A short phrase: what they mean to do next, judging by the latest messages - their very next move, not a long-term goal. Once they have done it, or the situation has changed, give the new one.',
             },
+            // Two faction fields: Factions is SETTABLE - what the character
+            // belongs to, set by hand, by another extension (Scenario
+            // Builder fills it from a faction's members) or from the story
+            // through the second, Faction ties, which the prompted update
+            // writes: the ties the story shows. A tie the story newly shows
+            // is added to Factions (applyRuntimeUpdates); one it drops stays
+            // there until removed by hand.
             {
-                name: 'factions', label: 'Factions', type: 'array', itemType: 'object', itemObjectType: 'faction', prompted: true, keep: true,
-                description: 'The factions, groups or organizations they belong to or are openly tied to, as the story shows them - keep the current ones unless the story changes them; [] if none is known.',
+                name: 'factions', label: 'Factions', type: 'array', itemType: 'object', itemObjectType: 'faction', prompted: false, keep: true,
+                description: 'The factions, groups or organizations they belong to - set by hand or by an extension; ties the story shows (Faction ties) are added to it.',
+            },
+            {
+                name: 'faction_ties', label: 'Faction ties (story)', type: 'array', itemType: 'object', itemObjectType: 'faction', prompted: true, keep: true,
+                description: 'The factions, groups or organizations the story shows them belonging to, serving, leading or openly tied to - keep the current ones unless the story changes them; [] if none is shown.',
             },
         ]),
         prompt: freeze({

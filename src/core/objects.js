@@ -470,13 +470,26 @@ export function applyRuntimeUpdates(chatId, type, updates) {
             const value = accept(def, raw[def.name]);
             if (value !== undefined && !(isEmptyFieldValue(value) && isEmptyFieldValue(current))) baselineValues[def.name] = value;
         }
-        answers.push({ id, runtimeValues, baselineValues });
+        // Factions starts from its starting value until the chat has its own.
+        answers.push({ id, runtimeValues, baselineValues, startFactions: Array.isArray(found.record?.startValues?.factions) ? found.record.startValues.factions : [] });
     }
+    // A settable Factions field gains the ties the story newly shows in
+    // Faction ties (object-types.js): additions only - a dropped tie is the
+    // user's (or an extension's) to remove.
+    const factionsDef = getFieldDefs(settingId, type).find((d) => d.name === 'factions' && d.scope !== 'global' && !d.behaviors?.prompted);
     writeChat(chatId, (state) => {
         const layer = typeLayer(state, type);
-        for (const { id, runtimeValues } of answers) {
+        for (const { id, runtimeValues, startFactions } of answers) {
             const entry = { matches: 0, ...(layer.entries[id] ?? {}) };
-            entry.runtime = { values: { ...(isObject(entry.runtime?.values) ? entry.runtime.values : {}), ...runtimeValues } };
+            const before = isObject(entry.runtime?.values) ? entry.runtime.values : {};
+            const next = { ...before, ...runtimeValues };
+            if (factionsDef && Array.isArray(runtimeValues.faction_ties)) {
+                const had = new Set(Array.isArray(before.faction_ties) ? before.faction_ties : []);
+                const added = runtimeValues.faction_ties.filter((x) => !had.has(x));
+                const current = Array.isArray(next.factions) ? next.factions : startFactions;
+                if (added.length) next.factions = [...new Set([...current, ...added])];
+            }
+            entry.runtime = { values: next };
             layer.entries[id] = entry;
         }
     });

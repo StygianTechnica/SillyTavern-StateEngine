@@ -152,6 +152,14 @@ default for types with presence.
 
 ## 6. Factions: carried by characters and locations
 
+**Revised 2026-10-17 (built):** a character has TWO faction fields. `factions` is SETTABLE (not
+prompted): what the character belongs to, set by hand, by an extension (Scenario Builder fills
+it from a faction's members and "member of" relationships) or from the story through the second,
+`faction_ties`, which IS prompted - the ties the story shows. A tie the story newly shows is
+added to `factions` (`applyRuntimeUpdates`); one it drops stays there until removed by hand or
+by an extension. Locations keep a single prompted `factions` field. Settings made before this keep
+their fields until an extension (Scenario Builder) sets them up the same way.
+
 **Revised 2026-10-13 (built):** a faction is something an object *carries*: characters and
 locations (and any type given the field) have a `factions` runtime field - the factions they
 belong to or are tied to - prompted while they are in play, so factions are detected and updated

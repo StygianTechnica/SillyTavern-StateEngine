@@ -41,10 +41,11 @@ describe('a setting\'s object presets', () => {
         const defs = O.getObjectFields(story.id, 'character');
         expect(defs.map((d) => [d.name, d.scope])).toEqual([
             ['personality', 'global'], ['role', 'global'], ['goals', 'global'], ['relationships', 'global'],
-            ['thought', 'chat'], ['mood', 'chat'], ['intent', 'chat'], ['factions', 'chat'],
+            ['thought', 'chat'], ['mood', 'chat'], ['intent', 'chat'], ['factions', 'chat'], ['faction_ties', 'chat'],
         ]);
-        // Factions are tracked as the story goes, and stay when a character leaves the scene.
-        expect(defs.find((d) => d.name === 'factions')).toMatchObject({ type: 'array', itemType: 'object', itemObjectType: 'faction', behaviors: { prompted: true }, clearOnLeave: false });
+        // Factions are settable; Faction ties is what the story shows. Both stay when a character leaves the scene.
+        expect(defs.find((d) => d.name === 'factions')).toMatchObject({ type: 'array', itemType: 'object', itemObjectType: 'faction', behaviors: { prompted: false }, clearOnLeave: false });
+        expect(defs.find((d) => d.name === 'faction_ties')).toMatchObject({ type: 'array', itemType: 'object', itemObjectType: 'faction', behaviors: { prompted: true }, clearOnLeave: false });
         expect(O.getObjectFields(story.id, 'location').map((d) => d.name)).toEqual(['region', 'conditions', 'factions']);
         expect(defs.find((d) => d.name === 'personality')).toMatchObject({ type: 'string', multiline: true });
         expect(defs.find((d) => d.name === 'thought')).toMatchObject({ behaviors: { prompted: true }, prompted: { newEachTurn: true, mode: 'update' }, clearOnLeave: true });
@@ -91,17 +92,25 @@ describe('field values', () => {
         expect(guild).toMatchObject({ scope: 'setting', confirmed: true });
         expect(O.getObject(null, rhys.id, story.id).startValues).toEqual({ factions: [guild.id, ash.id] });
         expect(O.getObject(CHAT, rhys.id).runtime.values.factions).toEqual([guild.id, ash.id]);
-        // The story changes it in one chat; the other chat still starts from the starting value.
+        // The story shows ties in one chat (Faction ties): the new ones join
+        // Factions there; the other chat still starts from the starting value.
         O.markObjectPresent(CHAT, rhys.id);
-        O.applyRuntimeUpdates(CHAT, 'character', { [rhys.id]: { factions: ['Ashguard', 'the Crown'] } });
+        O.applyRuntimeUpdates(CHAT, 'character', { [rhys.id]: { faction_ties: ['Ashguard', 'the Crown'], factions: ['ignored'] } });
         const crown = O.getObjectByAlias(CHAT, 'faction', 'the Crown');
-        expect(O.getObject(CHAT, rhys.id).runtime.values.factions).toEqual([ash.id, crown.id]);
+        expect(O.getObject(CHAT, rhys.id).runtime.values.faction_ties).toEqual([ash.id, crown.id]);
+        expect(O.getObject(CHAT, rhys.id).runtime.values.factions).toEqual([guild.id, ash.id, crown.id]);
+        // A tie the story drops stays in Factions (removed by hand or by an extension).
+        O.applyRuntimeUpdates(CHAT, 'character', { [rhys.id]: { faction_ties: ['the Crown'] } });
+        expect(O.getObject(CHAT, rhys.id).runtime.values.factions).toEqual([guild.id, ash.id, crown.id]);
+        // Factions is settable in a chat.
+        O.setObjectFieldValue(CHAT, rhys.id, 'factions', [crown.id]);
+        expect(O.getObject(CHAT, rhys.id).runtime.values.factions).toEqual([crown.id]);
         O.setChatSetting('chat-2', story.id);
         expect(O.getObject('chat-2', rhys.id).runtime.values.factions).toEqual([guild.id, ash.id]);
-        // Leaving the scene keeps them; an empty answer is the chat's own value.
+        // Leaving the scene keeps them.
         O.markObjectAbsent(CHAT, rhys.id);
-        expect(O.getObject(CHAT, rhys.id).runtime.values.factions).toEqual([ash.id, crown.id]);
-        // With no chat, a runtime field is its starting value - set even though it is prompted.
+        expect(O.getObject(CHAT, rhys.id).runtime.values.factions).toEqual([crown.id]);
+        // With no chat, a runtime field is its starting value.
         O.setObjectFieldValue(null, rhys.id, 'factions', ['the Guild'], { settingId: story.id });
         expect(O.getObjectFieldValue(null, rhys.id, 'factions', { settingId: story.id })).toEqual([guild.id]);
         expect(O.getObjectFieldValue('chat-3', rhys.id, 'se__character.factions', { settingId: story.id })).toEqual([guild.id]);
@@ -213,7 +222,7 @@ describe('migration', () => {
         expect(O.migrateObjectFields()).toEqual({ settings: 1, references: 2 });
         expect(store.settings.set_old.runtimeFields).toBeUndefined();
         const runtime = O.getObjectFields('set_old', 'character').filter((d) => d.scope === 'chat');
-        expect(runtime.map((d) => d.name)).toEqual(['thought', 'mood', 'intent', 'factions', 'fear']);
+        expect(runtime.map((d) => d.name)).toEqual(['thought', 'mood', 'intent', 'factions', 'faction_ties', 'fear']);
         expect(runtime.find((d) => d.name === 'mood')).toMatchObject({ enumValues: ['Calm', 'Angry'], enumImages: { Calm: 'calm.png' } });
         expect(runtime.find((d) => d.name === 'thought').prompted.newEachTurn).toBe(true);
         const guild = O.getObjectByAlias('chat-old', 'faction', 'Guild');
