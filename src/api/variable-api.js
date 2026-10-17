@@ -692,6 +692,21 @@ export function getDateTimeParts(extensionId, instanceId, calendarId, scalarTime
     return calendarEngine.toDateTimeParts(calendarId, scalarTime);
 }
 
+// A moment moved on by how much time passed, read the way State Engine's own
+// deltaSource reads a prompted delta: a time of day the story moves on to
+// ("the next morning", "until dawn", "that evening" - always forward), else a
+// duration ("5 minutes", "2 hours", "3 days"), else any other instruction
+// resolveInstruction understands ("advance 1 season", "Stormfall 17").
+// -> the new scalar, or null when the text does not resolve.
+export function advanceDateTime(extensionId, instanceId, calendarId, scalarTime, text) {
+    resolveCallerRecord(extensionId, instanceId);
+    if (typeof text !== 'string' || !text.trim()) return null;
+    const current = Number(scalarTime);
+    if (!Number.isFinite(current)) return null;
+    return calendarEngine.resolveInstruction(calendarId, current, text, { semanticTimeOfDay: true, forward: true })
+        ?? calendarEngine.resolveInstruction(calendarId, current, `advance ${text}`);
+}
+
 // ---------------------------------------------------------------------------
 // Calendar definition API (requirements spec 1.22.1)
 // ---------------------------------------------------------------------------

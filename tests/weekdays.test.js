@@ -121,6 +121,20 @@ describe('time primitives', () => {
     });
 });
 
+describe('advanceDateTime', () => {
+    const at = (h, m = 0) => Date.UTC(2026, 8, 18, h, m) / 1000;
+    const adv = (t, text) => stateEngine.advanceDateTime('pp', instanceId, 'gregorian', t, text);
+    it('reads durations, times of day (forward) and instructions like a deltaSource', () => {
+        expect(adv(at(10), '5 minutes')).toBe(at(10, 5));
+        expect(adv(at(10), '2 hours')).toBe(at(12));
+        expect(adv(at(10), '3 days')).toBe(at(10) + 3 * 86400);
+        expect(adv(at(22), 'the next morning')).toBeGreaterThan(at(22));
+        expect(adv(at(22), 'the next morning')).toBeLessThan(at(22) + 86400);
+        expect(adv(at(10), 'nonsense words')).toBeNull();
+        expect(adv(at(10), '')).toBeNull();
+    });
+});
+
 describe('weekday validation', () => {
     const errorsOf = (extra) => validateCalendarDefinition(base('v', extra)).errors;
 

@@ -1277,6 +1277,15 @@ getDateTimeParts(extensionId, instanceId, calendarId, scalarTime)
   Meant for displays that draw the moment (an analog clock): hand angles are
   360 * hour / hoursPerDay (+ the minute's share), 360 * minute / minutesPerHour
   and 360 * second / secondsPerMinute, for any calendar.
+
+advanceDateTime(extensionId, instanceId, calendarId, scalarTime, text)
+  -> the scalar after `text`'s worth of time has passed, or null
+  Reads `text` the way a deltaSource reads a prompted delta (scene_deltatime):
+  a time of day the story moves on to - "the next morning", "until dawn",
+  "that evening" - always forward; else a duration - "5 minutes", "2 hours",
+  "3 days"; else any instruction a prompted datetime update accepts
+  ("advance 1 season", "Stormfall 17"). For extensions that keep their own
+  clock and need the same arithmetic State Engine uses.
 ```
 
 **Weekdays.** A calendar only has weekdays when its definition says so
