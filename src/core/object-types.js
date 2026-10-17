@@ -83,7 +83,8 @@ export const OBJECT_TYPES = freeze({
                 + 'Start from the current list: keep everyone still present, add anyone who arrived, remove only those who left. '
                 + 'Do NOT include groups, crowds, background extras, plural nouns, or generic roles (e.g. “patrons”, “guards”, '
                 + '“reception staff”, “people”, “students”). Only include a person if the story treats them as a specific individual '
-                + '(named or uniquely described). '
+                + '(named or uniquely described). Someone singled out by a description but not named yet ("a tall man with thick eyebrows") '
+                + 'counts: name them by a short description of that person (e.g. "the eyepatched man"), and keep using that same name. '
                 + 'Reply with a full JSON array of names (e.g. ["Kael","the stranger"]); [] only if nobody at all is in the scene',
             runtimeNote: 'write a new thought for every character, never empty; never change who they are.',
         }),
