@@ -243,6 +243,21 @@ export function repairJson(text) {
     const strays = []; // depths of stray braces being dropped
     for (let i = 0; i < text.length; i++) {
         const ch = text[i];
+        // A raw line break inside a string, which JSON does not allow: a
+        // string left unclosed ("status":"<line break>,) when what follows
+        // is a comma, a closing bracket or the next key - closed before the
+        // break; otherwise text running over two lines - the break kept,
+        // escaped.
+        if (inString && !escaped && (ch === '\n' || ch === '\r')) {
+            if (/^[\r\n\t ]*(?:[,}\]]|"[^"\n]*"\s*:)/.test(text.slice(i))) {
+                out += '"';
+                inString = false;
+                out += ch;
+            } else if (ch === '\n') {
+                out += '\\n';
+            }
+            continue;
+        }
         if (inString) {
             out += ch;
             if (escaped) escaped = false;
