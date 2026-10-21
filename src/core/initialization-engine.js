@@ -223,7 +223,9 @@ export async function offerNewChatStart(chatId, ask = askNewChatStart, askSettin
         const choice = await ask(source, presetNames);
         const applied = applyNewChatChoice(chatId, choice, source);
         const inherited = choice !== NEW_CHAT_CHOICES.CLEAN ? getChatSetting(source.sourceChatId) : null;
-        if (inherited) setChatSetting(chatId, inherited);
+        // A setting given to the chat while the question was open (an
+        // extension starting a new playthrough in it) stays.
+        if (getChatSetting(chatId)) { /* kept */ } else if (inherited) setChatSetting(chatId, inherited);
         else await ensureChatSetting(chatId, askSetting);
         return { choice, ...applied };
     } catch (err) {

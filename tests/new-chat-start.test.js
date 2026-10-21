@@ -115,6 +115,19 @@ describe('the three choices', () => {
     });
     const valuesOf = (chatId) => Object.fromEntries(Object.entries(loadChatState(chatId).variables).map(([k, v]) => [k, v.value]));
 
+    it('keeps a setting the chat was given while the question was open (a new playthrough)', async () => {
+        const { createSetting, setChatSetting, getChatSetting } = await import('../src/core/objects.js');
+        const before = createSetting({ name: `Before ${Math.random()}` });
+        const fresh = createSetting({ name: `Fresh ${Math.random()}` });
+        setChatSetting('old', before.id);
+        const answer = async () => {
+            setChatSetting(NEW, fresh.id);
+            return NEW_CHAT_CHOICES.PRESETS;
+        };
+        await offerNewChatStart(NEW, answer);
+        expect(getChatSetting(NEW)).toBe(fresh.id);
+    });
+
     it('3. CLEAN SLATE: no presets and no data', async () => {
         const result = await offerNewChatStart(NEW, ask(NEW_CHAT_CHOICES.CLEAN));
         expect(result).toMatchObject({ choice: 'clean', activated: [], copied: 0 });

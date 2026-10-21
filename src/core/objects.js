@@ -60,7 +60,7 @@ import { setObjectNameResolver, objectTypeOf } from './object-display.js';
 import { safeImageSrc } from './image-variables.js';
 import { OBJECT_TYPES, OBJECT_TYPE_IDS, getObjectType, objectTypeOfId, isObjectType } from './object-types.js';
 import {
-    getFieldDefs, setFieldDefs, deleteObjectPresets, renameObjectPresets, resolveFieldName, getFieldRoles, assignFieldRole,
+    getFieldDefs, setFieldDefs, createObjectPreset, deleteObjectPresets, renameObjectPresets, resolveFieldName, getFieldRoles, assignFieldRole,
     coerceFieldValue, emptyFieldValue, isEmptyFieldValue, fieldObjectType, fromRuntimeField,
 } from './object-presets.js';
 
@@ -671,6 +671,170 @@ export function deleteSetting(settingId) {
     persistSettings();
     changed(null);
     return true;
+}
+
+// ------------------------------------------------- export, import, copy
+//
+// A setting as plain data, for a copy of a world (a fresh playthrough, a
+// file to keep or share) and for copying objects between worlds:
+//   { format: 'state-engine-setting', version: 1, exportedAt, name,
+//     autoConfirm, calendarId, fieldRoles, fields: { [type]: defs },
+//     objects: { [type]: { [id]: record } } }
+// Only canonical world objects travel: chats, their runtime state and their
+// story objects stay where they are. related_memory_ids are left behind
+// (memories belong to a chat). Imported objects get NEW ids; every reference
+// between them follows (idMap), read through the source's field definitions.
+
+export const SETTING_EXPORT_FORMAT = 'state-engine-setting';
+export const SETTING_EXPORT_VERSION = 1;
+
+function worldTypes() {
+    return OBJECT_TYPE_IDS.filter((type) => getObjectType(type).scope === 'world');
+}
+
+// `ids`: only these objects (null = all of them).
+export function exportSetting(settingId, { ids = null } = {}) {
+    const setting = settingStore()[settingId];
+    if (!setting) throw new Error(`setting ${JSON.stringify(settingId)} does not exist`);
+    const only = Array.isArray(ids) ? new Set(ids) : null;
+    const fields = {};
+    const objects = {};
+    for (const type of worldTypes()) {
+        fields[type] = getFieldDefs(settingId, type);
+        objects[type] = {};
+        for (const [id, record] of Object.entries(setting.objects[type] ?? {})) {
+            if (only && !only.has(id)) continue;
+            objects[type][id] = { ...structuredClone(record), related_memory_ids: [] };
+        }
+    }
+    return {
+        format: SETTING_EXPORT_FORMAT, version: SETTING_EXPORT_VERSION, exportedAt: Date.now(),
+        name: setting.name, autoConfirm: setting.autoConfirm === true, calendarId: setting.calendarId ?? null,
+        fieldRoles: structuredClone(isObject(setting.fieldRoles) ? setting.fieldRoles : {}), fields, objects,
+    };
+}
+
+function checkExport(data) {
+    if (!isObject(data) || data.format !== SETTING_EXPORT_FORMAT) throw new Error('not a State Engine setting export');
+    if (data.version !== SETTING_EXPORT_VERSION) throw new Error(`setting export version ${JSON.stringify(data.version)} is not supported`);
+    if (!isObject(data.objects)) throw new Error('the setting export has no objects');
+}
+
+function unusedSettingName(name) {
+    const base = text(name, MAX_NAME - 6) || 'Imported setting';
+    const taken = new Set(listSettings().map((s) => s.name.toLowerCase()));
+    if (!taken.has(base.toLowerCase())) return base;
+    for (let n = 2; ; n++) if (!taken.has(`${base} (${n})`.toLowerCase())) return `${base} (${n})`;
+}
+
+// Writes the export's objects into `settingId` with new ids. A reference to
+// an object that does not travel points at the target's object of the same
+// type and name when it has one, or is dropped. Fields the target does not
+// have are dropped (listed in `droppedFields`: { [id]: [field names] }).
+// `leftBehind`: { [id]: name } of source objects that do not travel.
+function importObjects(settingId, data, leftBehind = {}) {
+    const setting = settingStore()[settingId];
+    const idMap = {};
+    for (const type of worldTypes()) {
+        for (const id of Object.keys(data.objects[type] ?? {})) idMap[id] = newId(getObjectType(type));
+    }
+    const byName = {};
+    const targetByName = (type, name) => {
+        if (!byName[type]) byName[type] = new Map(Object.values(setting.objects[type] ?? {}).map((r) => [String(r.name).toLowerCase(), r.id]));
+        return byName[type].get(String(name ?? '').toLowerCase()) ?? null;
+    };
+    const sourceName = (id) => {
+        const t = objectTypeOfId(id);
+        return t ? data.objects[t.id]?.[id]?.name ?? leftBehind[id] ?? null : null;
+    };
+    const mapId = (id) => {
+        if (typeof id !== 'string' || !id) return null;
+        if (idMap[id]) return idMap[id];
+        const t = objectTypeOfId(id);
+        if (!t) return null;
+        if (setting.objects[t.id]?.[id]) return id;
+        const name = sourceName(id);
+        return name ? targetByName(t.id, name) : null;
+    };
+    const mapValue = (value) => (Array.isArray(value)
+        ? [...new Set(value.map(mapId).filter(Boolean))]
+        : (mapId(value) ?? ''));
+    const droppedFields = {};
+    for (const type of worldTypes()) {
+        const sourceDefs = Array.isArray(data.fields?.[type]) ? data.fields[type] : [];
+        const refFields = new Set(sourceDefs.filter((d) => fieldObjectType(d)).map((d) => d.name));
+        const targetDefs = baselineDefs(settingId, type);
+        const targetNames = new Set(getFieldDefs(settingId, type).map((d) => d.name));
+        for (const [oldId, raw] of Object.entries(data.objects[type] ?? {})) {
+            if (!isObject(raw)) continue;
+            const record = structuredClone(raw);
+            for (const key of Object.keys(record)) if (refFields.has(key)) record[key] = mapValue(record[key]);
+            record.related_entity_ids = mapValue(record.related_entity_ids ?? []);
+            record.related_memory_ids = [];
+            if (isObject(record.startValues)) {
+                for (const key of Object.keys(record.startValues)) {
+                    if (!targetNames.has(key)) delete record.startValues[key];
+                    else if (refFields.has(key)) record.startValues[key] = mapValue(record.startValues[key]);
+                }
+            }
+            const lost = Object.keys(raw).filter((key) => !COMMON.has(key) && !targetDefs.some((d) => d.name === key)
+                && !isEmptyFieldValue(raw[key]));
+            if (lost.length) droppedFields[idMap[oldId]] = lost;
+            const out = normalizeObject(type, { ...record, confirmed: true }, idMap[oldId], targetDefs);
+            out.updatedAt = Date.now();
+            setting.objects[type][out.id] = out;
+        }
+    }
+    return { idMap, droppedFields };
+}
+
+// A new setting made from an export: its fields, field roles, calendar and
+// objects (new ids). Its name is the export's (or `name`), made unique.
+// Returns { setting, idMap: { [oldId]: newId }, droppedFields }.
+export function importSetting(data, { name = null, autoConfirm = null } = {}) {
+    checkExport(data);
+    const created = createSetting({ name: unusedSettingName(name ?? data.name), autoConfirm: autoConfirm ?? data.autoConfirm === true });
+    try {
+        const setting = settingStore()[created.id];
+        for (const type of worldTypes()) {
+            const defs = Array.isArray(data.fields?.[type]) ? data.fields[type] : null;
+            if (defs?.length) createObjectPreset(created.id, type, defs.map((d) => ({ ...structuredClone(d), id: genId() })));
+        }
+        if (isObject(data.fieldRoles)) setting.fieldRoles = structuredClone(data.fieldRoles);
+        if (typeof data.calendarId === 'string' && data.calendarId && calendarDefinition(data.calendarId)) setting.calendarId = data.calendarId;
+        const result = importObjects(created.id, data);
+        persistSettings();
+        changed(null);
+        return { setting: getSetting(created.id), ...result };
+    } catch (err) {
+        deleteSetting(created.id);
+        throw err;
+    }
+}
+
+// Copies objects from one setting into another, with new ids: a character
+// from one world showing up in another. References among the copied objects
+// follow; one to an object left behind points at the target's object of the
+// same type and name, or is dropped. Returns { idMap, droppedFields }.
+export function copyObjects(fromSettingId, ids, toSettingId) {
+    if (fromSettingId === toSettingId) throw new Error('copy objects to a different setting');
+    if (!settingStore()[toSettingId]) throw new Error(`setting ${JSON.stringify(toSettingId)} does not exist`);
+    const list = cleanIds(ids);
+    if (!list.length) throw new Error('no objects to copy');
+    const data = exportSetting(fromSettingId, { ids: list });
+    const found = new Set(worldTypes().flatMap((type) => Object.keys(data.objects[type])));
+    const missing = list.filter((id) => !found.has(id));
+    if (missing.length) throw new Error(`not in that setting: ${missing.join(', ')}`);
+    // The names of the objects left behind, so references to them can find a namesake.
+    const leftBehind = {};
+    const source = settingStore()[fromSettingId];
+    for (const type of worldTypes()) {
+        for (const record of Object.values(source.objects[type] ?? {})) if (!found.has(record.id)) leftBehind[record.id] = record.name;
+    }
+    const result = importObjects(toSettingId, data, leftBehind);
+    persistSettings();
+    changed(null);
+    return result;
 }
 
 // -------------------------------------------------------------- chat layer

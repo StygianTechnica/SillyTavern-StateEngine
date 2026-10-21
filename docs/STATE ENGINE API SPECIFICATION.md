@@ -2526,7 +2526,8 @@ before 2026-10-13) into the objects they mean.
 **24.2 Functions** (every one takes `(extensionId, instanceId, ...)` first)
 
 See the API Reference, section 6.7, for the full list: listObjectTypes,
-settings (listSettings ... ensureChatSetting), objects (listObjects,
+settings (listSettings ... ensureChatSetting; exportSetting, importSetting
+and copyObjects - below), objects (listObjects,
 getObject, getObjectByAlias, createChatObject, createObject, updateObject,
 addObjectAlias, confirmObject, resolveObject, mergeObjects, deleteObject,
 markObjectPresent/Absent), fields (getObjectFields, setObjectFields,
@@ -2537,6 +2538,23 @@ setObjectRuntimeValue), variants (add/update/
 delete/setObjectActiveVariant), prompt text (describeObject,
 getVariablePromptTexts) and the manager hook (registerObjectManager,
 openObjectManager, hasObjectManager).
+
+**Copies of worlds.** `exportSetting(settingId, { ids? })` returns a setting
+as plain data: `{ format: 'state-engine-setting', version: 1, exportedAt,
+name, autoConfirm, calendarId, fieldRoles, fields: { [type]: defs }, objects:
+{ [type]: { [id]: record } } }` - world types only (chats, runtime state and
+story objects never travel; `related_memory_ids` are left empty). `ids`
+limits it to those objects. `importSetting(data, { name?, autoConfirm? })`
+makes a new setting from it (the name made unique with " (2)"...): its
+fields, field roles and calendar, and its objects under NEW ids, with every
+reference between them (object fields, start values, `related_entity_ids`)
+following. Returns `{ setting, idMap: { [oldId]: newId }, droppedFields }`.
+An unknown `format` or `version` is refused. `copyObjects(fromSettingId, ids,
+toSettingId)` copies objects into another setting the same way; a reference
+to an object left behind points at the target's object of the same type and
+name (case-insensitive) when it has one, or is dropped; baseline fields the
+target does not have are dropped and listed in `droppedFields: { [newId]:
+[names] }`. Returns `{ idMap, droppedFields }`.
 
 **24.3 Extraction and runtime in the prompted update**
 

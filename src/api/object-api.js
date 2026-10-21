@@ -15,6 +15,8 @@
 // Settings
 //   listSettings / getSetting / createSetting({ name, autoConfirm? }) /
 //   updateSetting / deleteSetting
+//   exportSetting(settingId, { ids? }) / importSetting(data, { name?, autoConfirm? })
+//   copyObjects(fromSettingId, ids, toSettingId)   new ids, references follow
 //   getChatSetting / setChatSetting / ensureChatSetting (async, asks once)
 // Objects (an id says its type: "chr_...", "loc_...")
 //   listObjects(chatId, type, { settingId? })     a chat's objects of a type, or a setting's
@@ -104,6 +106,21 @@ export function updateSetting(extensionId, instanceId, settingId, patch = {}) {
 
 export function deleteSetting(extensionId, instanceId, settingId) {
     return guard('deleteSetting', extensionId, instanceId, () => objects.deleteSetting(settingId), false);
+}
+
+// A setting as plain data (its fields, field roles and canonical objects) /
+// a new setting made from one (new ids; { setting, idMap, droppedFields }) /
+// objects copied into another setting (new ids; { idMap, droppedFields }).
+export function exportSetting(extensionId, instanceId, settingId, options = {}) {
+    return guard('exportSetting', extensionId, instanceId, () => objects.exportSetting(settingId, options));
+}
+
+export function importSetting(extensionId, instanceId, data, options = {}) {
+    return guard('importSetting', extensionId, instanceId, () => objects.importSetting(data, options));
+}
+
+export function copyObjects(extensionId, instanceId, fromSettingId, ids, toSettingId) {
+    return guard('copyObjects', extensionId, instanceId, () => objects.copyObjects(fromSettingId, ids, toSettingId));
 }
 
 export function getChatSetting(extensionId, instanceId, chatId) {
