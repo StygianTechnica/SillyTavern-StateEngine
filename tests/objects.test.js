@@ -690,6 +690,48 @@ describe('runtime state', () => {
         expect(O.getObject(CHAT, mara.id).runtime.values.thought).toBeNull(); // not in the list
     });
 
+    // A real chat (2026-10-28): a small model's answer stopped before
+    // "__characters", asked last, every turn - no thought or mood for anyone.
+    it('asks the characters\' runtime in a call of its own when the answers would not fit in one, and again when an answer leaves it out', async () => {
+        listVar();
+        const rhys = O.createObject(story.id, 'character', { name: 'Rhys' });
+        const mara = O.createObject(story.id, 'character', { name: 'Mara' });
+        setVar(CHAT, 'pp__cast', [rhys.id, mara.id]);
+        context.chat = [{ is_user: false, name: 'GM', mes: 'Rhys and Mara lean on the bar.' }];
+        settings.get().responseLength = 60; // room for the cast, not for everyone's thoughts too
+        settings.get().promptedAnswerScale = 1;
+        const bodies = [];
+        callBackgroundLLM.mockImplementation(async (_ctx, _settings, messages) => {
+            const body = messages[0].content;
+            bodies.push(body);
+            if (body.includes('"__characters"')) return JSON.stringify({ __characters: { Rhys: { thought: 'Where is she?', mood: 'Curious', intent: 'Wait' }, Mara: { thought: 'Not him again.', mood: 'Suspicious', intent: 'Leave' } } });
+            return JSON.stringify({ pp__cast: ['Rhys', 'Mara'] });
+        });
+        await runPromptedStateUpdate('ai');
+        await vi.waitFor(() => expect(O.getObject(CHAT, mara.id).runtime.values.thought).toBe('Not him again.'));
+        expect(bodies.length).toBe(2);
+        expect(bodies[0]).toContain('"pp__cast"');
+        expect(bodies[0]).not.toContain('"__characters"');
+        expect(bodies[1]).toContain('"__characters"');
+        expect(bodies[1]).not.toContain('"pp__cast" [');
+        expect(O.getObject(CHAT, rhys.id).runtime.values).toMatchObject({ thought: 'Where is she?', mood: 'Curious' });
+
+        // Room for everything in one call, but the answer leaves the characters out: asked once more.
+        settings.get().responseLength = 4000;
+        bodies.length = 0;
+        let call = 0;
+        callBackgroundLLM.mockImplementation(async (_ctx, _settings, messages) => {
+            bodies.push(messages[0].content);
+            call++;
+            return call === 1 ? JSON.stringify({ pp__cast: ['Rhys', 'Mara'] }) : JSON.stringify({ __characters: { Rhys: { thought: 'Still waiting.', mood: 'Sad', intent: 'Wait' } } });
+        });
+        await runPromptedStateUpdate('ai');
+        await vi.waitFor(() => expect(O.getObject(CHAT, rhys.id).runtime.values.thought).toBe('Still waiting.'));
+        expect(bodies.length).toBe(2);
+        expect(bodies[0]).toContain('"__characters"');
+        expect(bodies[1]).toContain('"__characters"');
+    });
+
     // A real chat (2026-10-09): a small model answers in the shape of
     // "currently" - a thought left out of it once (empty) was never answered
     // again, and a thought shown in it was copied back word for word.

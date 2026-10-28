@@ -111,7 +111,9 @@ export function selectPromptMessages(chat, count, cap = count) {
     return messages.slice(start);
 }
 
-export function extractJsonObject(text) {
+// info: an object to report on how it was read - info.cut is set true when
+// the answer was cut off and only the values it finished were kept.
+export function extractJsonObject(text, info = null) {
     if (!text) return null;
     let s = String(text).trim();
     s = s.replace(/^```(?:json)?/i, '').replace(/```\s*$/i, '').trim();
@@ -137,6 +139,7 @@ export function extractJsonObject(text) {
     }
     // Maybe cut off before its end.
     const salvaged = salvageTruncatedObject(repairJson(s.slice(first)));
+    if (salvaged && info) info.cut = true;
     if (salvaged) {
         console.warn('[StateEngine] the model\'s answer was cut off before its end - kept the values it finished:',
             Object.keys(salvaged).join(', ') || '(none)', '- raise "Max response length" (or the connection profile\'s Max tokens) if this keeps happening');
@@ -195,8 +198,8 @@ export function extractJsonArray(text) {
 // variable was asked for and it is a list, a bare list answered in place of
 // the object ([{...}] for {"name": [{...}]}), as that variable's value.
 // Null when neither.
-export function extractJsonAnswer(raw, updateVars = []) {
-    const parsed = extractJsonObject(raw);
+export function extractJsonAnswer(raw, updateVars = [], info = null) {
+    const parsed = extractJsonObject(raw, info);
     if (parsed) return parsed;
     if (updateVars.length !== 1 || updateVars[0]?.type !== 'array') return parsed;
     const list = extractJsonArray(raw);

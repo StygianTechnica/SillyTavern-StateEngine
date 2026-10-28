@@ -30,23 +30,35 @@
 //
 // Returns an array of chunks, each an array of units (in the same shape as
 // `units`) - never empty chunks, and `[]` for `[]`/no units.
-export function chunkPromptUnits(units, maxChars) {
+//
+// maxAnswer (2026-10-28): a second budget, for the ANSWER - each unit's
+// `answer` is about how many characters the model writes for it. A long
+// list of short questions can still ask for more than the model may write
+// back (a thought, mood and intent for every character present), and an
+// answer cut off loses whatever comes last. Optional: without it, or with
+// units that carry no `answer`, chunking is by `size` alone, as before.
+export function chunkPromptUnits(units, maxChars, maxAnswer = Infinity) {
     const budget = Number.isFinite(maxChars) && maxChars > 0 ? maxChars : Infinity;
+    const answerBudget = Number.isFinite(maxAnswer) && maxAnswer > 0 ? maxAnswer : Infinity;
     const list = Array.isArray(units) ? units : [];
 
     const chunks = [];
     let current = [];
     let currentSize = 0;
+    let currentAnswer = 0;
 
     for (const unit of list) {
         const size = Number.isFinite(unit?.size) ? unit.size : 0;
-        if (current.length > 0 && currentSize + size > budget) {
+        const answer = Number.isFinite(unit?.answer) ? unit.answer : 0;
+        if (current.length > 0 && (currentSize + size > budget || currentAnswer + answer > answerBudget)) {
             chunks.push(current);
             current = [];
             currentSize = 0;
+            currentAnswer = 0;
         }
         current.push(unit);
         currentSize += size;
+        currentAnswer += answer;
     }
     if (current.length > 0) chunks.push(current);
 

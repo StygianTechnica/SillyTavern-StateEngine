@@ -420,6 +420,12 @@ export const DEFAULT_SETTINGS = Object.freeze({
     // calls (src/core/prompt-chunking.js) instead of one oversized one - no
     // per-variable configuration needed.
     maxPromptedVariableChars: null,
+    // The ACTIVE answer budget, as a share of the configured one (what
+    // responseLength allows): answers that come back cut off shrink it, a
+    // run of complete ones grows it back toward 1 (prompted-engine.js
+    // adaptAnswerScale). promptedCompleteStreak counts the complete ones.
+    promptedAnswerScale: 1,
+    promptedCompleteStreak: 0,
     showTrackerPanel: false,
     trackerPanelPos: { top: 100, left: 100 },
     // null width/height means "use the CSS default" - only set once the
@@ -515,6 +521,8 @@ export function getSettings() {
     if (settings.maxPromptedVariableChars === undefined || settings.maxPromptedVariableChars === null) {
         settings.maxPromptedVariableChars = computeDefaultMaxPromptedVariableChars(context);
     }
+    if (!(Number(settings.promptedAnswerScale) > 0 && Number(settings.promptedAnswerScale) <= 1)) settings.promptedAnswerScale = 1;
+    if (!Number.isInteger(settings.promptedCompleteStreak) || settings.promptedCompleteStreak < 0) settings.promptedCompleteStreak = 0;
     if (!settings.variableStore || typeof settings.variableStore !== 'object') settings.variableStore = { chats: {} };
     if (!settings.variableStore.chats || typeof settings.variableStore.chats !== 'object') settings.variableStore.chats = {};
     if (settings.showTrackerPanel === undefined) settings.showTrackerPanel = false;

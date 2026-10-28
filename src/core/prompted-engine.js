@@ -1,6 +1,6 @@
 // State Engine — background "prompted" variable updates (LLM-driven)
 
-import { LOG_PREFIX, DEFAULT_CALENDAR_ID, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED_VARIABLE_RULES, getSettings } from './settings-core.js';
+import { LOG_PREFIX, DEFAULT_CALENDAR_ID, DEFAULT_PROMPTED_HEADER, DEFAULT_UNIFIED_VARIABLE_RULES, getSettings, persistSettings } from './settings-core.js';
 import { getPresetsForChat, getAllVariablesFromPresets } from './preset-manager.js';
 import { getDefaultValue } from './variable-schema.js';
 import { isImageType } from './image-variables.js';
@@ -163,18 +163,118 @@ function incrementVarLine(chatId, def) {
 // already works with - a caller with everything fitting in one chunk gets
 // exactly ONE chunk back, containing every variable, unchanged from before
 // chunking existed.
-export function chunkPromptedVariables(chatId, updateVars, incrementVars, maxChars) {
+//
+// The ANSWER is sized too (2026-10-28): a list of short questions can ask for
+// more than the model may write back, and an answer cut off loses whatever
+// comes last - in a real chat, every character's thought, mood and intent,
+// asked last, never came back. So each unit carries about how many
+// characters its answer takes, and `maxAnswer` (the active answer budget,
+// answerBudget()) bounds each chunk's too. Each object type's runtime fields
+// (its "__characters" key) are a unit of their own, right after the last
+// variable holding that type, so they are sized and chunked like the rest.
+// runtime: [{ type, defs }] - the object types to ask runtime fields for;
+// derived from updateVars when not given (a follow-up passes its own).
+export function chunkPromptedVariables(chatId, updateVars, incrementVars, maxChars, maxAnswer = Infinity, runtime = null) {
+    const updates = updateVars.map((def) => { const line = updateVarLine(chatId, def); return { def, kind: 'update', line, size: line.length, answer: answerSizeOf(chatId, def) }; });
+    const types = runtime ?? runtimeTypesOf(updateVars);
+    // The line itself is written when its chunk runs (after the chat's
+    // setting is settled and earlier chunks' answers are in) - here it only
+    // sizes the unit.
+    const runtimeUnits = types.map((r) => {
+        const line = runtimeLine(chatId, getObjectType(r.type), r.defs);
+        return { kind: 'runtime', type: r.type, defs: r.defs, line, size: line.length || 200, answer: runtimeAnswerSize(chatId, r.type, r.defs) };
+    });
+    // Each type's runtime right after the last variable that holds that type.
+    const ordered = [];
+    for (const u of updates) {
+        ordered.push(u);
+        const lastOfType = isObjectDefinition(u.def) && !updates.slice(updates.indexOf(u) + 1).some((x) => isObjectDefinition(x.def) && objectTypeOf(x.def) === objectTypeOf(u.def));
+        if (lastOfType) ordered.push(...runtimeUnits.filter((r) => r.type === objectTypeOf(u.def) && !ordered.includes(r)));
+    }
+    ordered.push(...runtimeUnits.filter((r) => !ordered.includes(r)));
     const units = [
-        ...updateVars.map((def) => { const line = updateVarLine(chatId, def); return { def, kind: 'update', line, size: line.length }; }),
-        ...incrementVars.map((def) => { const line = incrementVarLine(chatId, def); return { def, kind: 'increment', line, size: line.length }; }),
+        ...ordered,
+        ...incrementVars.map((def) => { const line = incrementVarLine(chatId, def); return { def, kind: 'increment', line, size: line.length, answer: 12 + def.name.length }; }),
     ];
-    const chunks = chunkPromptUnits(units, maxChars);
+    const chunks = chunkPromptUnits(units, maxChars, maxAnswer);
     return chunks.map((chunk) => ({
         updateVars: chunk.filter((u) => u.kind === 'update').map((u) => u.def),
         updateVarLines: chunk.filter((u) => u.kind === 'update').map((u) => u.line).join('\n'),
         incrementVars: chunk.filter((u) => u.kind === 'increment').map((u) => u.def),
         incrementVarLines: chunk.filter((u) => u.kind === 'increment').map((u) => u.line).join('\n'),
+        runtime: chunk.filter((u) => u.kind === 'runtime').map((u) => ({ type: u.type, defs: u.defs })),
     }));
+}
+
+// The object types `defs` hold, with the variables holding each:
+// [{ type, defs }], in order of first appearance.
+function runtimeTypesOf(defs) {
+    const byType = new Map();
+    for (const def of defs.filter(isObjectDefinition)) {
+        const type = objectTypeOf(def);
+        if (!byType.has(type)) byType.set(type, []);
+        byType.get(type).push(def);
+    }
+    return [...byType].map(([type, list]) => ({ type, defs: list }));
+}
+
+// About how many characters the model writes to answer one variable: its
+// name, quotes and value. An estimate for sizing chunks - never a limit.
+export function answerSizeOf(chatId, def) {
+    const key = def.name.length + 6;
+    switch (def.type) {
+        case 'boolean': case 'number': case 'datetime': return key + 12;
+        case 'enum': return key + 20;
+        case 'object': return key + 40;
+        case 'array': {
+            const value = getVar(chatId, def.name)?.value;
+            const items = Math.max(2, (Array.isArray(value) ? value.length : 0) + 1);
+            return key + items * (def.itemType === 'object' ? 30 : def.itemSchema ? 120 : 25);
+        }
+        default: return key + (def.multiline ? 400 : 160);
+    }
+}
+
+// About how many characters the runtime answer for one object type takes:
+// each object held, with every prompted field.
+function runtimeAnswerSize(chatId, type, defs) {
+    const fields = getObjectFields(getChatSetting(chatId) ?? DEFAULT_SETTING_ID, type).filter((f) => f.behaviors?.prompted && PROMPTABLE.has(f.type));
+    const perField = (f) => ({ boolean: 16, number: 16, enum: 26, object: 40, array: 70 }[f.type] ?? (f.multiline ? 260 : 120)) + f.name.length;
+    const each = 30 + fields.reduce((n, f) => n + perField(f), 0);
+    const held = objectsHeld(chatId, defs)[type]?.size ?? 0;
+    // One more for someone the answer may add to the list.
+    return 20 + each * (held + 1);
+}
+
+// The answer budget in characters: what responseLength (tokens) allows,
+// at about 3.5 characters a token with a margin, scaled by the active share
+// (settings.promptedAnswerScale - smaller after answers came back cut off).
+export function answerBudget(settings) {
+    const tokens = Number(settings?.responseLength) || 300;
+    const scale = Number(settings?.promptedAnswerScale) > 0 ? Math.min(1, Number(settings.promptedAnswerScale)) : 1;
+    return Math.round(tokens * 3.5 * 0.85 * scale);
+}
+
+// Narrowing and widening the active answer budget: an answer cut off
+// shrinks it by a quarter (down to a quarter of the configured one), and
+// every 5 complete answers in a row grow it back by a tenth. Changes and
+// returns `settings` (the caller persists). -> { scale, changed }
+export const ANSWER_SCALE_MIN = 0.25;
+export function adaptAnswerScale(settings, { cut }) {
+    const before = Number(settings.promptedAnswerScale) > 0 ? Math.min(1, Number(settings.promptedAnswerScale)) : 1;
+    let scale = before;
+    if (cut) {
+        scale = Math.max(ANSWER_SCALE_MIN, Math.round(before * 0.75 * 100) / 100);
+        settings.promptedCompleteStreak = 0;
+    } else {
+        settings.promptedCompleteStreak = (Number(settings.promptedCompleteStreak) || 0) + 1;
+        if (settings.promptedCompleteStreak >= 5 && before < 1) {
+            scale = Math.min(1, Math.round(before * 1.1 * 100) / 100);
+            settings.promptedCompleteStreak = 0;
+        }
+    }
+    settings.promptedAnswerScale = scale;
+    return { scale, changed: scale !== before };
 }
 
 // Applies one parsed LLM response against one chunk's updateVars/incrementVars,
@@ -191,7 +291,9 @@ function isLoneRecord(def, value) {
     return fields.length > 0 && fields.every((field) => Object.prototype.hasOwnProperty.call(value, field));
 }
 
-function applyPromptedResponse(chatId, updateVars, incrementVars, answer, { source = '' } = {}) {
+// runtime: [{ type, defs }] - the object types whose runtime fields were
+// asked (null: those updateVars hold, as before chunks carried their own).
+function applyPromptedResponse(chatId, updateVars, incrementVars, answer, { source = '', runtime = null } = {}) {
     // A shortened variable name in the answer is taken as the one it means.
     const parsed = matchAnswerKeys(answer, [...updateVars, ...incrementVars].map((def) => def.name));
     let updatedCount = 0;
@@ -298,7 +400,10 @@ function applyPromptedResponse(chatId, updateVars, incrementVars, answer, { sour
     // Object fields: each type's key ("__characters"), by name, for the
     // objects the chunk's object variables of that type hold now (after this
     // answer) only.
-    for (const [type, ids] of Object.entries(objectsHeld(chatId, updateVars))) {
+    const runtimeDefs = runtime ? runtime.flatMap((r) => r.defs) : updateVars;
+    const askedTypes = runtime ? new Set(runtime.map((r) => r.type)) : null;
+    for (const [type, ids] of Object.entries(objectsHeld(chatId, runtimeDefs))) {
+        if (askedTypes && !askedTypes.has(type)) continue;
         const answer = parsed[runtimeKey(getObjectType(type))];
         if (!ids.size || !answer || typeof answer !== 'object' || Array.isArray(answer)) continue;
         try {
@@ -427,15 +532,21 @@ async function runPromptedChunk(context, settings, contextSection, chunk) {
     const chatId = context.chatId;
     const { updateVars, incrementVars, incrementVarLines } = chunk;
     let { updateVarLines } = chunk;
+    // The object types whose runtime fields this chunk asks for: its own
+    // (chunkPromptedVariables), else those its variables hold.
+    const runtime = chunk.runtime ?? runtimeTypesOf(updateVars);
     // An object answer needs the chat's setting (asked on first use) - its
     // runtime fields too, so before the prompt is built.
-    if (updateVars.some(isObjectDefinition)) await ensureChatSetting(chatId, askChatSetting);
-    const defsByType = {};
-    for (const def of updateVars.filter(isObjectDefinition)) (defsByType[objectTypeOf(def)] ??= []).push(def);
-    for (const [type, defs] of Object.entries(defsByType)) {
+    if (updateVars.some(isObjectDefinition) || runtime.length) await ensureChatSetting(chatId, askChatSetting);
+    const asked = [];
+    for (const { type, defs } of runtime) {
         const line = runtimeLine(chatId, getObjectType(type), defs);
-        if (line) updateVarLines = `${updateVarLines}\n${line}`;
+        if (!line) continue;
+        updateVarLines = updateVarLines ? `${updateVarLines}\n${line}` : line;
+        asked.push({ type, defs });
     }
+    // Nothing left to ask (a type with no prompted runtime fields).
+    if (!updateVarLines && !incrementVarLines) return { updatedCount: 0, incrementedCount: 0, leftover: null, cut: false };
 
     const promptSections = [
         settings.promptedHeader || DEFAULT_PROMPTED_HEADER,
@@ -453,13 +564,30 @@ async function runPromptedChunk(context, settings, contextSection, chunk) {
     const maxTokens = Number(settings.responseLength) || 300;
 
     const raw = await callBackgroundLLM(context, settings, messages, maxTokens);
-    const parsed = extractJsonAnswer(raw, incrementVars.length ? [] : updateVars);
+    const info = { cut: false };
+    const parsed = extractJsonAnswer(raw, incrementVars.length ? [] : updateVars, info);
     if (!parsed) {
         console.warn(LOG_PREFIX, 'could not parse a JSON object from the model response:', raw);
         throw new Error('response was not valid JSON');
     }
     const latest = Array.isArray(context.chat) ? context.chat[context.chat.length - 1] : null;
-    return applyPromptedResponse(chatId, updateVars, incrementVars, parsed, { source: typeof latest?.mes === 'string' ? latest.mes : '' });
+    const result = applyPromptedResponse(chatId, updateVars, incrementVars, parsed, { source: typeof latest?.mes === 'string' ? latest.mes : '', runtime: asked });
+    return { ...result, cut: info.cut, leftover: leftoverOf(parsed, { updateVars, incrementVars, runtime: asked, cut: info.cut }) };
+}
+
+// What an answer left unanswered, to ask again: when it was cut off, every
+// variable it never reached; and, cut off or not, an object type's runtime
+// key it left out (a small model that stops after the plain values). Null
+// when nothing is missing.
+export function leftoverOf(parsed, { updateVars = [], incrementVars = [], runtime = [], cut = false }) {
+    const answered = matchAnswerKeys(parsed ?? {}, [...updateVars, ...incrementVars].map((def) => def.name));
+    const has = (key) => Object.prototype.hasOwnProperty.call(answered, key);
+    const out = {
+        updateVars: cut ? updateVars.filter((def) => !has(def.name)) : [],
+        incrementVars: cut ? incrementVars.filter((def) => !has(def.name)) : [],
+        runtime: runtime.filter((r) => !has(runtimeKey(getObjectType(r.type)))),
+    };
+    return out.updateVars.length || out.incrementVars.length || out.runtime.length ? out : null;
 }
 
 // Runs every chunk SEQUENTIALLY (never in parallel - one chunk's LLM call is
@@ -472,11 +600,28 @@ async function runPromptedChunk(context, settings, contextSection, chunk) {
 // "part N of M" status between chunks only when there actually IS more than
 // one (a single-chunk run - the overwhelming common case - shows exactly the
 // same status text it always has).
-async function runPromptedChunksSequentially(context, settings, contextSection, chunks) {
+//
+// Answers cut off (2026-10-28): each chunk's answer narrows or widens the
+// active answer budget (adaptAnswerScale), so the next update chunks
+// smaller after a cut and grows back once answers come back whole. What a
+// chunk's answer left unanswered (leftoverOf) is asked once more, in
+// follow-up chunks sized by the narrowed budget, after the planned ones -
+// never a third time.
+async function runPromptedChunksSequentially(context, settings, contextSection, chunks, { maxChars = Infinity } = {}) {
     let totalUpdated = 0;
     let totalIncremented = 0;
     let totalUpdateVars = 0;
     let totalIncrementVars = 0;
+    const leftovers = { updateVars: [], incrementVars: [], runtime: [] };
+    const noteAnswer = (cut) => {
+        const { scale, changed } = adaptAnswerScale(settings, { cut });
+        if (changed) {
+            console.info(LOG_PREFIX, cut
+                ? `an answer came back cut off - asking in smaller parts now (${Math.round(scale * 100)}% of the configured answer length)`
+                : `answers are coming back whole - asking in larger parts again (${Math.round(scale * 100)}% of the configured answer length)`);
+        }
+        persistSettings();
+    };
 
     for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
@@ -485,9 +630,15 @@ async function runPromptedChunksSequentially(context, settings, contextSection, 
         if (chunks.length > 1) setStatus(`Updating state (part ${i + 1} of ${chunks.length})…`);
 
         try {
-            const { updatedCount, incrementedCount } = await runPromptedChunk(context, settings, contextSection, chunk);
+            const { updatedCount, incrementedCount, cut, leftover } = await runPromptedChunk(context, settings, contextSection, chunk);
             totalUpdated += updatedCount;
             totalIncremented += incrementedCount;
+            noteAnswer(cut);
+            if (leftover) {
+                leftovers.updateVars.push(...leftover.updateVars);
+                leftovers.incrementVars.push(...leftover.incrementVars);
+                leftovers.runtime.push(...leftover.runtime);
+            }
         } catch (err) {
             console.warn(LOG_PREFIX, 'State Engine background LLM failed gracefully', err);
             if (chunks.length === 1) {
@@ -502,6 +653,25 @@ async function runPromptedChunksSequentially(context, settings, contextSection, 
                     true,
                 );
                 return;
+            }
+        }
+    }
+
+    // Once more for what the answers left out, in parts sized by the
+    // (now narrowed) active budget.
+    if (leftovers.updateVars.length || leftovers.incrementVars.length || leftovers.runtime.length) {
+        const chatId = context.chatId;
+        const again = chunkPromptedVariables(chatId, leftovers.updateVars, leftovers.incrementVars, maxChars, answerBudget(settings), leftovers.runtime);
+        console.info(LOG_PREFIX, `asking again for what the answer left out: ${[...leftovers.updateVars.map((d) => d.name), ...leftovers.incrementVars.map((d) => d.name), ...leftovers.runtime.map((r) => runtimeKey(getObjectType(r.type)))].join(', ')}`);
+        for (let i = 0; i < again.length; i++) {
+            setStatus(`Updating state (asking again${again.length > 1 ? `, part ${i + 1} of ${again.length}` : ''})…`);
+            try {
+                const { updatedCount, incrementedCount, cut } = await runPromptedChunk(context, settings, contextSection, again[i]);
+                totalUpdated += updatedCount;
+                totalIncremented += incrementedCount;
+                noteAnswer(cut);
+            } catch (err) {
+                console.warn(LOG_PREFIX, 'State Engine background LLM failed gracefully (asking again)', err);
             }
         }
     }
@@ -571,14 +741,16 @@ export async function runPromptedStateUpdate(triggerType) {
             const contextSection = buildRecentMessagesSection(recent, { name1: context.name1, name2: context.name2, maxMessageLength });
 
             const maxChars = Number(settings.maxPromptedVariableChars) || Infinity;
-            const chunks = chunkPromptedVariables(chatId, updateVars, incrementVars, maxChars);
+            // Sized by the prompt AND by the answer the model may write back
+            // (the active budget - narrowed after answers came back cut off).
+            const chunks = chunkPromptedVariables(chatId, updateVars, incrementVars, maxChars, answerBudget(settings));
 
             // Fire-and-forget: do NOT await this. The chat LLM pipeline must
             // never wait on this. Every chunk's LLM call, parsing, and
             // variable writes happen inside runPromptedChunksSequentially(),
             // on its own time, after this function has already returned to
             // its caller.
-            runPromptedChunksSequentially(context, settings, contextSection, chunks)
+            runPromptedChunksSequentially(context, settings, contextSection, chunks, { maxChars })
                 .catch((err) => {
                     console.warn(LOG_PREFIX, 'State Engine background LLM failed gracefully', err);
                     setStatus('Update failed — see browser console for details.', true);
