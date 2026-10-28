@@ -554,6 +554,18 @@ describe('runtime state', () => {
         for (const type of OBJECT_TYPE_IDS) expect(Array.isArray(O.getRuntimeFields(story.id, type))).toBe(true);
     });
 
+    it('a save that leaves out `fresh` keeps a field new each turn (an editor saving a mood\'s images turned the thought off)', () => {
+        const views = O.getRuntimeFields(story.id, 'character').map(({ fresh, ...view }) => view);
+        O.setRuntimeFields(story.id, 'character', views.map((v) => (v.name === 'mood' ? { ...v, images: { Angry: 'a.png' } } : v)));
+        const after = O.getRuntimeFields(story.id, 'character');
+        expect(after.find((f) => f.name === 'thought').fresh).toBe(true);
+        expect(after.find((f) => f.name === 'intent').fresh).toBe(true);
+        expect(after.find((f) => f.name === 'mood').images).toEqual({ Angry: 'a.png' });
+        // Said outright, it still turns off.
+        O.setRuntimeFields(story.id, 'character', views.map((v) => (v.name === 'thought' ? { ...v, fresh: false } : v)));
+        expect(O.getRuntimeFields(story.id, 'character').find((f) => f.name === 'thought').fresh).toBeUndefined();
+    });
+
     it('custom fields are added and removed; built-ins stay; enum values and names are validated', () => {
         const fields = O.setRuntimeFields(story.id, 'character', [
             { name: 'amorousness', type: 'number', prompted: true, min: 0, max: 100 },

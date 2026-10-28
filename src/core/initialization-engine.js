@@ -11,6 +11,7 @@ import { copyChatRoles, migrateRoleData } from './roles.js';
 import { getChatSetting, setChatSetting, ensureChatSetting, migrateObjectData, migrateObjectFields } from './objects.js';
 import { migrateSceneLocation } from './scene-location-migration.js';
 import { migratePromptRefresh } from './prompt-refresh-migration.js';
+import { migrateFreshFields } from './fresh-field-migration.js';
 import { askChatSetting } from '../ui/setting-prompt.js';
 
 
@@ -320,6 +321,12 @@ export function runStartupOnce() {
         migratePromptRefresh();
     } catch (err) {
         console.warn(LOG_PREFIX, 'prompt refresh migration failed (gracefully handled)', err);
+    }
+    // A thought and intent that an editor's save stopped asking new each turn.
+    try {
+        migrateFreshFields();
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'fresh field migration failed (gracefully handled)', err);
     }
     runPromptedStateUpdate('startup');
 }

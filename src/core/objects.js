@@ -289,8 +289,12 @@ export function setRuntimeFields(settingId, type, fields) {
         }
         const view = fromRuntimeField({ ...raw, type: raw.type ?? 'string' }, t);
         if (!old) return view;
+        // A view without `fresh` keeps the field's NEW EACH TURN as it was
+        // (2026-10-28): an editor that left it out - saving a mood's images -
+        // turned a thought's off, and the model copied the old one every turn.
+        const newEachTurn = raw.fresh === undefined ? old.prompted?.newEachTurn === true : view.prompted.newEachTurn;
         return {
-            ...old, ...view, id: old.id, label: old.label, clearOnLeave: old.clearOnLeave, enumImages: view.enumImages, prompted: { ...old.prompted, ...view.prompted },
+            ...old, ...view, id: old.id, label: old.label, clearOnLeave: old.clearOnLeave, enumImages: view.enumImages, prompted: { ...old.prompted, ...view.prompted, newEachTurn },
         };
     });
     const roleFields = new Set(getFieldRoles(settingId, type).map((r) => r.assigned).filter(Boolean));
