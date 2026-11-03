@@ -40,6 +40,15 @@ describe('a skip the post makes', () => {
         expect(skip('The night passed without incident.')).toEqual({ advance: 'until morning', sameDay: false });
     });
 
+    it('waking to the next day', () => {
+        const post = 'He watched various entertainment streams until evening before going to sleep for the night. He woke the next morning well-rested and ready for his day and the demonstration he was about to be administered.';
+        expect(skip(post)).toEqual({ advance: 'the next morning', sameDay: false });
+        expect(skip('Cyril awoke early the following day.')).toEqual({ advance: 'the next morning', sameDay: false });
+        expect(skip('She woke at dawn, stiff from the floor.')).toEqual({ advance: 'until morning', sameDay: false });
+        expect(skip('He would wake the next morning sore.')).toBeNull();
+        expect(skip('Cyril decided to get up early the next morning.')).toBeNull();
+    });
+
     it('the furthest skip a post tells', () => {
         expect(skip('The rest of the day went by. Cyril managed to pass the night without nightmares.')).toEqual({ advance: 'until morning', sameDay: false });
     });

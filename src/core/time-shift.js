@@ -130,6 +130,11 @@ const PASSAGES = [
     [/\bthe (?:day|afternoon) (?:wore on|slipped away|passed|went by|dragged on)\b/, () => ({ advance: 'until evening', sameDay: true })],
     [/\b(?:pass(?:ed)?|slept through|sleep through|got through|made it through|spent) the (?:night|rest of the night)\b|\bthe night (?:passed|went by|wore on|slipped by)\b/, () => ({ advance: 'until morning', sameDay: false })],
     [/\b(?:morning|dawn|daybreak) (?:dawned|came|arrived|broke)\b/, () => ({ advance: 'until morning', sameDay: false })],
+    // Waking to it: "He woke the next morning well-rested" (Assassins Inc,
+    // a night's sleep that left the clock on the evening before). Only a
+    // waking told as done - "decided to leave the next morning" is a plan.
+    [/\b(?<!to )(?:woke|awoke|awakened|wakes|awakes|got up|rose|stirred)(?: up)?(?: \w+){0,3}? (?:the )?(?:next|following) (?:morning|day)\b/, () => ({ advance: 'the next morning', sameDay: false })],
+    [/\b(?:woke|awoke|awakened|wakes|awakes)(?: up)? (?:at|with|to) (?:the )?(?:dawn|daybreak|sunrise|first light)\b/, () => ({ advance: 'until morning', sameDay: false })],
     [/\bnight (?:fell|came|had fallen|settled in)\b|\bthe evening (?:came|wore on|drew on)\b/, () => ({ advance: 'until evening', sameDay: true })],
 ];
 // The furthest skip the post makes, in the order it tells them: "the rest
