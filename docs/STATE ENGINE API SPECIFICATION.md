@@ -1286,6 +1286,29 @@ advanceDateTime(extensionId, instanceId, calendarId, scalarTime, text)
   "3 days"; else any instruction a prompted datetime update accepts
   ("advance 1 season", "Stormfall 17"). For extensions that keep their own
   clock and need the same arithmetic State Engine uses.
+
+readTimeShift(extensionId, instanceId, text)
+  -> { skip, reached, elapsed, delta }
+  Reads story PROSE - a player's post, a reply - for the time it passes or
+  reaches (src/core/time-shift.js). Each is an instruction advanceDateTime
+  resolves, or empty:
+    skip     { advance, sameDay } | null - a skip the text makes, at the
+             start of a sentence ("Early the next morning, ...", "Two days
+             later") or told in it ("The rest of the day went by",
+             "Morning dawned", "passed the night"); the furthest one told.
+             sameDay: the advance never runs on into tomorrow ("later that
+             evening" when the evening is past means no advance).
+    reached  { phrase, fraction } | null - the latest part of the day the
+             text shows the scene reaching ("the sun began to set"):
+             phrase dawn/morning/noon/sunset/night, fraction of the day.
+    elapsed  '' | span - time told as passed ("two hours later", "after
+             several hours", "the hours crept by" -> "a few hours").
+    delta    '' | advance - a short "how much time passed" answer (a
+             prompted scene_deltatime) read as an advance, never a
+             description taken for a jump ("minutes into the night" -> "a
+             few minutes"; "late evening" -> '').
+  Speech and what will be ("We ride at dawn", "he would leave the next
+  morning") never count. No calendar: pass the advance to advanceDateTime.
 ```
 
 **Following the setting's calendar.** A setting can name the calendar its

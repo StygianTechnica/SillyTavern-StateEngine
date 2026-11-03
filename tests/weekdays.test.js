@@ -121,6 +121,18 @@ describe('time primitives', () => {
     });
 });
 
+describe('readTimeShift', () => {
+    const at = (h, m = 0) => Date.UTC(2026, 8, 18, h, m) / 1000;
+    it('reads a post through the API, and its advance resolves on a calendar', () => {
+        const read = stateEngine.readTimeShift('pp', instanceId, 'Cyril managed to pass the night. Before too long, morning dawned.');
+        expect(read.skip).toEqual({ advance: 'until morning', sameDay: false });
+        const next = stateEngine.advanceDateTime('pp', instanceId, 'gregorian', at(12), read.skip.advance);
+        expect(next).toBeGreaterThan(at(12) + 12 * 3600);
+        expect(next).toBeLessThan(at(12) + 24 * 3600);
+        expect(stateEngine.readTimeShift('pp', instanceId, 'Graxx paced the hall.')).toEqual({ skip: null, reached: null, elapsed: '', delta: '' });
+    });
+});
+
 describe('advanceDateTime', () => {
     const at = (h, m = 0) => Date.UTC(2026, 8, 18, h, m) / 1000;
     const adv = (t, text) => stateEngine.advanceDateTime('pp', instanceId, 'gregorian', t, text);

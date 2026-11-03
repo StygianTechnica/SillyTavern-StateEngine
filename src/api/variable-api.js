@@ -39,6 +39,7 @@ import { findPresetEntry } from './preset-api.js';
 import { blankDefinition } from '../core/variable-schema.js';
 import { isImageType, checkImageValue, emptyImageValue } from '../core/image-variables.js';
 import * as calendarEngine from '../core/calendar-engine.js';
+import * as timeShift from '../core/time-shift.js';
 import { getCalendar, toScalar, normalizeForDatetimeMode } from '../core/calendar-engine.js';
 import { isVariableNameTaken } from '../core/preset-manager.js';
 import { seedVariablesForChat, resetValueIfTypeChanged, deleteVariableValueEverywhere } from '../core/chat-state.js';
@@ -705,6 +706,16 @@ export function advanceDateTime(extensionId, instanceId, calendarId, scalarTime,
     if (!Number.isFinite(current)) return null;
     return calendarEngine.resolveInstruction(calendarId, current, text, { semanticTimeOfDay: true, forward: true })
         ?? calendarEngine.resolveInstruction(calendarId, current, `advance ${text}`);
+}
+
+// The time a piece of story prose passes or reaches - a player's post, a
+// reply (src/core/time-shift.js): { skip, reached, elapsed, delta }, each
+// an instruction advanceDateTime understands, or null / ''. For extensions
+// that keep their own clock and must read time in prose the way State
+// Engine does. No calendar: the caller resolves the instruction on its own.
+export function readTimeShift(extensionId, instanceId, text) {
+    resolveCallerRecord(extensionId, instanceId);
+    return timeShift.readTimeShift(typeof text === 'string' ? text : '');
 }
 
 // ---------------------------------------------------------------------------
