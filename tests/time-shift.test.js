@@ -103,6 +103,16 @@ describe('time told as passed', () => {
         expect(elapsed('Throughout the following hours, the rain kept on.')).toBe('a few hours');
     });
 
+    // Assassins Inc #240, #242: said of an ordinary evening.
+    it('never "after a long day", an idiom - only a counted day', () => {
+        expect(elapsed('"It\'s the perfect place for me to unwind after a long day of work."')).toBe('');
+        expect(elapsed('"I find it helps me relax after a long day."')).toBe('');
+        expect(elapsed('After a hard day, Zane cooked.')).toBe('');
+        expect(elapsed('After two days of rain, the roads flooded.')).toBe('two days');
+        expect(elapsed('After several days, the envoy returned.')).toBe('a few days');
+        expect(elapsed('After an hour, he came back.')).toBe('one hour');
+    });
+
     it('uncounted hours creeping by', () => {
         expect(elapsed("His glowing optics never wavered from the door, even as the hours crept by and the stronghold quieted into the late evening.")).toBe('a few hours');
     });

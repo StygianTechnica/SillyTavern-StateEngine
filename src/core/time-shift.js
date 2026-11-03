@@ -159,7 +159,12 @@ const UNIT = String.raw`(?<u>hours?|days?)`;
 const ELAPSED = [
     new RegExp(String.raw`\b(?:has|had|have|'s|'d)\s+(?:been\s+)?(?:\w+\s+){0,4}?for\s+(?:${COUNT}\s+)?(?<u>hours?)\b`, 'i'),
     new RegExp(String.raw`\b${COUNT}\s+${UNIT}\s+(?:later|passed|had passed|went by|had gone by|crept by|crawled by|slipped by|dragged on|dragged by)\b`, 'i'),
-    new RegExp(String.raw`\b(?:after|over)\s+(?:${COUNT}\s+)?(?:long\s+)?${UNIT}\b`, 'i'),
+    // "After several hours", "after an hour", "after two days" - but a day
+    // only when it is counted: "after a long day" is an idiom, said of any
+    // evening ("It helps me relax after a long day"), and three of them
+    // moved a clock three days on.
+    new RegExp(String.raw`\b(?:after|over)\s+(?:${COUNT}\s+)?(?:long\s+)?(?<u>hours?)\b`, 'i'),
+    new RegExp(String.raw`\b(?:after|over)\s+(?<n>two|three|four|five|six|seven|eight|nine|ten|twelve|a few|few|several|many|some|\d+)\s+(?:long\s+)?(?<u>days?)\b`, 'i'),
     // "As the hours crept by" - no count, a few.
     new RegExp(String.raw`\bthe\s+${UNIT}\s+(?:crept|crawled|slipped|dragged|ticked|went|wore)\s+(?:by|on|past)\b`, 'i'),
 ];
