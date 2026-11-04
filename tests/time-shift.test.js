@@ -49,6 +49,16 @@ describe('a skip the post makes', () => {
         expect(skip('Cyril decided to get up early the next morning.')).toBeNull();
     });
 
+    // Assassins Inc #403: the day never turned.
+    it('"it was the next day"', () => {
+        expect(skip('It was the next day when Cyril awoke in his own room once more.  There was no longer a data flow locking down the implant.')).toEqual({ advance: 'the next morning', sameDay: false });
+        expect(skip('It was now early the following morning.')).toEqual({ advance: 'the next morning', sameDay: false });
+        expect(skip('It was the following evening, and they met again.')).toEqual({ advance: 'the next evening', sameDay: false });
+        expect(skip('It was the morning after, and the rain had stopped.')).toEqual({ advance: 'the next morning', sameDay: false });
+        expect(skip('"It was the next day that I first saw her," Adam said.')).toBeNull();
+        expect(skip('It would be the next day before they knew.')).toBeNull();
+    });
+
     it('the furthest skip a post tells', () => {
         expect(skip('The rest of the day went by. Cyril managed to pass the night without nightmares.')).toEqual({ advance: 'until morning', sameDay: false });
     });

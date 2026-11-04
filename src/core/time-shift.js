@@ -120,6 +120,11 @@ const SKIP_OPENERS = [
     [new RegExp(String.raw`^(?:later\s+)?that\s+${SKIP_PART}\b`), (m) => ({ advance: `until ${PART_WORD[m.groups.part] ?? m.groups.part}`, sameDay: true })],
     [new RegExp(String.raw`^(?:by|at|come)\s+(?:the\s+)?${SKIP_PART}\b`), (m) => ({ advance: `until ${PART_WORD[m.groups.part] ?? m.groups.part}`, sameDay: !['dawn', 'daybreak', 'sunrise', 'morning'].includes(m.groups.part) })],
     [/^overnight\b/, () => ({ advance: 'the next morning', sameDay: false })],
+    // "It was the next day when Cyril awoke" (Assassins Inc #403, a night
+    // the clock never turned), "It was now early the following morning",
+    // "It was the morning after".
+    [new RegExp(String.raw`^it\s+(?:was|is)\s+(?:now\s+|already\s+)?(?:(?:very\s+)?(?:early|late)\s+(?:on\s+)?)?(?:on\s+)?(?:the\s+)?(?:next|following)\s+(?<part>day|dawn|daybreak|sunrise|morning|noon|midday|afternoon|evening|night)\b`), (m) => ({ advance: m.groups.part === 'day' ? 'the next morning' : `the next ${PART_WORD[m.groups.part] ?? m.groups.part}`, sameDay: false })],
+    [/^it\s+(?:was|is)\s+(?:now\s+|already\s+)?(?:early\s+)?the\s+(?:morning|day)\s+after\b/, () => ({ advance: 'the next morning', sameDay: false })],
 ];
 // Time passing told anywhere in a sentence, not only at its start: "The rest
 // of the day went by quickly and he eventually dropped off to sleep",
