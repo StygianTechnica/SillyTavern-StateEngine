@@ -1042,6 +1042,26 @@ export function getObjectByAlias(chatId, type, name) {
     return null;
 }
 
+// The character a creature name means ("Doc", or "Inji" for Inji Miyama):
+// one whose name or alias it is, or - a single word - whose first name it
+// is. A person is a character whatever kind of being they are, so a
+// reading that lists them under creatures never makes a creature of them.
+// The character's view, or null.
+function characterNamed(chatId, name) {
+    const exact = getObjectByAlias(chatId, 'character', name);
+    if (exact) return exact;
+    const key = nameKey(name);
+    if (!key || key.includes(' ') || key.length < 3) return null;
+    const first = (record) => {
+        const words = String(record?.name ?? '').trim().split(/\s+/);
+        return words.length > 1 && nameKey(words[0]) === key;
+    };
+    for (const record of Object.values(typeLayer(readChat(chatId), 'character').local)) if (first(record)) return view(chatId, { scope: 'chat', settingId: null, record });
+    const setting = effectiveSetting(chatId);
+    for (const record of Object.values(setting.objects.character ?? {})) if (first(record)) return view(chatId, { scope: 'setting', settingId: setting.id, record });
+    return null;
+}
+
 // --------------------------------------------------------------- mutations
 
 function newId(t) {
@@ -1437,7 +1457,8 @@ export function snippetFor(source, name) {
 // name is alias-matched (the chat's objects, then its setting's); a match
 // counts toward confirmation; an unknown name becomes a new chat object
 // (unconfirmed, for a world type) with an introduction snippet from
-// `source`. Returns { ids (deduplicated, in order), created: [views] }.
+// `source` - except a creature name that is a character's, which is left
+// out. Returns { ids (deduplicated, in order), created: [views] }.
 export function resolveObjectNames(chatId, type, names, { source = '' } = {}) {
     const t = mustType(type);
     const ids = [];
@@ -1450,6 +1471,9 @@ export function resolveObjectNames(chatId, type, names, { source = '' } = {}) {
         if (match) {
             id = match.id;
             recordMatch(chatId, t, id);
+        } else if (type === 'creature' && characterNamed(chatId, name)) {
+            // One of the people, not a creature: left out.
+            continue;
         } else {
             const object = createChatObject(chatId, type, displayName(name), snippetFor(source, displayName(name)) ?? snippetFor(source, name));
             id = object.id;

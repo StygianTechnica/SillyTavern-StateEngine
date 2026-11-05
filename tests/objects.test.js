@@ -283,6 +283,17 @@ describe('extraction (resolveObjectNames)', () => {
         expect(listNotifications().find((n) => n.message.startsWith('New locations detected for review'))).toMatchObject({ callbackId: 'objects.review.location' });
     });
 
+    it('never makes a creature of a character the reading lists as one', () => {
+        O.createObject(story.id, 'character', { name: 'Doc' });
+        const inji = O.createObject(story.id, 'character', { name: 'Inji Miyama', aliases: ['the Fox'] });
+        const { ids, created } = O.resolveObjectNames(CHAT, 'creature', ['Doc', 'Inji', 'The Fox', 'a pack of wolves']);
+        expect(created.map((c) => c.name)).toEqual(['a pack of wolves']);
+        expect(ids).toHaveLength(1);
+        expect(listNotifications().find((n) => n.message.startsWith('New creatures detected for review')).message).toBe('New creatures detected for review: a pack of wolves');
+        // Characters still resolve as characters.
+        expect(O.resolveObjectNames(CHAT, 'character', ['Inji Miyama']).ids).toEqual([inji.id]);
+    });
+
     it('a name written as an id becomes words, and the id still matches it', () => {
         expect(O.displayName('rocky_terrain')).toBe('Rocky Terrain');
         expect(O.displayName('wastes_beyond_the_walls')).toBe('Wastes Beyond the Walls');
