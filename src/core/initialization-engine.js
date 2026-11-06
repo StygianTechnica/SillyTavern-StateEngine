@@ -8,7 +8,7 @@ import { getDefaultValue } from './variable-schema.js';
 import { shouldSkipPromptedRefresh, runPromptedStateUpdate } from './prompted-engine.js';
 import { recalculateDependents, recalculateAllForChat } from './calculated-engine.js';
 import { copyChatRoles, migrateRoleData } from './roles.js';
-import { getChatSetting, setChatSetting, ensureChatSetting, migrateObjectData, migrateObjectFields } from './objects.js';
+import { getChatSetting, setChatSetting, ensureChatSetting, migrateObjectData, migrateObjectFields, syncObjectReviewNotifications } from './objects.js';
 import { migrateSceneLocation } from './scene-location-migration.js';
 import { migratePromptRefresh } from './prompt-refresh-migration.js';
 import { migrateFreshFields } from './fresh-field-migration.js';
@@ -327,6 +327,15 @@ export function runStartupOnce() {
         migrateFreshFields();
     } catch (err) {
         console.warn(LOG_PREFIX, 'fresh field migration failed (gracefully handled)', err);
+    }
+    // "New characters detected for review" are about the open chat, and are
+    // saved with the settings: a reload with no chat open never sees
+    // CHAT_CHANGED, and the last chat's notice stayed. A chat SillyTavern
+    // opens at load posts its own again on CHAT_CHANGED.
+    try {
+        syncObjectReviewNotifications(SillyTavern.getContext()?.chatId || null);
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not update the review notifications at startup (gracefully handled)', err);
     }
     runPromptedStateUpdate('startup');
 }
