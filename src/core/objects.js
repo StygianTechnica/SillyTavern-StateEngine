@@ -1453,6 +1453,16 @@ export function snippetFor(source, name) {
     return snippet || null;
 }
 
+// Whether `name` is the name of the character card this chat is open with
+// (a card named for a world or a group is not an object of that world).
+// A trailing full stop or comma does not count: "Assassins Inc." is "Assassins Inc".
+function isCardName(name) {
+    const key = (n) => nameKey(n).replace(/[.,!]+$/, '');
+    const context = globalThis.SillyTavern?.getContext?.();
+    const card = context?.name2 || context?.characters?.[context?.characterId]?.name;
+    return !!key(card) && key(card) === key(name);
+}
+
 // Extraction: the ids of type `type` that `names` mean in `chatId`. Each
 // name is alias-matched (the chat's objects, then its setting's); a match
 // counts toward confirmation; an unknown name becomes a new chat object
@@ -1473,6 +1483,10 @@ export function resolveObjectNames(chatId, type, names, { source = '' } = {}) {
             recordMatch(chatId, t, id);
         } else if (type === 'creature' && characterNamed(chatId, name)) {
             // One of the people, not a creature: left out.
+            continue;
+        } else if (type !== 'character' && isCardName(name)) {
+            // The open character card's own name, read as a faction or a
+            // place: the card "Assassins Inc." kept being offered as a faction.
             continue;
         } else {
             const object = createChatObject(chatId, type, displayName(name), snippetFor(source, displayName(name)) ?? snippetFor(source, name));

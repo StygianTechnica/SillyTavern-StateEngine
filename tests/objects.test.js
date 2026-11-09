@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import context from './harness/context.js';
 import settings from './harness/settings.js';
 import ensureInstanceId from './harness/instance.js';
@@ -270,6 +270,28 @@ describe('variants (one active variant per object, for its setting)', () => {
 });
 
 describe('extraction (resolveObjectNames)', () => {
+    describe('the open card\'s own name', () => {
+        const card = context.name2;
+        beforeEach(() => { context.name2 = 'Assassins Inc.'; });
+        afterEach(() => { context.name2 = card; });
+        it('is not offered as a faction, a place or anything but a character', () => {
+            for (const type of ['faction', 'location', 'item']) {
+                expect(O.resolveObjectNames(CHAT, type, ['Assassins Inc.', 'assassins inc', 'Assassins Inc']).created).toEqual([]);
+            }
+        });
+        it('leaves other names alone', () => {
+            expect(O.resolveObjectNames(CHAT, 'faction', ['Assassins Guild', 'Medina Syndicate']).created).toHaveLength(2);
+        });
+        it('can still be a character: a card is usually one', () => {
+            context.name2 = 'Seraphina';
+            expect(O.resolveObjectNames(CHAT, 'character', ['Seraphina']).created).toHaveLength(1);
+        });
+        it('still matches one the setting really has', () => {
+            const real = O.createObject(story.id, 'faction', { name: 'Assassins Inc.' });
+            expect(O.resolveObjectNames(CHAT, 'faction', ['Assassins Inc.']).ids).toEqual([real.id]);
+        });
+    });
+
     it('matches known names, creates unknown ones with a snippet, and posts one review notification per type', () => {
         const canon = O.createObject(story.id, 'character', { name: 'Rhys' });
         const { ids, created } = O.resolveObjectNames(CHAT, 'character', ['Rhys', 'the hooded woman', 'Rhys'], {
